@@ -57,6 +57,7 @@
     "agents": {
       "type": "array",
       "minItems": 13,
+      "maxItems": 13,
       "items": { "$ref": "#/$defs/agent" }
     },
     "separation": {

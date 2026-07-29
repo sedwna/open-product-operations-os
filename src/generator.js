@@ -191,6 +191,18 @@ research or approval.
 
 function buildInitialWorkbookContent(sheet, templateRows, config) {
   const headers = templateRows[0] ?? sheet.columns;
+  if (sheet.key === "role_registry") {
+    const roleIndex = headers.indexOf("role_key");
+    const actorIndex = headers.indexOf("assigned_actor_id");
+    return stringifyCsv([
+      headers,
+      ...templateRows.slice(1).map((row) => {
+        const generated = [...row];
+        generated[actorIndex] = actorFor(config, row[roleIndex]);
+        return generated;
+      })
+    ]);
+  }
   if (sheet.key === "events") {
     return stringifyCsv([
       headers,

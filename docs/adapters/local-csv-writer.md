@@ -14,7 +14,10 @@ The caller must:
 
 The adapter enforces configured owner and writer actors, protected-field denies, explicit
 environment policy, old-value preconditions, complete file read-back, and a zero-write replay
-check. `rollbackLocalWrite` restores the backup only when both backup and current post-write hashes
+check. Existing hard-linked targets are rejected. The target and receipt are staged, and a failure
+after target replacement restores the original bytes. Replay succeeds only when the validated
+receipt's manifest digest, plan, backup, original preconditions, and current target digest all
+match. `rollbackLocalWrite` restores the backup only when both backup and current post-write hashes
 match the receipt. It refuses rollback after unrelated target changes.
 
 This reference implementation proves local control mechanics only. It is not cross-host evidence,

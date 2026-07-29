@@ -10,7 +10,11 @@ import {
   TASKBOARD_FILE
 } from "./constants.js";
 import { parseCsv, rowsToObjects } from "./csv.js";
-import { readPackagedTemplate } from "./catalog.js";
+import {
+  canonicalCatalog,
+  getCanonicalRoles,
+  readPackagedTemplate
+} from "./catalog.js";
 import { buildGovernance, buildProjectFiles, buildRegistry } from "./generator.js";
 import { assertNoLinkTraversal, resolveInside, toPosixPath } from "./paths.js";
 import { validatePublishedSchema } from "./schema-validation.js";
@@ -34,6 +38,87 @@ const PRIVATE_PATH_PATTERNS = [
   /\b[A-Za-z]:\\Users\\(?!Public\\)[^\\\s]+\\/,
   /\/Users\/(?!Shared\/)[^/\s]+\//,
   /\/home\/[^/\s]+\//
+];
+
+const RECORD_KEYS = {
+  config: ["config_key"],
+  status_catalog: ["status_family", "status_value"],
+  role_registry: ["role_key"],
+  ownership: ["artifact_type"],
+  events: ["event_id"],
+  taskboard: ["task_id"],
+  idea_inbox: ["idea_id"],
+  discovery: ["discovery_id"],
+  decision_log: ["decision_id"],
+  issues: ["issue_id"],
+  delivery_tickets: ["ticket_id"],
+  validation_plans: ["plan_id"],
+  validation_scenarios: ["scenario_id"],
+  validation_runs: ["run_id"],
+  validation_results: ["result_id"],
+  evidence: ["evidence_item_id"],
+  human_observations: ["observation_id"],
+  qc_log: ["qc_record_id"],
+  readiness: ["readiness_id"],
+  releases: ["release_id"],
+  writer_manifests: ["write_manifest_id"],
+  writer_receipts: ["write_receipt_id"],
+  lineage: ["lineage_edge_id"]
+};
+
+const RECORD_ID_PATTERNS = {
+  events: /^EVT-[0-9]{8}-[0-9]{3}$/,
+  idea_inbox: /^IDEA-[0-9]{8}-[0-9]{3}$/,
+  discovery: /^DSC-[0-9]{8}-[0-9]{3}$/,
+  decision_log: /^DEC-[0-9]{8}-[0-9]{3}$/,
+  issues: /^ISS-[0-9]{8}-[0-9]{3}$/,
+  delivery_tickets: /^TKT-[0-9]{8}-[0-9]{3}$/,
+  validation_plans: /^VPL-[0-9]{8}-[0-9]{3}$/,
+  validation_scenarios: /^VSC-[0-9]{8}-[0-9]{3}$/,
+  validation_runs: /^VRN-[0-9]{8}-[0-9]{3}$/,
+  validation_results: /^VRS-[0-9]{8}-[0-9]{3}$/,
+  evidence: /^EVD-[0-9]{8}-[0-9]{3}$/,
+  human_observations: /^HOB-[0-9]{8}-[0-9]{3}$/,
+  qc_log: /^QCV-[0-9]{8}-[0-9]{3}$/,
+  readiness: /^RDY-[0-9]{8}-[0-9]{3}$/,
+  releases: /^REL-[0-9]{8}-[0-9]{3}$/,
+  writer_manifests: /^WFM-[0-9]{8}-[0-9]{3}$/,
+  writer_receipts: /^WRC-[0-9]{8}-[0-9]{3}$/
+};
+
+const STATUS_FIELDS = {
+  role_registry: ["lifecycle", "role_lifecycle"],
+  events: ["status", "event"],
+  taskboard: ["status", "task"],
+  idea_inbox: ["status", "idea"],
+  discovery: ["status", "discovery"],
+  decision_log: ["status", "decision"],
+  issues: ["status", "issue"],
+  delivery_tickets: ["status", "ticket"],
+  validation_plans: ["status", "validation_plan"],
+  validation_scenarios: ["status", "validation_scenario"],
+  validation_runs: ["status", "validation_run"],
+  validation_results: ["disposition", "validation_result"],
+  evidence: ["status", "evidence_item"],
+  human_observations: ["status", "human_observation"],
+  qc_log: ["disposition", "qc"],
+  readiness: ["status", "readiness"],
+  releases: ["status", "release"],
+  writer_manifests: ["status", "write_manifest"],
+  writer_receipts: ["status", "write_receipt"]
+};
+
+const ROLE_ACTOR_PAIRS = [
+  ["role_key", "assigned_actor_id"],
+  ["coordinator_role", "coordinator_actor_id"],
+  ["owner_role", "owner_actor_id"],
+  ["design_owner_role", "design_owner_actor_id"],
+  ["executor_role", "executor_actor_id"],
+  ["producer_role", "producer_actor_id"],
+  ["verifier_role", "verifier_actor_id"],
+  ["independent_verifier_role", "verifier_actor_id"],
+  ["writer_role", "writer_actor_id"],
+  ["semantic_owner_role", "semantic_owner_actor_id"]
 ];
 
 export async function validateProject(target, config) {
@@ -86,7 +171,7 @@ export async function validateProject(target, config) {
 
   for (const sheet of config.workbook.sheets) {
     if (contents.has(sheet.file)) {
-      validateWorkbook(sheet, contents.get(sheet.file), errors);
+      validateWorkbook(sheet, contents.get(sheet.file), config, errors);
     }
   }
 
@@ -99,7 +184,7 @@ export async function validateProject(target, config) {
   const inventory = await inventoryTree(root, config.validation.excludedDirectories, errors);
   for (const file of inventory.files) {
     const buffer = await fs.readFile(file.absolutePath);
-    const searchable = buffer.toString("latin1");
+    const searchable = searchableText(buffer);
     scanForSensitiveData(
       file.relativePath,
       searchable,
@@ -346,19 +431,257 @@ function validateTaskboard(text, config, errors) {
   }
 }
 
-function validateWorkbook(sheet, text, errors) {
-  let rows;
+function validateWorkbook(sheet, text, config, errors) {
+  let parsed;
   try {
-    rows = parseCsv(text);
+    parsed = rowsToObjects(parseCsv(text));
   } catch (error) {
     errors.push(`Invalid workbook CSV "${sheet.file}": ${error.message}`);
     return;
   }
-  const headers = rows[0] ?? [];
-  if (!sameArray(headers, sheet.columns)) {
+  if (!sameArray(parsed.headers, sheet.columns)) {
     errors.push(
       `Workbook "${sheet.file}" headers do not match sheet "${sheet.name}" in the canonical project configuration.`
     );
+    return;
+  }
+
+  const keyFields = RECORD_KEYS[sheet.key] ?? [sheet.columns[0]];
+  const seenKeys = new Set();
+  const actorByRole = new Map(config.agents.map((agent) => [agent.id, agent.actorId]));
+  const roles = new Set(actorByRole.keys());
+  const statusRule = STATUS_FIELDS[sheet.key];
+  const idPattern =
+    sheet.key === "taskboard"
+      ? new RegExp(config.taskIds.pattern)
+      : RECORD_ID_PATTERNS[sheet.key];
+
+  for (const [index, record] of parsed.records.entries()) {
+    const label = `Workbook "${sheet.file}" row ${index + 2}`;
+    const keyParts = keyFields.map((field) => record[field]?.trim() ?? "");
+    if (keyParts.some((value) => value === "")) {
+      errors.push(`${label} must define record key ${keyFields.join("|")}.`);
+    } else {
+      const key = JSON.stringify(keyParts);
+      if (seenKeys.has(key)) {
+        errors.push(`${label} duplicates record key "${keyParts.join("|")}".`);
+      }
+      seenKeys.add(key);
+    }
+
+    const identity = keyParts[0];
+    if (
+      idPattern &&
+      identity &&
+      !isPlaceholder(identity) &&
+      !idPattern.test(identity)
+    ) {
+      errors.push(`${label} has invalid canonical identity "${identity}".`);
+    }
+
+    if (statusRule) {
+      const [field, family] = statusRule;
+      const value = record[field]?.trim() ?? "";
+      if (!value) {
+        errors.push(`${label} must define ${family} status.`);
+      } else if (
+        !isPlaceholder(value) &&
+        !canonicalCatalog.statuses[family].includes(value)
+      ) {
+        errors.push(`${label} uses undefined ${family} status "${value}".`);
+      }
+    }
+    if (
+      sheet.key === "status_catalog" &&
+      (!Object.hasOwn(canonicalCatalog.statuses, record.status_family) ||
+        !canonicalCatalog.statuses[record.status_family]?.includes(record.status_value))
+    ) {
+      errors.push(
+        `${label} defines non-canonical status "${record.status_family}|${record.status_value}".`
+      );
+    }
+
+    if (!isPlaceholder(identity)) {
+      validateRecordRoles(record, label, roles, actorByRole, errors);
+      validateRecordSeparation(record, label, errors);
+      validateRecordEnvironment(record, label, config, errors);
+      validateProtectedRecordFields(record, label, sheet, config, errors);
+    }
+  }
+
+  if (sheet.key === "role_registry") {
+    const recordsByRole = new Map(
+      parsed.records
+        .filter((record) => !isPlaceholder(record.role_key))
+        .map((record) => [record.role_key, record])
+    );
+    const canonicalRoles = getCanonicalRoles();
+    if (
+      recordsByRole.size !== canonicalRoles.length ||
+      [...recordsByRole.keys()].some(
+        (role) => !canonicalRoles.some((candidate) => candidate.roleKey === role)
+      )
+    ) {
+      errors.push(
+        `Workbook "${sheet.file}" must contain exactly the 13 canonical role records.`
+      );
+    }
+    for (const role of canonicalRoles) {
+      const record = recordsByRole.get(role.roleKey);
+      if (record && record.lifecycle !== role.lifecycle) {
+        errors.push(
+          `Workbook "${sheet.file}" role "${role.roleKey}" must remain "${role.lifecycle}".`
+        );
+      }
+    }
+  }
+  if (sheet.key === "status_catalog") {
+    const expected = new Set(
+      Object.entries(canonicalCatalog.statuses).flatMap(([family, values]) =>
+        values.map((value) => `${family}|${value}`)
+      )
+    );
+    const actual = new Set(
+      parsed.records.map(
+        (record) => `${record.status_family}|${record.status_value}`
+      )
+    );
+    if (
+      actual.size !== expected.size ||
+      [...expected].some((status) => !actual.has(status))
+    ) {
+      errors.push(
+        `Workbook "${sheet.file}" must contain the complete canonical status catalog.`
+      );
+    }
+  }
+}
+
+function validateRecordRoles(record, label, roles, actorByRole, errors) {
+  for (const [field, value] of Object.entries(record)) {
+    if (
+      (field.endsWith("_role") || field.endsWith("_roles") || field === "created_by_role") &&
+      value &&
+      !isPlaceholder(value)
+    ) {
+      for (const role of splitList(value)) {
+        if (!roles.has(role)) {
+          errors.push(`${label} field "${field}" references unknown role "${role}".`);
+        }
+      }
+    }
+  }
+  for (const [roleField, actorField] of ROLE_ACTOR_PAIRS) {
+    if (!(roleField in record) || !(actorField in record)) {
+      continue;
+    }
+    const role = record[roleField]?.trim();
+    const actor = record[actorField]?.trim();
+    if (
+      role &&
+      !isPlaceholder(role) &&
+      (!actor || isPlaceholder(actor))
+    ) {
+      errors.push(`${label} field "${roleField}" requires an assigned "${actorField}".`);
+      continue;
+    }
+    if (
+      actor &&
+      !isPlaceholder(actor) &&
+      (!role || isPlaceholder(role))
+    ) {
+      errors.push(`${label} field "${actorField}" requires an assigned "${roleField}".`);
+      continue;
+    }
+    if (
+      role &&
+      actor &&
+      !isPlaceholder(role) &&
+      !isPlaceholder(actor) &&
+      actor !== actorByRole.get(role)
+    ) {
+      errors.push(
+        `${label} field "${actorField}" is not the configured actor for "${role}".`
+      );
+    }
+  }
+}
+
+function validateRecordSeparation(record, label, errors) {
+  if (!("producer_actor_id" in record) || !("verifier_actor_id" in record)) {
+    return;
+  }
+  const producer = record.producer_actor_id?.trim();
+  const verifier = record.verifier_actor_id?.trim();
+  if (
+    (!producer || !verifier) &&
+    !isPlaceholder(Object.values(record)[0])
+  ) {
+    errors.push(`${label} requires assigned producer and verifier actors.`);
+    return;
+  }
+  if (
+    producer &&
+    verifier &&
+    !isPlaceholder(producer) &&
+    !isPlaceholder(verifier) &&
+    producer === verifier
+  ) {
+    errors.push(`${label} producer and verifier actors must be different.`);
+  }
+}
+
+function validateRecordEnvironment(record, label, config, errors) {
+  for (const field of ["environment_alias", "target_environment"]) {
+    const value = record[field]?.trim();
+    if (
+      value &&
+      !isPlaceholder(value) &&
+      !config.project.environments.includes(value)
+    ) {
+      errors.push(`${label} field "${field}" uses unauthorized environment "${value}".`);
+    }
+  }
+}
+
+function validateProtectedRecordFields(record, label, sheet, config, errors) {
+  for (const field of config.fieldAuthority.protectedDevelopmentFields) {
+    const value = record[field]?.trim();
+    if (!value || isPlaceholder(value)) {
+      continue;
+    }
+    const attributed =
+      (sheet.key === "delivery_tickets" &&
+        record.development_adapter_role === config.separation.developmentRole) ||
+      (sheet.key === "validation_runs" &&
+        record.executor_role === "RB-09" &&
+        record.executor_actor_id ===
+          config.agents.find((agent) => agent.id === "RB-09")?.actorId);
+    if (!attributed) {
+      errors.push(
+        `${label} protected development field "${field}" lacks an authorized development/observation attribution.`
+      );
+    }
+  }
+
+  for (const field of config.fieldAuthority.protectedHumanFields) {
+    const value = record[field]?.trim();
+    if (!value || isPlaceholder(value)) {
+      continue;
+    }
+    if (["decision_maker_actor_id", "observer_actor_id"].includes(field)) {
+      if (value !== config.project.humanAuthorityActorId) {
+        errors.push(
+          `${label} protected human field "${field}" is not the configured human authority actor.`
+        );
+      }
+      continue;
+    }
+    if (record.authorized_by_actor_id !== config.project.humanAuthorityActorId) {
+      errors.push(
+        `${label} protected human field "${field}" lacks attributed human authorization.`
+      );
+    }
   }
 }
 
@@ -445,6 +768,25 @@ function isBinary(buffer) {
   } catch {
     return true;
   }
+}
+
+function searchableText(buffer) {
+  const representations = [
+    buffer.toString("latin1"),
+    buffer.toString("utf8")
+  ];
+  if (buffer.length >= 2) {
+    const evenLength = buffer.length - (buffer.length % 2);
+    const paired = Buffer.from(buffer.subarray(0, evenLength));
+    representations.push(paired.toString("utf16le"));
+    for (let index = 0; index < paired.length; index += 2) {
+      const first = paired[index];
+      paired[index] = paired[index + 1];
+      paired[index + 1] = first;
+    }
+    representations.push(paired.toString("utf16le"));
+  }
+  return representations.join("\n");
 }
 
 function scanForSensitiveData(relativePath, content, allowedDomains, errors) {
@@ -539,6 +881,10 @@ function splitList(value) {
     .split(/[;,|]/)
     .map((item) => item.trim())
     .filter(Boolean);
+}
+
+function isPlaceholder(value) {
+  return /^<[^>]+>$/.test(value?.trim() ?? "");
 }
 
 function sameArray(left, right) {

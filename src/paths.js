@@ -77,6 +77,32 @@ export async function assertNoLinkTraversal(root, destination, label = "Path") {
   }
 }
 
+export async function assertNoHardLinkedFile(destination, label = "Path") {
+  let stat;
+  try {
+    stat = await fs.lstat(destination);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return;
+    }
+    throw error;
+  }
+
+  if (!stat.isFile()) {
+    throw new Error(`${label} is not a regular file.`);
+  }
+  if (!Number.isSafeInteger(stat.nlink) || stat.nlink < 1) {
+    throw new Error(
+      `${label} cannot be safely written because a reliable hard-link count is unavailable.`
+    );
+  }
+  if (stat.nlink !== 1) {
+    throw new Error(
+      `${label} is hard-linked (${stat.nlink} links); refusing a write that could modify another path.`
+    );
+  }
+}
+
 async function canonicalizePotentialPath(value) {
   const missingSegments = [];
   let existing = value;

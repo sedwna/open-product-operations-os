@@ -47,15 +47,18 @@ A live writer must:
 
 The packaged local CSV writer is deliberately limited to configured files inside the generated
 project. It requires the exact hash from a preceding dry run, writes an integrity-checked backup
-and receipt, performs complete read-back and zero-write replay, and refuses rollback if the target
-changed after the write. It does not connect to a provider or production system.
+and receipt, rejects hard-linked targets, restores original bytes after a failed transaction,
+performs complete read-back, and accepts replay only with a matching validated receipt and original
+preconditions. It refuses rollback if the target changed after the write. It does not connect to a
+provider or production system.
 
 ## Validation scan boundary
 
 `product-ops validate` inventories the complete bounded target tree, rejects filesystem links,
-scans text and binary bytes for obvious credentials, checks non-reserved email canaries and private
-absolute paths, and reports binary inventory. Only `.git` and `node_modules` directories are
-excluded; both are dependency or version-control stores outside the generated operating records.
+scans text and binary bytes (including UTF-16LE and UTF-16BE) for obvious credentials, checks
+non-reserved email canaries and private absolute paths, and reports binary inventory. Only `.git`
+and `node_modules` directories are excluded; both are dependency or version-control stores outside
+the generated operating records.
 
 ## Public-package boundary
 

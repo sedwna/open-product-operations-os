@@ -63,7 +63,10 @@ node ./src/cli.js generate-workbook ./my-product
 The dry run reports the planned writes without changing the target directory. Existing generated
 files are preserved unless the explicit `--force` option is used. `--force` refreshes replaceable
 scaffold, but it never deletes workbook or taskboard rows. Operational CSVs retain their rows;
-newly required columns are appended with blank values.
+newly required columns are appended with blank values. A valid existing
+`product-ops.config.json`, including human authority, actor assignments, environments, and bounded
+workbook extensions, is retained byte-for-byte. If authority assignments change, migrate affected
+operational rows explicitly before expecting validation to pass.
 
 ## Core promise
 
@@ -97,19 +100,26 @@ The current initializer creates:
 - disabled Git and development-agent adapter contracts;
 - a disabled local-CSV adapter plus an executable safe local writer library requiring dry-run plan
   approval, owner authorization, preconditions, complete read-back, zero-write replay, and
-  hash-guarded rollback;
+  hash-guarded rollback. Existing hard-linked targets are rejected, failed transactions restore the
+  original bytes, and replay requires a matching validated receipt and backup;
 - a synthetic example project.
 
 `templates/config/operating-model.yaml` is the single role, tab, field-authority, environment, and
 scan-policy catalog used by the initializer. Each generated project receives a byte-for-byte
 snapshot at `config/operating-model.yaml`. Validation scans the whole bounded target tree,
-including binary inventory, except for the explicit `.git` and `node_modules` directory exclusions.
+including binary inventory and UTF-8/Latin-1/UTF-16LE/UTF-16BE canaries, except for the explicit
+`.git` and `node_modules` directory exclusions. Workbook validation checks row widths, record-key
+uniqueness, canonical identities and statuses, actor/role assignments, producer/verifier
+separation, environments, and protected values.
 
 The project is still a foundation release: generated formats and public interfaces may change
 before the first stable release.
 
 Portable example evidence uses repository-controlled LF bytes via `.gitattributes`. The
 `npm run portability` check reproduces declared SHA-256 hashes and byte lengths on a normal clone.
+The npm payload includes the portability contract, tests, and a publishable shrinkwrap lock;
+`npm run packed:check` installs the actual tarball and executes its checks without relying on
+repository-only files.
 
 ## Non-goals
 

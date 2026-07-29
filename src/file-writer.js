@@ -1,7 +1,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parseCsv, stringifyCsv } from "./csv.js";
-import { assertNoLinkTraversal, resolveInside, toPosixPath } from "./paths.js";
+import {
+  assertNoHardLinkedFile,
+  assertNoLinkTraversal,
+  resolveInside,
+  toPosixPath
+} from "./paths.js";
 
 export async function planWrites(root, files, { force = false } = {}) {
   const operations = [];
@@ -10,6 +15,7 @@ export async function planWrites(root, files, { force = false } = {}) {
   for (const [relativePath, content] of files) {
     const destination = resolveInside(root, relativePath, `Generated file "${relativePath}"`);
     await assertNoLinkTraversal(root, destination, `Generated file "${relativePath}"`);
+    await assertNoHardLinkedFile(destination, `Generated file "${relativePath}"`);
     let existing;
     try {
       existing = await fs.readFile(destination, "utf8");
@@ -62,9 +68,17 @@ export async function applyWrites(root, operations) {
       operation.destination,
       `Generated file "${operation.relativePath}"`
     );
+    await assertNoHardLinkedFile(
+      operation.destination,
+      `Generated file "${operation.relativePath}"`
+    );
     await fs.mkdir(path.dirname(operation.destination), { recursive: true });
     await assertNoLinkTraversal(
       root,
+      operation.destination,
+      `Generated file "${operation.relativePath}"`
+    );
+    await assertNoHardLinkedFile(
       operation.destination,
       `Generated file "${operation.relativePath}"`
     );

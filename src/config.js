@@ -81,7 +81,19 @@ export function validateConfigRelationships(config) {
   }
 
   const agentsById = new Map(config.agents.map((agent) => [agent.id, agent]));
-  for (const canonicalRole of getCanonicalRoles()) {
+  const canonicalRoles = getCanonicalRoles();
+  if (config.agents.length !== canonicalRoles.length) {
+    errors.push(
+      `agents must contain exactly the ${canonicalRoles.length} canonical roles; extensions are not permitted.`
+    );
+  }
+  const canonicalRoleIds = new Set(canonicalRoles.map((role) => role.roleKey));
+  for (const agent of config.agents) {
+    if (!canonicalRoleIds.has(agent.id)) {
+      errors.push(`Non-canonical role "${agent.id}" is not permitted.`);
+    }
+  }
+  for (const canonicalRole of canonicalRoles) {
     const agent = agentsById.get(canonicalRole.roleKey);
     if (!agent) {
       errors.push(`Canonical role "${canonicalRole.roleKey}" is missing from agents.`);
@@ -90,7 +102,8 @@ export function validateConfigRelationships(config) {
     if (
       agent.role !== canonicalRole.purpose ||
       !sameArray(agent.responsibilities, canonicalRole.may) ||
-      !sameArray(agent.prohibitedActions, canonicalRole.mustNot)
+      !sameArray(agent.prohibitedActions, canonicalRole.mustNot) ||
+      agent.lifecycle !== canonicalRole.lifecycle
     ) {
       errors.push(
         `Canonical role "${canonicalRole.roleKey}" authority must match ${config.catalogAuthority}.`

@@ -50,7 +50,7 @@ function buildSafeManifest(config, sheet) {
       ],
       rows: [
         {
-          key: { ticket_id: "TKT-LOCAL-001" },
+          key: { ticket_id: "TKT-20260729-001" },
           preconditions: { status: "implementation_complete" },
           changes: { status: "accepted" }
         }
@@ -239,7 +239,7 @@ test("safe local writer enforces dry-run, read-back, replay, and rollback", asyn
   const workbookPath = path.join(target, sheet.file);
   const rows = parseCsv(await fs.readFile(workbookPath, "utf8"));
   const record = rows[0].map(() => "");
-  record[rows[0].indexOf("ticket_id")] = "TKT-LOCAL-001";
+  record[rows[0].indexOf("ticket_id")] = "TKT-20260729-001";
   record[rows[0].indexOf("status")] = "implementation_complete";
   rows.push(record);
   await fs.writeFile(workbookPath, stringifyCsv(rows), "utf8");
@@ -269,4 +269,218 @@ test("safe local writer enforces dry-run, read-back, replay, and rollback", asyn
     /implementation_complete/
   );
   assert.equal(await run(["validate", target], output.io), 0);
+});
+
+test("validate rejects malformed, duplicate, unauthorized workbook records", async (t) => {
+  const { target, output } = await initializedProject(t, "invalid-workbook-records");
+  const config = await readJson(path.join(target, CONFIG_FILE));
+  const discoveryPath = path.join(target, "workbook", "08-discovery.csv");
+  const rows = parseCsv(await fs.readFile(discoveryPath, "utf8"));
+  const duplicate = [...rows[1]];
+  duplicate[rows[0].indexOf("status")] = "invented_status";
+  duplicate[rows[0].indexOf("verifier_actor_id")] =
+    duplicate[rows[0].indexOf("producer_actor_id")];
+  rows.push(duplicate);
+  await fs.writeFile(discoveryPath, stringifyCsv(rows), "utf8");
+
+  const releasePath = path.join(target, "workbook", "20-releases.csv");
+  const releaseRows = parseCsv(await fs.readFile(releasePath, "utf8"));
+  const release = releaseRows[0].map(() => "");
+  release[releaseRows[0].indexOf("release_id")] = "REL-20260729-001";
+  release[releaseRows[0].indexOf("status")] = "planned";
+  release[releaseRows[0].indexOf("target_environment")] = "production";
+  release[releaseRows[0].indexOf("human_authorization_id")] = "HUMAN-UNATTRIBUTED";
+  release[releaseRows[0].indexOf("deployment_reference")] = "deploy-claimed";
+  release[releaseRows[0].indexOf("owner_role")] = "RB-11";
+  release[releaseRows[0].indexOf("owner_actor_id")] =
+    config.agents.find((agent) => agent.id === "RB-11").actorId;
+  releaseRows.push(release);
+  await fs.writeFile(releasePath, stringifyCsv(releaseRows), "utf8");
+
+  assert.equal(await run(["validate", target], output.io), 1);
+  const message = output.stderr.at(-1);
+  assert.match(message, /duplicates record key "DSC-00000000-001"/);
+  assert.match(message, /undefined discovery status "invented_status"/);
+  assert.match(message, /producer and verifier actors must be different/);
+  assert.match(message, /protected development field "deployment_reference"/);
+  assert.match(message, /protected human field "human_authorization_id"/);
+});
+
+test("validate enforces workbook row widths", async (t) => {
+  const { target, output } = await initializedProject(t, "invalid-row-width");
+  await fs.appendFile(
+    path.join(target, "workbook", "10-issues.csv"),
+    "ISS-TOO-SHORT,EVT-1\n"
+  );
+  assert.equal(await run(["validate", target], output.io), 1);
+  assert.match(output.stderr.at(-1), /has 2 cells; expected 21/);
+});
+
+test("validate scans UTF-16LE and UTF-16BE secret canaries", async (t) => {
+  const { target, output } = await initializedProject(t, "utf16-canaries");
+  const extra = path.join(target, "extra");
+  await fs.mkdir(extra);
+  const assignedCredential = [
+    "api",
+    "_key=",
+    "synthetic",
+    "-utf16-",
+    "canary-1234567890"
+  ].join("");
+  const le = Buffer.concat([
+    Buffer.from([0xff, 0xfe]),
+    Buffer.from(assignedCredential, "utf16le")
+  ]);
+  const be = Buffer.from(assignedCredential, "utf16le");
+  for (let index = 0; index < be.length; index += 2) {
+    const first = be[index];
+    be[index] = be[index + 1];
+    be[index + 1] = first;
+  }
+  await fs.writeFile(path.join(extra, "secret-le.bin"), le);
+  await fs.writeFile(
+    path.join(extra, "secret-be.bin"),
+    Buffer.concat([Buffer.from([0xfe, 0xff]), be])
+  );
+
+  assert.equal(await run(["validate", target], output.io), 1);
+  const message = output.stderr.at(-1);
+  assert.match(message, /secret-le\.bin/);
+  assert.match(message, /secret-be\.bin/);
+});
+
+test("local writer rejects duplicate keys and hard-linked targets", async (t) => {
+  const { target } = await initializedProject(t, "writer-boundaries");
+  const config = await readJson(path.join(target, CONFIG_FILE));
+  const sheet = config.workbook.sheets.find((entry) => entry.key === "delivery_tickets");
+  const workbookPath = path.join(target, sheet.file);
+  const rows = parseCsv(await fs.readFile(workbookPath, "utf8"));
+  const record = rows[0].map(() => "");
+  record[rows[0].indexOf("ticket_id")] = "TKT-20260729-001";
+  record[rows[0].indexOf("status")] = "implementation_complete";
+  rows.push(record, [...record]);
+  await fs.writeFile(workbookPath, stringifyCsv(rows), "utf8");
+  const manifest = buildSafeManifest(config, sheet);
+  await assert.rejects(
+    applyLocalWrite(target, manifest, config),
+    /exactly one requested key.*found 2/
+  );
+
+  rows.pop();
+  await fs.writeFile(workbookPath, stringifyCsv(rows), "utf8");
+  const outside = path.join(path.dirname(target), "outside-workbook.csv");
+  await fs.copyFile(workbookPath, outside);
+  await fs.rm(workbookPath);
+  try {
+    await fs.link(outside, workbookPath);
+  } catch (error) {
+    if (["EPERM", "ENOTSUP", "EACCES"].includes(error.code)) {
+      t.skip(`hard links unavailable: ${error.code}`);
+      return;
+    }
+    throw error;
+  }
+  const before = await fs.readFile(outside, "utf8");
+  await assert.rejects(applyLocalWrite(target, manifest, config), /hard-linked/);
+  assert.equal(await fs.readFile(outside, "utf8"), before);
+});
+
+test("local writer refuses replay without a matching validated receipt", async (t) => {
+  const { target } = await initializedProject(t, "writer-receipt-replay");
+  const config = await readJson(path.join(target, CONFIG_FILE));
+  const sheet = config.workbook.sheets.find((entry) => entry.key === "delivery_tickets");
+  const workbookPath = path.join(target, sheet.file);
+  const rows = parseCsv(await fs.readFile(workbookPath, "utf8"));
+  const record = rows[0].map(() => "");
+  record[rows[0].indexOf("ticket_id")] = "TKT-20260729-001";
+  record[rows[0].indexOf("status")] = "implementation_complete";
+  rows.push(record);
+  await fs.writeFile(workbookPath, stringifyCsv(rows), "utf8");
+  const manifest = buildSafeManifest(config, sheet);
+  const preview = await applyLocalWrite(target, manifest, config);
+  const receipt = await applyLocalWrite(target, manifest, config, {
+    dryRun: false,
+    approvedPlanHash: preview.planHash
+  });
+  const receiptPath = path.join(target, receipt.receiptFile);
+  const tampered = JSON.parse(await fs.readFile(receiptPath, "utf8"));
+  tampered.manifestSha256 = "0".repeat(64);
+  await fs.writeFile(receiptPath, `${JSON.stringify(tampered, null, 2)}\n`);
+
+  await assert.rejects(
+    applyLocalWrite(target, manifest, config),
+    /receipt does not match/
+  );
+  assert.match(await fs.readFile(workbookPath, "utf8"), /accepted/);
+});
+
+test("local writer restores original bytes after a post-mutation failure", async (t) => {
+  const { target } = await initializedProject(t, "writer-transaction-rollback");
+  const config = await readJson(path.join(target, CONFIG_FILE));
+  const sheet = config.workbook.sheets.find((entry) => entry.key === "delivery_tickets");
+  const workbookPath = path.join(target, sheet.file);
+  const rows = parseCsv(await fs.readFile(workbookPath, "utf8"));
+  const record = rows[0].map(() => "");
+  record[rows[0].indexOf("ticket_id")] = "TKT-20260729-001";
+  record[rows[0].indexOf("status")] = "implementation_complete";
+  rows.push(record);
+  await fs.writeFile(workbookPath, stringifyCsv(rows), "utf8");
+  const before = await fs.readFile(workbookPath, "utf8");
+  const manifest = buildSafeManifest(config, sheet);
+  const preview = await applyLocalWrite(target, manifest, config);
+
+  await assert.rejects(
+    applyLocalWrite(target, manifest, config, {
+      dryRun: false,
+      approvedPlanHash: preview.planHash,
+      transactionObserver: async ({ phase }) => {
+        assert.equal(phase, "target-replaced");
+        throw new Error("injected receipt-path failure");
+      }
+    }),
+    /original target was restored/
+  );
+  assert.equal(await fs.readFile(workbookPath, "utf8"), before);
+  await assert.rejects(
+    fs.access(
+      path.join(
+        target,
+        ".product-ops",
+        "writes",
+        manifest.manifestId,
+        "receipt.json"
+      )
+    ),
+    { code: "ENOENT" }
+  );
+  const retry = await applyLocalWrite(target, manifest, config);
+  assert.equal(retry.plannedWrites, 1);
+  assert.equal(retry.replay, undefined);
+});
+
+test("config rejects inactive mandatory verifier and extra roles", async (t) => {
+  const { target, output } = await initializedProject(t, "invalid-role-contract");
+  const configPath = path.join(target, CONFIG_FILE);
+  const config = await readJson(configPath);
+  config.agents.find((agent) => agent.id === "RB-12").lifecycle = "suspended";
+  await writeJson(configPath, config);
+
+  assert.equal(await run(["validate", target], output.io), 1);
+  assert.match(
+    output.stderr.at(-1),
+    /Canonical role "RB-12" authority must match/
+  );
+
+  config.agents.push({
+    ...config.agents[0],
+    id: "RB-99",
+    actorId: "actor-rb-99"
+  });
+  await writeJson(configPath, config);
+
+  assert.equal(await run(["validate", target], output.io), 1);
+  assert.match(
+    output.stderr.at(-1),
+    /must NOT have more than 13 items|exactly the 13 canonical roles/
+  );
 });

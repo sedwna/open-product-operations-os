@@ -110,15 +110,15 @@ test("generate-workbook --force preserves operational rows", async (t) => {
   assert.equal(await run(["init", target], output.io), 0);
   await fs.appendFile(
     workbook,
-    "ISS-CANARY,EVT-CANARY,Operational canary,open,P2,low,,,,,,,,,,,,RB-05,actor-rb-05,,\n"
+    "ISS-20990101-999,EVT-20990101-999,Operational canary,open,P2,low,,,,,,,,,,,,RB-05,actor-rb-05,,\n"
   );
 
   assert.equal(await run(["generate-workbook", target], output.io), 1);
   assert.match(output.stderr.at(-1), /Refusing to overwrite/);
-  assert.match(await fs.readFile(workbook, "utf8"), /ISS-CANARY/);
+  assert.match(await fs.readFile(workbook, "utf8"), /ISS-20990101-999/);
 
   assert.equal(await run(["generate-workbook", target, "--force"], output.io), 0);
-  assert.match(await fs.readFile(workbook, "utf8"), /ISS-CANARY/);
+  assert.match(await fs.readFile(workbook, "utf8"), /ISS-20990101-999/);
   assert.equal(await run(["validate", target], output.io), 0);
 });
 
@@ -182,4 +182,61 @@ test("unknown CLI options fail cleanly", async () => {
   const output = captureIo();
   assert.equal(await run(["init", "target", "--mystery"], output.io), 1);
   assert.match(output.stderr[0], /Unknown option/);
+});
+
+test("init --force preserves valid operational configuration and extensions", async (t) => {
+  const parent = await makeTempDirectory();
+  t.after(() => fs.rm(parent, { recursive: true, force: true }));
+  const target = path.join(parent, "preserved-config");
+  const configPath = path.join(target, CONFIG_FILE);
+  const output = captureIo();
+
+  assert.equal(await run(["init", target], output.io), 0);
+  const config = await readJson(configPath);
+  config.project.vision = "A human-authored operational vision.";
+  config.project.environments = ["local", "test"];
+  config.project.humanAuthorityActorId = "human-authority-custom";
+  config.agents[0].actorId = "custom-coordinator-actor";
+  config.workbook.sheets.push({
+    key: "risk_register",
+    name: "Risk Register",
+    file: "workbook/risk-register.csv",
+    owner: "RB-08",
+    columns: ["risk_id", "description", "owner", "disposition"]
+  });
+  config.ownership.push({ artifact: "risk_register", owner: "RB-08" });
+  await writeJson(configPath, config);
+  const configBytes = await fs.readFile(configPath);
+
+  assert.equal(await run(["init", target, "--force"], output.io), 0);
+  assert.deepEqual(await fs.readFile(configPath), configBytes);
+  assert.deepEqual(await readJson(configPath), config);
+  await fs.access(path.join(target, "workbook", "risk-register.csv"));
+});
+
+test("init refuses existing hard-linked scaffold without modifying its peer", async (t) => {
+  const parent = await makeTempDirectory();
+  t.after(() => fs.rm(parent, { recursive: true, force: true }));
+  const target = path.join(parent, "hardlink-product");
+  const output = captureIo();
+  assert.equal(await run(["init", target], output.io), 0);
+
+  const generated = path.join(target, "agents", "registry.json");
+  const outside = path.join(parent, "outside-registry.json");
+  await fs.copyFile(generated, outside);
+  await fs.rm(generated);
+  try {
+    await fs.link(outside, generated);
+  } catch (error) {
+    if (["EPERM", "ENOTSUP", "EACCES"].includes(error.code)) {
+      t.skip(`hard links unavailable: ${error.code}`);
+      return;
+    }
+    throw error;
+  }
+  const before = await fs.readFile(outside, "utf8");
+
+  assert.equal(await run(["init", target, "--force"], output.io), 1);
+  assert.match(output.stderr.at(-1), /hard-linked/);
+  assert.equal(await fs.readFile(outside, "utf8"), before);
 });

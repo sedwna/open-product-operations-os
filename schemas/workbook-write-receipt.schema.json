@@ -6,6 +6,7 @@
   "required": [
     "schemaVersion",
     "manifestId",
+    "manifestSha256",
     "targetFile",
     "environment",
     "planHash",
@@ -24,6 +25,7 @@
   "properties": {
     "schemaVersion": { "const": "1.0.0" },
     "manifestId": { "type": "string", "minLength": 3 },
+    "manifestSha256": { "$ref": "#/$defs/sha256" },
     "targetFile": {
       "type": "string",
       "pattern": "^workbook/(?!.*\\.\\.)[^/].*\\.csv$"

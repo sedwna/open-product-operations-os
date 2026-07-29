@@ -28,6 +28,9 @@
     "examples",
     "docs",
     "scripts",
+    "tests",
+    ".gitattributes",
+    "npm-shrinkwrap.json",
     "AGENTS.md",
     "CHANGELOG.md",
     "CONTRIBUTING.md",
@@ -42,6 +45,7 @@
     "portability": "node scripts/verify-portability.mjs",
     "sbom:check": "node scripts/check-sbom.mjs",
     "licenses:check": "node scripts/check-licenses.mjs",
+    "packed:check": "node scripts/check-packed-artifact.mjs",
     "supply-chain": "npm audit --omit=dev --audit-level=high && npm run licenses:check && npm run sbom:check"
   },
   "engines": {

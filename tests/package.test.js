@@ -32,6 +32,8 @@ test("npm package contains promised public templates, examples, docs, and metada
     "LICENSE",
     "README.md",
     "START-HERE.md",
+    ".gitattributes",
+    "npm-shrinkwrap.json",
     "src/cli.js",
     "src/local-writer.js",
     "schemas/workbook-write-manifest.schema.json",
@@ -40,7 +42,8 @@ test("npm package contains promised public templates, examples, docs, and metada
     "templates/workbook/tabs/23-lineage.csv",
     "examples/fictional-saas/lineage.csv",
     "docs/security-model.md",
-    "docs/migration/clean-room-extraction-ledger.csv"
+    "docs/migration/clean-room-extraction-ledger.csv",
+    "tests/validation.test.js"
   ]) {
     assert.ok(files.has(required), `package missing ${required}`);
   }
@@ -53,4 +56,21 @@ test("npm package contains promised public templates, examples, docs, and metada
   assert.match(packageJson.homepage, /open-product-operations-os/);
   assert.match(packageJson.bugs.url, /open-product-operations-os/);
   assert.equal(packageJson.publishConfig.provenance, true);
+  const shrinkwrap = JSON.parse(
+    await fs.readFile(path.join(repositoryRoot, "npm-shrinkwrap.json"), "utf8")
+  );
+  try {
+    const lock = JSON.parse(
+      await fs.readFile(path.join(repositoryRoot, "package-lock.json"), "utf8")
+    );
+    assert.deepEqual(
+      shrinkwrap,
+      lock,
+      "published shrinkwrap must match the repository lockfile"
+    );
+  } catch (error) {
+    if (error.code !== "ENOENT") {
+      throw error;
+    }
+  }
 });
