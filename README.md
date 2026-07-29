@@ -102,9 +102,10 @@ The current initializer creates:
 - disabled Git and development-agent adapter contracts;
 - a disabled local-CSV adapter plus an executable safe local writer library requiring dry-run plan
   approval, owner authorization, preconditions, complete read-back, zero-write replay, and
-  hash-guarded rollback. Existing hard-linked targets are rejected, the target is rechecked against
-  the approved bytes immediately before atomic replacement, failed post-replacement transactions
-  restore the original bytes, and replay requires a matching validated receipt and backup;
+  hash-guarded rollback. Existing hard-linked targets are rejected; the current target is atomically
+  quarantined and verified before a same-filesystem no-overwrite install. A concurrently recreated
+  target is preserved with no success receipt, failed post-install transactions recover without
+  overwriting concurrent bytes, and replay requires a matching validated receipt and backup;
 - a synthetic example project.
 
 `templates/config/operating-model.yaml` is the single role, tab, record-key, field-authority,

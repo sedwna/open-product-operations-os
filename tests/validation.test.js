@@ -259,6 +259,11 @@ test("safe local writer enforces dry-run, read-back, replay, and rollback", asyn
   assert.equal(receipt.fullReadbackMatch, true);
   assert.equal(receipt.replayWrites, 0);
   assert.match(await fs.readFile(workbookPath, "utf8"), /accepted/);
+  assert.equal((await fs.lstat(workbookPath)).nlink, 1);
+  await assert.rejects(
+    fs.access(`${workbookPath}.${manifest.manifestId}.before.tmp`),
+    { code: "ENOENT" }
+  );
 
   const replay = await applyLocalWrite(target, manifest, config);
   assert.equal(replay.plannedWrites, 0);
@@ -268,6 +273,13 @@ test("safe local writer enforces dry-run, read-back, replay, and rollback", asyn
     await fs.readFile(workbookPath, "utf8"),
     /implementation_complete/
   );
+  assert.equal((await fs.lstat(workbookPath)).nlink, 1);
+  await assert.rejects(
+    fs.access(`${workbookPath}.${manifest.manifestId}.rollback-current.tmp`),
+    { code: "ENOENT" }
+  );
+  const rollbackReplay = await rollbackLocalWrite(target, receipt.receiptFile);
+  assert.equal(rollbackReplay.rollbackReplay, true);
   assert.equal(await run(["validate", target], output.io), 0);
 });
 
@@ -449,7 +461,7 @@ test("local writer restores original bytes after a post-mutation failure", async
         }
       }
     }),
-    /original target was restored/
+    /pre-transaction target was preserved/
   );
   assert.equal(await fs.readFile(workbookPath, "utf8"), before);
   await assert.rejects(
@@ -496,7 +508,7 @@ test("local writer preserves injected concurrent bytes and emits no receipt", as
         }
       }
     }),
-    /changed after the approved dry-run plan|target bytes were not modified/
+    /changed before atomic quarantine|pre-transaction target was preserved/
   );
   assert.equal(await fs.readFile(workbookPath, "utf8"), concurrentBytes);
   await assert.rejects(
@@ -509,6 +521,65 @@ test("local writer preserves injected concurrent bytes and emits no receipt", as
         "receipt.json"
       )
     ),
+    { code: "ENOENT" }
+  );
+});
+
+test("local writer cannot erase a mutation after quarantine verification and before install", async (t) => {
+  const { target } = await initializedProject(t, "writer-late-concurrent-mutation");
+  const config = await readJson(path.join(target, CONFIG_FILE));
+  const sheet = config.workbook.sheets.find((entry) => entry.key === "delivery_tickets");
+  const workbookPath = path.join(target, sheet.file);
+  const rows = parseCsv(await fs.readFile(workbookPath, "utf8"));
+  const record = rows[0].map(() => "");
+  record[rows[0].indexOf("ticket_id")] = "TKT-20260729-001";
+  record[rows[0].indexOf("status")] = "implementation_complete";
+  rows.push(record);
+  const originalBytes = stringifyCsv(rows);
+  await fs.writeFile(workbookPath, originalBytes, "utf8");
+  const manifest = buildSafeManifest(config, sheet);
+  const preview = await applyLocalWrite(target, manifest, config);
+  const concurrentRows = parseCsv(originalBytes);
+  concurrentRows[2][concurrentRows[0].indexOf("status")] = "blocked";
+  const concurrentBytes = stringifyCsv(concurrentRows);
+
+  await assert.rejects(
+    applyLocalWrite(target, manifest, config, {
+      dryRun: false,
+      approvedPlanHash: preview.planHash,
+      transactionObserver: async ({ phase }) => {
+        if (phase === "after-target-quarantine-verified") {
+          await fs.writeFile(workbookPath, concurrentBytes, {
+            encoding: "utf8",
+            flag: "wx"
+          });
+        }
+      }
+    }),
+    /recreated concurrently|without overwriting concurrent target bytes/
+  );
+
+  assert.equal(await fs.readFile(workbookPath, "utf8"), concurrentBytes);
+  const transactionDirectory = path.join(
+    target,
+    ".product-ops",
+    "writes",
+    manifest.manifestId
+  );
+  assert.equal(
+    await fs.readFile(path.join(transactionDirectory, "before.csv"), "utf8"),
+    originalBytes
+  );
+  assert.equal(
+    await fs.readFile(`${workbookPath}.${manifest.manifestId}.before.tmp`, "utf8"),
+    originalBytes
+  );
+  await assert.rejects(
+    fs.access(path.join(transactionDirectory, "receipt.json")),
+    { code: "ENOENT" }
+  );
+  await assert.rejects(
+    fs.access(`${workbookPath}.${manifest.manifestId}.write.tmp`),
     { code: "ENOENT" }
   );
 });

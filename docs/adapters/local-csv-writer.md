@@ -16,9 +16,14 @@ The adapter enforces configured owner and writer actors, protected-field denies,
 environment policy, old-value preconditions, complete file read-back, and a zero-write replay
 check. Each manifest must use the exact canonical key fields for its sheet, row selectors cannot add
 alternate keys, and duplicate canonical IDs are rejected before mutation. Existing hard-linked
-targets are rejected. The target and receipt are staged; the target's exact approved bytes are
-rechecked immediately before atomic replacement. A concurrent pre-replacement change is preserved
-without a success receipt, while a failure after target replacement restores the original bytes.
+targets are rejected. The replacement and receipt are staged. For the target, the adapter atomically
+renames the current file to a same-directory transaction quarantine, verifies the moved bytes, and
+installs the stage with `fs.link(stage, target)`. That no-overwrite operation atomically fails with
+`EEXIST` if a concurrent actor recreated the target after verification. The concurrent target is
+not changed, no success receipt is written, and the approved original remains in the transaction
+backup and quarantine. On success the stage link and quarantine are removed, leaving a one-link
+target. Handled failures and rollback use the same no-overwrite recovery rule; a process interruption
+retains bounded recovery artifacts and later attempts fail closed rather than deleting them.
 Replay succeeds only when the validated receipt's manifest digest, plan, backup, original
 preconditions, and current target digest all match. `rollbackLocalWrite` restores the backup only
 when both backup and current post-write hashes match the receipt. It refuses rollback after

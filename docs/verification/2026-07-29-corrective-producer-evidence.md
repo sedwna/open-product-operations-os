@@ -17,8 +17,8 @@ a signed release, or release authorization.
   precondition, dry-run, read-back, replay, rollback, and actor-separation enforcement;
 - full workbook row-width, canonical unique-key, identity, placeholder-only, lifecycle, status,
   actor-attribution, active RB-12 verification, and protected-value validation;
-- rollback-safe target/receipt staging with receipt-bound replay proof and pre-replacement
-  concurrent-byte preservation;
+- same-directory target quarantine, moved-byte verification, atomic no-overwrite installation,
+  retained crash-recovery artifacts, and receipt-bound replay proof;
 - complete bounded-target text and binary inventory with explicit `.git` and `node_modules`
   exclusions and both byte alignments of UTF-16LE/UTF-16BE canary decoding;
 - LF and canonical evidence hash contract;
@@ -35,7 +35,7 @@ Environment: Microsoft Windows NT 10.0.26200.0, Node.js 25.9.0, npm 11.12.1.
 
 | Command or control | Result |
 | --- | --- |
-| `npm run check` | PASS: syntax, 38 tests, and portability |
+| `npm run check` | PASS: syntax, 39 tests, and portability |
 | `npm run smoke` | PASS: clean init, validate, stable re-init, 13 roles, 23 tabs |
 | `npm run supply-chain` | PASS: audit zero vulnerabilities, seven dependency licenses, CycloneDX SBOM with seven components |
 | `node ./src/cli.js --help` | PASS |
@@ -43,7 +43,7 @@ Environment: Microsoft Windows NT 10.0.26200.0, Node.js 25.9.0, npm 11.12.1.
 | `npm run packed:check` | PASS: installed tarball passes tests, smoke, portability, license, and SBOM checks |
 | `git diff --check` | PASS |
 | focused negative controls | PASS: links/junctions/hard-link race, config and row preservation, malformed/duplicate canonical records, placeholder controls, RB-12 enforcement, inactive/extra roles, protected values, collapsed actors, unsafe manifest, both UTF-16 alignments, and whole-tree canaries |
-| controlled local writer | PASS: dry-run plan hash, exact canonical-key/precondition checks, injected concurrent-mutation preservation with no receipt, complete read-back, validated-receipt replay, post-mutation failure recovery, and guarded rollback |
+| controlled local writer | PASS: dry-run plan hash, exact canonical-key/precondition checks, injected mutation both before quarantine and after moved-byte verification, atomic `EEXIST` preservation with no receipt, complete read-back, validated-receipt replay, one-link cleanup, post-install recovery, guarded rollback, and rollback replay |
 
 ## Remaining external gates
 

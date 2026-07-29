@@ -98,85 +98,80 @@ export async function applyLocalWrite(
   assertValidReceipt(receipt, "Generated write receipt");
 
   await prepareWritePaths(absoluteRoot, paths);
-  let targetReplaced = false;
   try {
-    await fs.writeFile(paths.backupPath, plan.before, {
-      encoding: "utf8",
-      flag: "wx"
-    });
-    await stageText(absoluteRoot, paths.targetStagePath, after, "Write target stage");
-    await transactionObserver({
-      phase: "before-target-replace",
-      manifestId: manifest.manifestId
-    });
-    await assertNoLinkTraversal(
+    await writeExclusiveText(
       absoluteRoot,
-      paths.targetStagePath,
-      "Write target stage"
-    );
-    await assertNoHardLinkedFile(paths.targetStagePath, "Write target stage");
-    if ((await fs.readFile(paths.targetStagePath, "utf8")) !== after) {
-      throw new Error("Write target stage changed before atomic replacement.");
-    }
-    await assertTargetUnchanged(
-      absoluteRoot,
-      paths.targetPath,
+      paths.backupPath,
       plan.before,
-      "Write target"
+      "Write backup"
     );
-    await fs.rename(paths.targetStagePath, paths.targetPath);
-    targetReplaced = true;
-    await transactionObserver({
-      phase: "target-replaced",
-      manifestId: manifest.manifestId
-    });
+    await stageText(absoluteRoot, paths.targetStagePath, after, "Write target stage");
+    await atomicNoOverwriteReplace(absoluteRoot, {
+      destination: paths.targetPath,
+      stagePath: paths.targetStagePath,
+      quarantinePath: paths.targetQuarantinePath,
+      displacedPath: paths.displacedTargetPath,
+      expectedCurrent: plan.before,
+      replacement: after,
+      label: "Write target",
+      transactionObserver,
+      manifestId: manifest.manifestId,
+      afterInstall: async () => {
+        await transactionObserver({
+          phase: "target-replaced",
+          manifestId: manifest.manifestId
+        });
 
-    const readBack = await fs.readFile(paths.targetPath, "utf8");
-    const secondRead = await fs.readFile(paths.targetPath, "utf8");
-    if (readBack !== after || secondRead !== after) {
-      throw new Error("Full-record read-back did not match the applied local write.");
-    }
+        const readBack = await fs.readFile(paths.targetPath, "utf8");
+        const secondRead = await fs.readFile(paths.targetPath, "utf8");
+        if (readBack !== after || secondRead !== after) {
+          throw new Error(
+            "Full-record read-back did not match the applied local write."
+          );
+        }
+        if ((await fs.readFile(paths.backupPath, "utf8")) !== plan.before) {
+          throw new Error("Write backup changed before receipt commit.");
+        }
+        await assertNoHardLinkedFile(paths.backupPath, "Write backup");
 
-    await stageText(
-      absoluteRoot,
-      paths.receiptStagePath,
-      `${JSON.stringify(receipt, null, 2)}\n`,
-      "Write receipt stage"
-    );
-    await fs.rename(paths.receiptStagePath, paths.receiptPath);
-  } catch (error) {
-    let rollbackError;
-    if (targetReplaced) {
-      try {
-        await atomicReplace(
+        await stageText(
           absoluteRoot,
-          paths.targetPath,
-          plan.before,
-          paths.rollbackStagePath,
-          "Failed-write rollback"
+          paths.receiptStagePath,
+          `${JSON.stringify(receipt, null, 2)}\n`,
+          "Write receipt stage"
         );
-      } catch (caught) {
-        rollbackError = caught;
+        await installStageNoOverwrite(
+          absoluteRoot,
+          paths.receiptStagePath,
+          paths.receiptPath,
+          "Write receipt"
+        );
       }
-    }
+    });
+    await cleanupCommittedQuarantine(
+      absoluteRoot,
+      paths.targetQuarantinePath,
+      plan.before,
+      "Write target quarantine"
+    );
+  } catch (error) {
     await cleanupStages(paths);
-    if (!targetReplaced) {
-      await fs.rm(paths.backupPath, { force: true });
+    if (error.transactionRecovery?.status === "retained") {
       throw new Error(
-        `Controlled write aborted before replacement; target bytes were not modified: ${error.message}`,
+        `Controlled write aborted without overwriting concurrent target bytes; the approved original is retained at "${paths.backupRelativePath}": ${error.message}`,
         { cause: error }
       );
     }
-    if (!rollbackError) {
-      await fs.rm(paths.backupPath, { force: true });
-      throw new Error(
-        `Controlled write failed and the original target was restored: ${error.message}`,
-        { cause: error }
+    if (error.transactionRecovery?.status === "failed") {
+      throw new AggregateError(
+        [error, error.transactionRecovery.error],
+        `Controlled write failed and automatic recovery could not safely restore the target; recovery artifacts remain beside the target and at "${paths.backupRelativePath}".`
       );
     }
-    throw new AggregateError(
-      [error, rollbackError],
-      `Controlled write failed and automatic rollback also failed; recovery backup remains at "${paths.backupRelativePath}".`
+    await fs.rm(paths.backupPath, { force: true });
+    throw new Error(
+      `Controlled write failed and the pre-transaction target was preserved: ${error.message}`,
+      { cause: error }
     );
   }
 
@@ -189,7 +184,8 @@ export async function rollbackLocalWrite(root, receiptRelativePath) {
   const receiptPath = resolveInside(absoluteRoot, safeReceipt, "Receipt path");
   await assertNoLinkTraversal(absoluteRoot, receiptPath, "Receipt path");
   await assertNoHardLinkedFile(receiptPath, "Receipt path");
-  const receipt = JSON.parse(await fs.readFile(receiptPath, "utf8"));
+  const receiptText = await fs.readFile(receiptPath, "utf8");
+  const receipt = JSON.parse(receiptText);
   assertValidReceipt(receipt, "Rollback receipt");
   if (receipt.rolledBack) {
     return { ...receipt, rollbackReplay: true };
@@ -217,34 +213,70 @@ export async function rollbackLocalWrite(root, receiptRelativePath) {
   assertValidReceipt(updated, "Rollback receipt");
   const suffix = safeManifestId(receipt.manifestId);
   const targetStage = `${targetPath}.${suffix}.rollback.tmp`;
+  const targetQuarantine = `${targetPath}.${suffix}.rollback-current.tmp`;
+  const displacedTarget = `${targetPath}.${suffix}.rollback-displaced.tmp`;
   const receiptStage = `${receiptPath}.${suffix}.rollback.tmp`;
-  let targetReplaced = false;
   try {
-    await stageText(absoluteRoot, receiptStage, `${JSON.stringify(updated, null, 2)}\n`, "Rollback receipt stage");
-    await atomicReplace(
+    for (const [candidate, label] of [
+      [targetStage, "Rollback target stage"],
+      [targetQuarantine, "Rollback target quarantine"],
+      [displacedTarget, "Rollback displaced target"],
+      [receiptStage, "Rollback receipt stage"]
+    ]) {
+      await assertNoLinkTraversal(absoluteRoot, candidate, label);
+      await assertAbsent(candidate, label);
+    }
+    await stageText(absoluteRoot, targetStage, backup, "Rollback target stage");
+    await atomicNoOverwriteReplace(absoluteRoot, {
+      destination: targetPath,
+      stagePath: targetStage,
+      quarantinePath: targetQuarantine,
+      displacedPath: displacedTarget,
+      expectedCurrent: current,
+      replacement: backup,
+      label: "Rollback target",
+      transactionObserver: async () => {},
+      manifestId: receipt.manifestId,
+      afterInstall: async () => {
+        if (sha256(await fs.readFile(targetPath)) !== receipt.beforeSha256) {
+          throw new Error("Rollback read-back did not match the original content.");
+        }
+        await stageText(
+          absoluteRoot,
+          receiptStage,
+          `${JSON.stringify(updated, null, 2)}\n`,
+          "Rollback receipt stage"
+        );
+        await replaceReceipt(
+          absoluteRoot,
+          receiptPath,
+          receiptStage,
+          receiptText,
+          "Rollback receipt"
+        );
+      }
+    });
+    await cleanupCommittedQuarantine(
       absoluteRoot,
-      targetPath,
-      backup,
-      targetStage,
-      "Rollback target"
+      targetQuarantine,
+      current,
+      "Rollback target quarantine"
     );
-    targetReplaced = true;
-    if (sha256(await fs.readFile(targetPath)) !== receipt.beforeSha256) {
-      throw new Error("Rollback read-back did not match the original content.");
-    }
-    await fs.rename(receiptStage, receiptPath);
   } catch (error) {
-    if (targetReplaced) {
-      await atomicReplace(
-        absoluteRoot,
-        targetPath,
-        current,
-        targetStage,
-        "Rollback transaction recovery"
-      );
-    }
     await fs.rm(receiptStage, { force: true });
     await fs.rm(targetStage, { force: true });
+    if (error.transactionRecovery?.status === "retained") {
+      throw new Error(
+        `Rollback aborted without overwriting concurrent target bytes; the pre-rollback target remains at "${targetQuarantine}": ${error.message}`,
+        { cause: error }
+      );
+    }
+    if (error.transactionRecovery?.status === "failed") {
+      throw new AggregateError(
+        [error, error.transactionRecovery.error],
+        "Rollback failed and automatic transaction recovery also failed; recovery artifacts were retained."
+      );
+    }
     throw error;
   }
   return updated;
@@ -396,6 +428,12 @@ async function validateReplay(root, manifest, manifestSha256, receipt, paths) {
   ) {
     throw new Error("Replay refused because the receipt does not prove the original preconditions and result.");
   }
+  await cleanupCommittedQuarantine(
+    root,
+    paths.targetQuarantinePath,
+    before,
+    "Replay target quarantine"
+  );
 }
 
 function writePaths(root, manifest) {
@@ -413,8 +451,9 @@ function writePaths(root, manifest) {
     receiptPath,
     targetPath,
     targetStagePath: `${targetPath}.${suffix}.write.tmp`,
-    receiptStagePath: `${receiptPath}.${suffix}.write.tmp`,
-    rollbackStagePath: `${targetPath}.${suffix}.recovery.tmp`
+    targetQuarantinePath: `${targetPath}.${suffix}.before.tmp`,
+    displacedTargetPath: `${targetPath}.${suffix}.displaced.tmp`,
+    receiptStagePath: `${receiptPath}.${suffix}.write.tmp`
   };
 }
 
@@ -424,6 +463,8 @@ async function prepareWritePaths(root, paths) {
     [paths.receiptPath, "Write receipt"],
     [paths.targetPath, "Write target"],
     [paths.targetStagePath, "Write target stage"],
+    [paths.targetQuarantinePath, "Write target quarantine"],
+    [paths.displacedTargetPath, "Write displaced target"],
     [paths.receiptStagePath, "Write receipt stage"]
   ]) {
     await assertNoLinkTraversal(root, candidate, label);
@@ -434,6 +475,8 @@ async function prepareWritePaths(root, paths) {
   await assertAbsent(paths.backupPath, "Write backup");
   await assertAbsent(paths.receiptPath, "Write receipt");
   await assertAbsent(paths.targetStagePath, "Write target stage");
+  await assertAbsent(paths.targetQuarantinePath, "Write target quarantine");
+  await assertAbsent(paths.displacedTargetPath, "Write displaced target");
   await assertAbsent(paths.receiptStagePath, "Write receipt stage");
 }
 
@@ -455,16 +498,6 @@ async function assertWritableExistingFile(root, file, label) {
   await assertNoHardLinkedFile(file, label);
 }
 
-async function assertTargetUnchanged(root, file, expected, label) {
-  await assertWritableExistingFile(root, file, label);
-  const current = await fs.readFile(file, "utf8");
-  if (sha256(current) !== sha256(expected) || current !== expected) {
-    throw new Error(
-      `${label} changed after the approved dry-run plan; concurrent bytes were preserved.`
-    );
-  }
-}
-
 async function assertAbsent(file, label) {
   try {
     await fs.lstat(file);
@@ -480,24 +513,285 @@ async function assertAbsent(file, label) {
 async function stageText(root, stagePath, content, label) {
   await assertNoLinkTraversal(root, stagePath, label);
   await assertAbsent(stagePath, label);
-  await fs.writeFile(stagePath, content, { encoding: "utf8", flag: "wx" });
-  if ((await fs.readFile(stagePath, "utf8")) !== content) {
+  await writeExclusiveText(root, stagePath, content, label);
+}
+
+async function writeExclusiveText(root, file, content, label) {
+  await assertNoLinkTraversal(root, file, label);
+  await fs.writeFile(file, content, { encoding: "utf8", flag: "wx" });
+  await assertNoLinkTraversal(root, file, label);
+  await assertNoHardLinkedFile(file, label);
+  if ((await fs.readFile(file, "utf8")) !== content) {
     throw new Error(`${label} read-back did not match.`);
   }
 }
 
-async function atomicReplace(root, destination, content, stagePath, label) {
-  await assertWritableExistingFile(root, destination, label);
-  await stageText(root, stagePath, content, `${label} stage`);
-  await assertNoHardLinkedFile(destination, label);
-  await fs.rename(stagePath, destination);
+async function atomicNoOverwriteReplace(
+  root,
+  {
+    destination,
+    stagePath,
+    quarantinePath,
+    displacedPath,
+    expectedCurrent,
+    replacement,
+    label,
+    transactionObserver,
+    manifestId,
+    afterInstall
+  }
+) {
+  let quarantined = false;
+  let installed = false;
+  try {
+    const destinationDirectory = path.dirname(destination);
+    for (const [candidate, candidateLabel] of [
+      [stagePath, `${label} stage`],
+      [quarantinePath, `${label} quarantine`],
+      [displacedPath, `${label} displaced recovery`]
+    ]) {
+      if (path.dirname(candidate) !== destinationDirectory) {
+        throw new Error(
+          `${candidateLabel} must be in the same directory as its destination.`
+        );
+      }
+    }
+    await transactionObserver({
+      phase: "before-target-replace",
+      manifestId
+    });
+    await assertStageIntegrity(root, stagePath, replacement, `${label} stage`);
+    await assertWritableExistingFile(root, destination, label);
+    await assertAbsent(quarantinePath, `${label} quarantine`);
+    await assertAbsent(displacedPath, `${label} displaced recovery`);
+    await fs.rename(destination, quarantinePath);
+    quarantined = true;
+
+    await assertNoLinkTraversal(root, quarantinePath, `${label} quarantine`);
+    await assertNoHardLinkedFile(quarantinePath, `${label} quarantine`);
+    const movedCurrent = await fs.readFile(quarantinePath, "utf8");
+    if (
+      sha256(movedCurrent) !== sha256(expectedCurrent) ||
+      movedCurrent !== expectedCurrent
+    ) {
+      throw new Error(
+        `${label} changed before atomic quarantine; the moved concurrent bytes will be preserved.`
+      );
+    }
+
+    await transactionObserver({
+      phase: "after-target-quarantine-verified",
+      manifestId
+    });
+    await assertStageIntegrity(root, stagePath, replacement, `${label} stage`);
+    try {
+      await installStageNoOverwrite(root, stagePath, destination, label);
+      installed = true;
+    } catch (error) {
+      installed = error.destinationLinked === true;
+      throw error;
+    }
+    await afterInstall();
+    return;
+  } catch (error) {
+    error.transactionRecovery = await recoverAtomicReplacement(root, {
+      destination,
+      quarantinePath,
+      displacedPath,
+      replacement,
+      quarantined,
+      installed
+    });
+    throw error;
+  }
+}
+
+async function assertStageIntegrity(root, stagePath, expected, label) {
+  await assertNoLinkTraversal(root, stagePath, label);
+  await assertNoHardLinkedFile(stagePath, label);
+  if ((await fs.readFile(stagePath, "utf8")) !== expected) {
+    throw new Error(`${label} changed before no-overwrite installation.`);
+  }
+}
+
+async function installStageNoOverwrite(
+  root,
+  stagePath,
+  destination,
+  label
+) {
+  await assertNoLinkTraversal(root, path.dirname(destination), `${label} parent`);
+  let destinationLinked = false;
+  try {
+    await fs.link(stagePath, destination);
+    destinationLinked = true;
+    await fs.unlink(stagePath);
+    await assertNoLinkTraversal(root, destination, label);
+    await assertNoHardLinkedFile(destination, label);
+  } catch (error) {
+    error.destinationLinked = destinationLinked;
+    if (error.code === "EEXIST") {
+      throw new Error(
+        `${label} was recreated concurrently; no-overwrite installation refused to replace it.`,
+        { cause: error }
+      );
+    }
+    throw error;
+  }
+}
+
+async function recoverAtomicReplacement(
+  root,
+  {
+    destination,
+    quarantinePath,
+    displacedPath,
+    replacement,
+    quarantined,
+    installed
+  }
+) {
+  if (!quarantined) {
+    return { status: "restored" };
+  }
+  if (!installed) {
+    return restoreRetainedPath(root, quarantinePath, destination);
+  }
+
+  let destinationStat;
+  try {
+    destinationStat = await fs.lstat(destination);
+  } catch (error) {
+    if (error.code !== "ENOENT") {
+      return { status: "failed", error };
+    }
+  }
+  if (!destinationStat) {
+    return restoreRetainedPath(root, quarantinePath, destination);
+  }
+  if (!destinationStat.isFile()) {
+    return { status: "retained" };
+  }
+
+  try {
+    await assertNoLinkTraversal(
+      root,
+      path.dirname(destination),
+      "Transaction recovery target parent"
+    );
+    await assertAbsent(displacedPath, "Transaction displaced recovery");
+    await fs.rename(destination, displacedPath);
+  } catch (error) {
+    return { status: "failed", error };
+  }
+
+  let displaced;
+  try {
+    displaced = await fs.readFile(displacedPath, "utf8");
+  } catch (error) {
+    const concurrentRecovery = await restoreRetainedPath(
+      root,
+      displacedPath,
+      destination
+    );
+    return concurrentRecovery.status === "restored"
+      ? { status: "retained" }
+      : concurrentRecovery;
+  }
+
+  if (displaced === replacement) {
+    const originalRecovery = await restoreRetainedPath(
+      root,
+      quarantinePath,
+      destination
+    );
+    if (originalRecovery.status === "restored") {
+      await fs.rm(displacedPath, { force: true });
+      return { status: "restored" };
+    }
+    await fs.rm(displacedPath, { force: true });
+    return originalRecovery;
+  }
+
+  const concurrentRecovery = await restoreRetainedPath(
+    root,
+    displacedPath,
+    destination
+  );
+  return concurrentRecovery.status === "restored"
+    ? { status: "retained" }
+    : concurrentRecovery;
+}
+
+async function restoreRetainedPath(root, source, destination) {
+  try {
+    await assertNoLinkTraversal(
+      root,
+      path.dirname(source),
+      "Transaction recovery source parent"
+    );
+    await assertNoLinkTraversal(
+      root,
+      path.dirname(destination),
+      "Transaction recovery target parent"
+    );
+    await fs.link(source, destination);
+    await fs.unlink(source);
+    return { status: "restored" };
+  } catch (error) {
+    if (error.code === "EEXIST") {
+      return { status: "retained" };
+    }
+    return { status: "failed", error };
+  }
+}
+
+async function replaceReceipt(root, receiptPath, receiptStage, current, label) {
+  const quarantinePath = `${receiptPath}.rollback-current.tmp`;
+  const displacedPath = `${receiptPath}.rollback-displaced.tmp`;
+  await assertAbsent(quarantinePath, `${label} quarantine`);
+  await assertAbsent(displacedPath, `${label} displaced recovery`);
+  await atomicNoOverwriteReplace(root, {
+    destination: receiptPath,
+    stagePath: receiptStage,
+    quarantinePath,
+    displacedPath,
+    expectedCurrent: current,
+    replacement: await fs.readFile(receiptStage, "utf8"),
+    label,
+    transactionObserver: async () => {},
+    manifestId: "receipt-rollback",
+    afterInstall: async () => {}
+  });
+  await cleanupCommittedQuarantine(
+    root,
+    quarantinePath,
+    current,
+    `${label} quarantine`
+  );
+}
+
+async function cleanupCommittedQuarantine(root, file, expected, label) {
+  try {
+    await assertNoLinkTraversal(root, file, label);
+    await assertNoHardLinkedFile(file, label);
+    if ((await fs.readFile(file, "utf8")) !== expected) {
+      return false;
+    }
+    await fs.rm(file);
+    return true;
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return true;
+    }
+    return false;
+  }
 }
 
 async function cleanupStages(paths) {
   await Promise.all([
     fs.rm(paths.targetStagePath, { force: true }),
-    fs.rm(paths.receiptStagePath, { force: true }),
-    fs.rm(paths.rollbackStagePath, { force: true })
+    fs.rm(paths.receiptStagePath, { force: true })
   ]);
 }
 
