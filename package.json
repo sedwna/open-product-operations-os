@@ -1,0 +1,23 @@
+{
+  "name": "open-product-operations-os",
+  "version": "0.1.0",
+  "description": "Vendor-neutral Product Operations OS project initializer and validator",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": {
+    "product-ops": "./src/cli.js"
+  },
+  "files": [
+    "src",
+    "schemas"
+  ],
+  "scripts": {
+    "test": "node --test",
+    "test:coverage": "node --test --experimental-test-coverage",
+    "check": "node --check src/cli.js && npm test",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

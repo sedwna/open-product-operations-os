@@ -1,0 +1,259 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Product Operations Project Configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "project",
+    "agents",
+    "ownership",
+    "routing",
+    "taskIds",
+    "statuses",
+    "workbook",
+    "adapters"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "string",
+      "const": "1.0.0"
+    },
+    "project": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "name", "vision", "targetUsers", "environments"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "vision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "targetUsers": {
+          "$ref": "#/$defs/nonEmptyStringArray"
+        },
+        "environments": {
+          "$ref": "#/$defs/nonEmptyStringArray"
+        }
+      }
+    },
+    "agents": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/agent"
+      }
+    },
+    "ownership": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["artifact", "owner"],
+        "properties": {
+          "artifact": {
+            "type": "string",
+            "minLength": 1
+          },
+          "owner": {
+            "type": "string",
+            "minLength": 2
+          }
+        }
+      }
+    },
+    "routing": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["event", "owner", "reviewers", "output"],
+        "properties": {
+          "event": {
+            "type": "string",
+            "minLength": 1
+          },
+          "owner": {
+            "type": "string",
+            "minLength": 2
+          },
+          "reviewers": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 2
+            }
+          },
+          "output": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "taskIds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["prefix", "pattern"],
+      "properties": {
+        "prefix": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9]{1,7}$"
+        },
+        "pattern": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "statuses": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "description", "terminal", "transitions"],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
+          },
+          "terminal": {
+            "type": "boolean"
+          },
+          "transitions": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        }
+      }
+    },
+    "workbook": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sheets"],
+      "properties": {
+        "sheets": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "file", "owner", "columns"],
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "file": {
+                "type": "string",
+                "pattern": "^workbook/(?!.*\\.\\.)[^/].*\\.csv$"
+              },
+              "owner": {
+                "type": "string",
+                "minLength": 2
+              },
+              "columns": {
+                "$ref": "#/$defs/nonEmptyStringArray"
+              }
+            }
+          }
+        }
+      }
+    },
+    "adapters": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["development", "git", "spreadsheet"],
+      "properties": {
+        "development": {
+          "$ref": "#/$defs/adapter"
+        },
+        "git": {
+          "$ref": "#/$defs/adapter"
+        },
+        "spreadsheet": {
+          "$ref": "#/$defs/adapter"
+        }
+      }
+    }
+  },
+  "$defs": {
+    "nonEmptyStringArray": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1
+      }
+    },
+    "agent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "name",
+        "role",
+        "responsibilities",
+        "lifecycle"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[A-Z][A-Z0-9_-]{1,31}$"
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "responsibilities": {
+          "$ref": "#/$defs/nonEmptyStringArray"
+        },
+        "lifecycle": {
+          "enum": ["active", "inactive", "proposed"]
+        }
+      }
+    },
+    "adapter": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "enabled", "file"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "file": {
+          "type": "string",
+          "pattern": "^adapters/(?!.*\\.\\.)[^/].*\\.json$"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,2 @@
+idea_id,event_id,submitted_at,submitted_by,problem_or_opportunity,target_user,expected_outcome,source_reference,status,priority,triage_owner_role,duplicate_of,discovery_id,decision_id,notes
+<IDEA_ID>,<EVENT_ID>,<ISO-8601>,<ACTOR_OR_CHANNEL>,<STATEMENT>,<SYNTHETIC_ROLE>,<OUTCOME>,<NON_SECRET_REFERENCE>,<statuses.idea>,<statuses.priority>,RB-02,,,,

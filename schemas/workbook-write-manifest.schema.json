@@ -1,0 +1,83 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Workbook Write Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "manifestId",
+    "workbook",
+    "actor",
+    "writes",
+    "preconditions",
+    "createdAt"
+  ],
+  "properties": {
+    "manifestId": {
+      "type": "string",
+      "minLength": 3
+    },
+    "workbook": {
+      "type": "string",
+      "minLength": 1
+    },
+    "actor": {
+      "type": "string",
+      "minLength": 2
+    },
+    "writes": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sheet", "rowId", "fields"],
+        "properties": {
+          "sheet": {
+            "type": "string",
+            "minLength": 1
+          },
+          "rowId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "fields": {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": {
+              "type": ["string", "number", "integer", "boolean", "null"]
+            }
+          }
+        }
+      }
+    },
+    "preconditions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sheet", "rowId", "field", "equals"],
+        "properties": {
+          "sheet": {
+            "type": "string",
+            "minLength": 1
+          },
+          "rowId": {
+            "type": "string",
+            "minLength": 1
+          },
+          "field": {
+            "type": "string",
+            "minLength": 1
+          },
+          "equals": {
+            "type": ["string", "number", "integer", "boolean", "null"]
+          }
+        }
+      }
+    },
+    "createdAt": {
+      "type": "string",
+      "format": "date-time"
+    }
+  }
+}

@@ -1,0 +1,36 @@
+catalog_reference: ../config/operating-model.yaml
+write_manifest_id: "<identifier_patterns.write_manifest>"
+event_id: "<EVENT_ID>"
+status: "<statuses.write_manifest>"
+semantic_owner_role: "<ROLE_KEY>"
+semantic_owner_actor_id: "<ACTOR_ID>"
+authorized_by_actor_id: "<HUMAN_OR_DELEGATED_AUTHORITY>"
+authorized_at: "<ISO-8601>"
+writer_role: RB-10
+writer_actor_id: "<ACTOR_ID>"
+target_system_alias: "<NON_SECRET_ALIAS>"
+target_environment: "<local|test|staging|production>"
+human_production_authorization_id: "<ID_OR_NOT_APPLICABLE>"
+secret_store_aliases: ["<store://approved-store/alias OR none>"]
+
+scope:
+  record_or_tab: "<CATALOG_TAB_NAME_OR_RECORD_TYPE>"
+  key_fields: ["<FIELD>"]
+  allowed_fields: ["<FIELD>"]
+  prohibited_fields: ["<FIELD>"]
+  rows:
+    - key: {"<KEY_FIELD>": "<EXPECTED_VALUE>"}
+      preconditions: {"<FIELD>": "<EXPECTED_OLD_VALUE>"}
+      changes: {"<FIELD>": "<NEW_VALUE>"}
+
+controls:
+  smallest_bounded_range: "<RANGE_OR_RECORD_SET>"
+  full_record_readback_required: true
+  second_read_path: "<METHOD_OR_NOT_AVAILABLE_WITH_REASON>"
+  idempotent_replay_must_write_zero: true
+  rollback_plan: "<EXACT_REVERSAL_OR_COMPENSATING_ACTION>"
+  refuse_if_environment_ambiguous: true
+  refuse_if_precondition_mismatch: true
+  secret_values_forbidden_in_manifest: true
+
+expected_receipt_id: "<identifier_patterns.write_receipt>"

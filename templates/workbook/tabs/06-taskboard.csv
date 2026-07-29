@@ -1,0 +1,2 @@
+task_id,event_id,title,owner_role,owner_actor_id,status,priority,dependency_ids,blocked_reason,next_owner_role,unblock_condition,canonical_output_refs,evidence_refs,handoff_id,independent_verifier_role,verifier_actor_id,human_gate,due_at,updated_at
+<TASK_ID>,<EVENT_ID>,<OUTCOME>,<ROLE_KEY>,<ACTOR_ID>,<statuses.task>,<statuses.priority>,<ID_LIST>,,<ROLE_KEY_OR_NONE>,,<PATH_LIST>,<ID_LIST>,,RB-12,<DISTINCT_ACTOR_ID>,<GATE_OR_NONE>,<ISO-8601>,<ISO-8601>

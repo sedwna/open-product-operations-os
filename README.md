@@ -27,6 +27,11 @@ Public API stability: Not guaranteed
 Recommended use: Evaluation and pilot projects
 ```
 
+## License
+
+Open Product Operations OS is available under the
+[Apache License 2.0](LICENSE).
+
 ## Start here
 
 Read:
@@ -35,6 +40,8 @@ Read:
 2. [Architecture overview](docs/architecture/overview.md)
 3. [Event lifecycle](docs/architecture/event-lifecycle.md)
 4. [Security model](docs/security-model.md)
+5. [Public release gates](docs/publication-gates.md)
+6. [Clean-room extraction policy](docs/migration/clean-room-extraction.md)
 
 ## Core promise
 
@@ -80,4 +87,3 @@ The stable release will provide:
 The public package is generalized from a real multi-agent Product Operations system. Product-
 specific names, IDs, credentials, URLs, screenshots, customer data, and proprietary decisions are
 excluded from this repository.
-

@@ -1,0 +1,114 @@
+catalog_version: 1
+catalog_authority: templates/config/operating-model.yaml
+customization_note: Replace project placeholders and assignments; preserve stable keys after use.
+
+project:
+  key: "<PROJECT_KEY>"
+  name: "<PRODUCT_NAME>"
+  timezone: "UTC"
+  canonical_repository: "<REPOSITORY_REFERENCE>"
+  development_adapter: "<ADAPTER_REFERENCE>"
+  live_workbook_reference: "<NON_SECRET_WORKBOOK_ALIAS>"
+
+identifier_patterns:
+  event: "EVT-{YYYYMMDD}-{NNN}"
+  idea: "IDEA-{YYYYMMDD}-{NNN}"
+  discovery: "DSC-{YYYYMMDD}-{NNN}"
+  decision: "DEC-{YYYYMMDD}-{NNN}"
+  task: "TASK-{ROLE_KEY}-{YYYYMMDD}-{NNN}"
+  handoff: "HOF-{YYYYMMDD}-{NNN}"
+  issue: "ISS-{YYYYMMDD}-{NNN}"
+  ticket: "TKT-{YYYYMMDD}-{NNN}"
+  validation_plan: "VPL-{YYYYMMDD}-{NNN}"
+  validation_scenario: "VSC-{YYYYMMDD}-{NNN}"
+  validation_run: "VRN-{YYYYMMDD}-{NNN}"
+  validation_result: "VRS-{YYYYMMDD}-{NNN}"
+  evidence_manifest: "EVD-{YYYYMMDD}-{NNN}"
+  human_observation: "HOB-{YYYYMMDD}-{NNN}"
+  qc_record: "QCV-{YYYYMMDD}-{NNN}"
+  readiness: "RDY-{YYYYMMDD}-{NNN}"
+  release: "REL-{YYYYMMDD}-{NNN}"
+  write_manifest: "WFM-{YYYYMMDD}-{NNN}"
+  write_receipt: "WRC-{YYYYMMDD}-{NNN}"
+
+roles:
+  RB-01: { boundary: control_coordination, lifecycle: active }
+  RB-02: { boundary: idea_decision, lifecycle: active }
+  RB-03: { boundary: discovery_research, lifecycle: active }
+  RB-04: { boundary: topology_journeys, lifecycle: active }
+  RB-05: { boundary: issue_lifecycle, lifecycle: active }
+  RB-06: { boundary: delivery_contract, lifecycle: active }
+  RB-07: { boundary: validation_design, lifecycle: active }
+  RB-08: { boundary: risk_logic_audit, lifecycle: active }
+  RB-09: { boundary: qa_execution_evidence, lifecycle: active }
+  RB-10: { boundary: workbook_integrity_controlled_write, lifecycle: active }
+  RB-11: { boundary: readiness_release, lifecycle: active }
+  RB-12: { boundary: independent_verification, lifecycle: active }
+  RB-13: { boundary: development_adapter, lifecycle: active }
+
+statuses:
+  role_lifecycle: [proposed, active, suspended, retired]
+  event: [draft, authorized, active, blocked, verifying, closed, cancelled, superseded]
+  task: [backlog, ready, in_progress, blocked, in_review, done, cancelled]
+  idea: [inbox, triage, discovery, decided, archived]
+  discovery: [draft, active, blocked, complete, superseded]
+  decision: [draft, pending_human, approved, rejected, deferred, superseded]
+  issue: [open, needs_decision, ready_for_delivery, in_delivery, needs_validation, validated, closed, wont_fix]
+  ticket: [draft, ready, in_progress, blocked, implementation_complete, validation_failed, accepted, released, cancelled]
+  validation_plan: [draft, in_review, approved, run_ready, blocked, complete, superseded]
+  validation_scenario: [draft, ready, blocked, retired]
+  validation_run: [planned, running, blocked, completed, aborted]
+  validation_result: [pass, fail, inconclusive, not_run]
+  qc: [pass, evidence_gap, control_failure, live_propagation_failure, human_decision_required]
+  human_observation: [required, scheduled, accepted, rejected, waived_by_human]
+  readiness: [not_ready, conditionally_ready, ready, released]
+  release: [planned, approved, in_progress, completed, rolled_back, cancelled]
+  write_manifest: [draft, authorized, applied, failed, rolled_back]
+  write_receipt: [pending_readback, verified, mismatch, replay_verified, rollback_verified]
+  evidence_item: [expected, captured, unavailable, invalidated]
+  priority: [P0, P1, P2, P3]
+  risk: [low, medium, high, critical]
+
+human_gates:
+  - product_direction_or_priority
+  - risk_acceptance
+  - production_write
+  - destructive_or_irreversible_action
+  - real_money_or_provider_operation
+  - credential_or_sensitive_access_change
+  - governance_or_role_lifecycle_change
+  - final_user_visible_acceptance
+
+workbook_tabs:
+  config: "Config"
+  status_catalog: "Status Catalog"
+  role_registry: "Role Registry"
+  ownership: "Ownership"
+  events: "Events"
+  taskboard: "Taskboard"
+  idea_inbox: "Idea Inbox"
+  discovery: "Discovery"
+  decision_log: "Decision Log"
+  issues: "Issues"
+  delivery_tickets: "Delivery Tickets"
+  validation_plans: "Validation Plans"
+  validation_scenarios: "Validation Scenarios"
+  validation_runs: "Validation Runs"
+  validation_results: "Validation Results"
+  evidence: "Evidence"
+  human_observations: "Human Observations"
+  qc_log: "QC Log"
+  readiness: "Readiness"
+  releases: "Releases"
+  writer_manifests: "Writer Manifests"
+  writer_receipts: "Writer Receipts"
+  lineage: "Lineage"
+
+guardrails:
+  producer_may_self_verify: false
+  secret_values_allowed_in_repository: false
+  result_without_execution_allowed: false
+  live_write_without_manifest_allowed: false
+  live_write_without_readback_allowed: false
+  historical_record_mutation_allowed: false
+  secret_reference_format: "store://<approved-store>/<alias>"

@@ -1,0 +1,12 @@
+Fictional local-demo validation observation
+run_id=VRN-20260729-001
+workspace=pine-demo-01
+initial_day=Monday
+saved_day=Friday
+unsupported_day=Sunday
+unsupported_day_disposition=rejected
+final_day=Friday
+cleanup_day=Monday
+external_calls=0
+secret_values=0
+personal_records=0

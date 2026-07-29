@@ -1,0 +1,36 @@
+catalog_reference: ../config/operating-model.yaml
+evidence_manifest_id: "<identifier_patterns.evidence_manifest>"
+event_id: "<EVENT_ID>"
+run_id: "<VALIDATION_RUN_ID>"
+producer_role: RB-09
+producer_actor_id: "<ACTOR_ID>"
+captured_at: "<ISO-8601>"
+environment_alias: "<NON_SECRET_ALIAS>"
+implementation_reference: "<REFERENCE>"
+contains_sensitive_material: false
+redaction_method: "<METHOD_OR_NONE>"
+
+items:
+  - evidence_item_id: "<EVIDENCE_ITEM_ID>"
+    status: "<statuses.evidence_item>"
+    claim_or_step_ids: ["<ID>"]
+    artifact_type: "<log|screenshot|video|response|query|diff|report>"
+    canonical_path: "<RELATIVE_PATH>"
+    capture_method: "<REPRODUCIBLE_METHOD>"
+    captured_at: "<ISO-8601>"
+    media_type: "<MEDIA_TYPE>"
+    byte_length: "<INTEGER>"
+    sha256: "<LOWERCASE_HEX>"
+    decisive: true
+    limitation: "<NONE_OR_DESCRIPTION>"
+
+integrity:
+  manifest_sha256: "<CALCULATE_AFTER_FINALIZATION>"
+  all_paths_relative: true
+  secret_scan_passed: true
+  personal_data_scan_passed: true
+
+verification:
+  verifier_role: RB-12
+  verifier_actor_id: "<MUST_DIFFER_FROM_PRODUCER>"
+  qc_record_id: "<QC_RECORD_ID_OR_PENDING>"

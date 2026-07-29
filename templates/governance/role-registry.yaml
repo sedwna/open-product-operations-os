@@ -1,0 +1,97 @@
+catalog_reference: ../config/operating-model.yaml
+registry_version: 1
+assignment_rule: Actors are configurable; stable role keys and authority boundaries are canonical.
+separation_rule: A producer and independent verifier for one claim must be different actors.
+
+roles:
+  - role_key: RB-01
+    boundary: control_coordination
+    purpose: Route events, manage dependencies, recover blocked work, and consolidate human reports.
+    may: [create_owner_tasks, sequence_dependencies, request_human_decisions, close_governed_events]
+    must_not: [take_over_specialist_meaning, certify_owned_coordination_claims, authorize_human_gates]
+    assigned_actor_id: "<ACTOR_ID>"
+    backup_actor_id: "<ACTOR_ID_OR_NONE>"
+  - role_key: RB-02
+    boundary: idea_decision
+    purpose: Structure ideas and decision briefs without making human product decisions.
+    may: [triage_ideas, prepare_decision_briefs, maintain_decision_log]
+    must_not: [approve_product_direction, invent_research, self_verify_decisions]
+    assigned_actor_id: "<ACTOR_ID>"
+    backup_actor_id: "<ACTOR_ID_OR_NONE>"
+  - role_key: RB-03
+    boundary: discovery_research
+    purpose: Plan and synthesize research with traceable sources and explicit uncertainty.
+    may: [author_discovery, record_findings, identify_unknowns]
+    must_not: [fabricate_participants, treat_assumptions_as_findings, approve_direction]
+    assigned_actor_id: "<ACTOR_ID>"
+    backup_actor_id: "<ACTOR_ID_OR_NONE>"
+  - role_key: RB-04
+    boundary: topology_journeys
+    purpose: Own product-area, role, capability, and journey semantics and impacts.
+    may: [maintain_topology, maintain_journeys, author_impact_maps]
+    must_not: [claim_implementation, execute_qa, self_verify_topology_changes]
+    assigned_actor_id: "<ACTOR_ID>"
+    backup_actor_id: "<ACTOR_ID_OR_NONE>"
+  - role_key: RB-05
+    boundary: issue_lifecycle
+    purpose: Normalize findings into deduplicated, prioritized issue contracts.
+    may: [triage_issues, deduplicate_findings, manage_issue_status]
+    must_not: [invent_delivery_completion, bypass_decisions, close_without_evidence]
+    assigned_actor_id: "<ACTOR_ID>"
+    backup_actor_id: "<ACTOR_ID_OR_NONE>"
+  - role_key: RB-06
+    boundary: delivery_contract
+    purpose: Translate approved intent into testable, bounded delivery tickets.
+    may: [author_acceptance_criteria, define_write_boundaries, create_delivery_handoffs]
+    must_not: [approve_own_scope, claim_code_completion, execute_independent_qa]
+    assigned_actor_id: "<ACTOR_ID>"
+    backup_actor_id: "<ACTOR_ID_OR_NONE>"
+  - role_key: RB-07
+    boundary: validation_design
+    purpose: Define plans, scenarios, data needs, expected outcomes, and evidence contracts.
+    may: [author_validation_plans, author_scenarios, declare_run_readiness]
+    must_not: [manufacture_results, execute_and_independently_verify_same_run, accept_product_risk]
+    assigned_actor_id: "<ACTOR_ID>"
+    backup_actor_id: "<ACTOR_ID_OR_NONE>"
+  - role_key: RB-08
+    boundary: risk_logic_audit
+    purpose: Challenge assumptions, edge cases, safety, consistency, and control design.
+    may: [audit_logic, raise_risks, request_corrective_tasks]
+    must_not: [rewrite_owner_artifacts_silently, accept_risk, certify_own_corrections]
+    assigned_actor_id: "<ACTOR_ID>"
+    backup_actor_id: "<ACTOR_ID_OR_NONE>"
+  - role_key: RB-09
+    boundary: qa_execution_evidence
+    purpose: Execute approved scenarios and capture reproducible evidence and factual results.
+    may: [execute_runs, capture_evidence, author_run_results]
+    must_not: [change_expected_outcomes_during_run, self_verify_results, invent_unexecuted_results]
+    assigned_actor_id: "<ACTOR_ID>"
+    backup_actor_id: "<ACTOR_ID_OR_NONE>"
+  - role_key: RB-10
+    boundary: workbook_integrity_controlled_write
+    purpose: Apply authorized manifests and prove complete, idempotent read-back.
+    may: [validate_manifests, perform_bounded_writes, emit_receipts, run_integrity_checks]
+    must_not: [author_semantic_changes, expose_secret_values, self_verify_writer_control_design]
+    assigned_actor_id: "<ACTOR_ID>"
+    backup_actor_id: "<ACTOR_ID_OR_NONE>"
+  - role_key: RB-11
+    boundary: readiness_release
+    purpose: Calculate readiness, assemble release records, and route release gates.
+    may: [assess_readiness, assemble_release_record, coordinate_rollback_readiness]
+    must_not: [waive_human_gates, invent_deployment_state, self_verify_release_claims]
+    assigned_actor_id: "<ACTOR_ID>"
+    backup_actor_id: "<ACTOR_ID_OR_NONE>"
+  - role_key: RB-12
+    boundary: independent_verification
+    purpose: Reproduce material claims and issue controlled dispositions.
+    may: [inspect_canonical_state, reproduce_evidence, compare_live_readback, issue_qc_disposition]
+    must_not: [edit_producer_artifacts_under_review, verify_own_output, hide_evidence_gaps]
+    assigned_actor_id: "<ACTOR_ID>"
+    backup_actor_id: "<ACTOR_ID_OR_NONE>"
+  - role_key: RB-13
+    boundary: development_adapter
+    purpose: Exchange approved delivery contracts and factual implementation signals with development.
+    may: [submit_delivery_contracts, receive_implementation_references, map_development_status]
+    must_not: [invent_development_notes, grant_product_acceptance, disclose_development_secrets]
+    assigned_actor_id: "<ACTOR_ID>"
+    backup_actor_id: "<ACTOR_ID_OR_NONE>"
