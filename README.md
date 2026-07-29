@@ -43,6 +43,25 @@ Read:
 5. [Public release gates](docs/publication-gates.md)
 6. [Clean-room extraction policy](docs/migration/clean-room-extraction.md)
 
+## Quick start
+
+Node.js 20 or newer is required. From this repository:
+
+```text
+node ./src/cli.js init ./my-product --dry-run
+node ./src/cli.js init ./my-product
+node ./src/cli.js validate ./my-product
+```
+
+To regenerate only the workbook templates:
+
+```text
+node ./src/cli.js generate-workbook ./my-product
+```
+
+The dry run reports the planned writes without changing the target directory. Existing generated
+files are preserved unless the explicit `--force` option is used.
+
 ## Core promise
 
 Every material product claim should be reconstructable as:
@@ -59,9 +78,9 @@ source event
 
 If one link is missing, the work is not silently treated as complete.
 
-## What this repository will generate
+## What this repository generates
 
-The stable release will provide:
+The current initializer provides:
 
 - a configurable agent registry;
 - governance, ownership, routing, and communication contracts;
@@ -73,6 +92,9 @@ The stable release will provide:
 - a project initializer and integrity validator;
 - spreadsheet, Git, and development-agent adapter contracts;
 - a complete example project.
+
+The project is still a foundation release: generated formats and public interfaces may change
+before the first stable release.
 
 ## Non-goals
 

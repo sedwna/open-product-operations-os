@@ -33,7 +33,7 @@ analytics source, and release process.
 
 ## Bootstrap sequence
 
-The stable initializer will perform this sequence:
+The included initializer performs this sequence:
 
 ```text
 1. Validate the target folder and security boundary
@@ -48,8 +48,23 @@ The stable initializer will perform this sequence:
 10. Create the first discovery event
 ```
 
-Until the initializer is released, use the repository templates directly and keep all identifiers,
-statuses, roles, and tab names in one configuration source.
+From the repository root, preview and create a project with:
+
+```text
+node ./src/cli.js init ./my-product --dry-run
+node ./src/cli.js init ./my-product
+node ./src/cli.js validate ./my-product
+```
+
+Regenerate only the workbook templates with:
+
+```text
+node ./src/cli.js generate-workbook ./my-product
+```
+
+The initializer is available now, but the package remains a foundation release. Keep all
+identifiers, statuses, roles, and tab names in the generated configuration source and review
+release notes before upgrading.
 
 ## The first event
 
@@ -126,4 +141,3 @@ An event closes only when:
 - an independent role has verified the claims;
 - required human acceptance is recorded;
 - downstream readiness is recalculated.
-
