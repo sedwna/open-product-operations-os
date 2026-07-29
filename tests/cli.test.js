@@ -4,6 +4,7 @@ import path from "node:path";
 import test from "node:test";
 import { CONFIG_FILE } from "../src/constants.js";
 import { run } from "../src/cli.js";
+import { applyWrites, planWrites } from "../src/file-writer.js";
 import { captureIo, makeTempDirectory, readJson, writeJson } from "./helpers.js";
 
 test("init creates the canonical 13-role, 23-tab project and validate accepts it", async (t) => {
@@ -239,4 +240,44 @@ test("init refuses existing hard-linked scaffold without modifying its peer", as
   assert.equal(await run(["init", target, "--force"], output.io), 1);
   assert.match(output.stderr.at(-1), /hard-linked/);
   assert.equal(await fs.readFile(outside, "utf8"), before);
+});
+
+test("initializer atomic replacement cannot truncate a hard-link swapped after its final check", async (t) => {
+  const parent = await makeTempDirectory();
+  t.after(() => fs.rm(parent, { recursive: true, force: true }));
+  const target = path.join(parent, "atomic-hardlink-race");
+  const destination = path.join(target, "scaffold.txt");
+  const outside = path.join(parent, "outside.txt");
+  await fs.mkdir(target);
+  await fs.writeFile(destination, "old scaffold\n");
+  await fs.writeFile(outside, "outside bytes must survive\n");
+  const operations = await planWrites(
+    target,
+    new Map([["scaffold.txt", "new scaffold\n"]]),
+    { force: true }
+  );
+  let injected = false;
+
+  try {
+    await applyWrites(target, operations, {
+      transactionObserver: async ({ phase, relativePath }) => {
+        assert.equal(phase, "before-atomic-replace");
+        assert.equal(relativePath, "scaffold.txt");
+        await fs.rm(destination);
+        await fs.link(outside, destination);
+        injected = true;
+      }
+    });
+  } catch (error) {
+    if (["EPERM", "ENOTSUP", "EACCES"].includes(error.code)) {
+      t.skip(`hard links unavailable: ${error.code}`);
+      return;
+    }
+    throw error;
+  }
+
+  assert.equal(injected, true);
+  assert.equal(await fs.readFile(destination, "utf8"), "new scaffold\n");
+  assert.equal(await fs.readFile(outside, "utf8"), "outside bytes must survive\n");
+  assert.equal((await fs.lstat(destination)).nlink, 1);
 });

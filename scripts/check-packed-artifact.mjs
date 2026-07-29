@@ -15,7 +15,7 @@ try {
   const [pack] = JSON.parse(packResult.stdout);
   const tarball = path.join(temporary, pack.filename);
   run("tar", ["-xzf", tarball, "-C", extracted], root);
-  const packageRoot = path.join(extracted, "open-product-operations-os");
+  const packageRoot = path.join(extracted, "arbitrary-archive-directory");
   await fs.rename(path.join(extracted, "package"), packageRoot);
 
   for (const required of [
@@ -24,6 +24,7 @@ try {
     "tests/package.test.js",
     "scripts/check-licenses.mjs",
     "scripts/check-sbom.mjs",
+    "scripts/sbom-contract.mjs",
     "templates/config/operating-model.yaml"
   ]) {
     await fs.access(path.join(packageRoot, required));

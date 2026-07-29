@@ -10,6 +10,7 @@ import {
 } from "./paths.js";
 import { validatePublishedSchema } from "./schema-validation.js";
 import { validateWriteManifest } from "./validation.js";
+import { canonicalRecordKeys } from "./workbook-contract.js";
 
 export async function applyLocalWrite(
   root,
@@ -54,7 +55,12 @@ export async function applyLocalWrite(
     };
   }
 
-  const plan = await buildWritePlan(absoluteRoot, manifest);
+  const sheet = config.workbook.sheets.find(
+    (entry) =>
+      entry.file === manifest.target.file && entry.name === manifest.scope.sheet
+  );
+  const keyFields = canonicalRecordKeys(sheet.key);
+  const plan = await buildWritePlan(absoluteRoot, manifest, keyFields);
   if (dryRun) {
     return {
       dryRun: true,
@@ -99,7 +105,25 @@ export async function applyLocalWrite(
       flag: "wx"
     });
     await stageText(absoluteRoot, paths.targetStagePath, after, "Write target stage");
-    await assertNoHardLinkedFile(paths.targetPath, "Write target");
+    await transactionObserver({
+      phase: "before-target-replace",
+      manifestId: manifest.manifestId
+    });
+    await assertNoLinkTraversal(
+      absoluteRoot,
+      paths.targetStagePath,
+      "Write target stage"
+    );
+    await assertNoHardLinkedFile(paths.targetStagePath, "Write target stage");
+    if ((await fs.readFile(paths.targetStagePath, "utf8")) !== after) {
+      throw new Error("Write target stage changed before atomic replacement.");
+    }
+    await assertTargetUnchanged(
+      absoluteRoot,
+      paths.targetPath,
+      plan.before,
+      "Write target"
+    );
     await fs.rename(paths.targetStagePath, paths.targetPath);
     targetReplaced = true;
     await transactionObserver({
@@ -136,6 +160,13 @@ export async function applyLocalWrite(
       }
     }
     await cleanupStages(paths);
+    if (!targetReplaced) {
+      await fs.rm(paths.backupPath, { force: true });
+      throw new Error(
+        `Controlled write aborted before replacement; target bytes were not modified: ${error.message}`,
+        { cause: error }
+      );
+    }
     if (!rollbackError) {
       await fs.rm(paths.backupPath, { force: true });
       throw new Error(
@@ -219,13 +250,21 @@ export async function rollbackLocalWrite(root, receiptRelativePath) {
   return updated;
 }
 
-async function buildWritePlan(root, manifest) {
+async function buildWritePlan(root, manifest, keyFields) {
   const targetPath = resolveInside(root, manifest.target.file, "Write target");
   await assertWritableExistingFile(root, targetPath, "Write target");
-  return buildWritePlanFromText(manifest, await fs.readFile(targetPath, "utf8"));
+  return buildWritePlanFromText(
+    manifest,
+    await fs.readFile(targetPath, "utf8"),
+    keyFields
+  );
 }
 
-function buildWritePlanFromText(manifest, before) {
+function buildWritePlanFromText(
+  manifest,
+  before,
+  keyFields = manifest.scope.keyFields
+) {
   const rows = parseCsv(before);
   const headers = rows[0] ?? [];
   const indexes = new Map(headers.map((header, index) => [header, index]));
@@ -254,6 +293,21 @@ function buildWritePlanFromText(manifest, before) {
       throw new Error(`Write target is missing configured field "${field}".`);
     }
   }
+  const seenCanonicalKeys = new Map();
+  for (const [index, row] of rows.slice(1).entries()) {
+    const values = keyFields.map((field) => row[indexes.get(field)] ?? "");
+    const key = JSON.stringify(values);
+    if (seenCanonicalKeys.has(key)) {
+      throw new Error(
+        `Write target duplicates canonical key ${JSON.stringify(
+          Object.fromEntries(
+            keyFields.map((field, keyIndex) => [field, values[keyIndex]])
+          )
+        )} at rows ${seenCanonicalKeys.get(key)} and ${index + 2}.`
+      );
+    }
+    seenCanonicalKeys.set(key, index + 2);
+  }
 
   for (const requested of manifest.scope.rows) {
     const matchingRows = rows
@@ -261,8 +315,8 @@ function buildWritePlanFromText(manifest, before) {
       .filter(
         ({ row, index }) =>
           index > 0 &&
-          Object.entries(requested.key).every(
-            ([field, value]) => row[indexes.get(field)] === scalar(value)
+          keyFields.every(
+            (field) => row[indexes.get(field)] === scalar(requested.key[field])
           )
       );
     if (matchingRows.length !== 1) {
@@ -327,7 +381,11 @@ async function validateReplay(root, manifest, manifestSha256, receipt, paths) {
   ) {
     throw new Error("Replay refused because target or backup integrity does not match the receipt.");
   }
-  const originalPlan = buildWritePlanFromText(manifest, before);
+  const originalPlan = buildWritePlanFromText(
+    manifest,
+    before,
+    manifest.scope.keyFields
+  );
   const after = stringifyCsv(originalPlan.rows);
   if (
     originalPlan.planHash !== receipt.planHash ||
@@ -395,6 +453,16 @@ async function readOptionalReceipt(root, receiptPath) {
 async function assertWritableExistingFile(root, file, label) {
   await assertNoLinkTraversal(root, file, label);
   await assertNoHardLinkedFile(file, label);
+}
+
+async function assertTargetUnchanged(root, file, expected, label) {
+  await assertWritableExistingFile(root, file, label);
+  const current = await fs.readFile(file, "utf8");
+  if (sha256(current) !== sha256(expected) || current !== expected) {
+    throw new Error(
+      `${label} changed after the approved dry-run plan; concurrent bytes were preserved.`
+    );
+  }
 }
 
 async function assertAbsent(file, label) {

@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parseCsv, stringifyCsv } from "./csv.js";
@@ -58,7 +59,14 @@ export async function planWrites(root, files, { force = false } = {}) {
   return operations;
 }
 
-export async function applyWrites(root, operations) {
+export async function applyWrites(
+  root,
+  operations,
+  { transactionObserver = async () => {} } = {}
+) {
+  if (typeof transactionObserver !== "function") {
+    throw new Error("transactionObserver must be a function when provided.");
+  }
   for (const operation of operations) {
     if (["unchanged", "preserved"].includes(operation.action)) {
       continue;
@@ -78,14 +86,39 @@ export async function applyWrites(root, operations) {
       operation.destination,
       `Generated file "${operation.relativePath}"`
     );
-    await assertNoHardLinkedFile(
-      operation.destination,
-      `Generated file "${operation.relativePath}"`
+    const label = `Generated file "${operation.relativePath}"`;
+    await assertNoHardLinkedFile(operation.destination, label);
+    const stagePath = path.join(
+      path.dirname(operation.destination),
+      `.${path.basename(operation.destination)}.${crypto.randomUUID()}.tmp`
     );
-    await fs.writeFile(operation.destination, operation.content, {
-      encoding: "utf8",
-      flag: "w"
-    });
+    try {
+      await assertNoLinkTraversal(root, stagePath, `${label} stage`);
+      await fs.writeFile(stagePath, operation.content, {
+        encoding: "utf8",
+        flag: "wx"
+      });
+      if ((await fs.readFile(stagePath, "utf8")) !== operation.content) {
+        throw new Error(`${label} stage read-back did not match.`);
+      }
+      await assertNoLinkTraversal(root, operation.destination, label);
+      await assertNoHardLinkedFile(operation.destination, label);
+      await transactionObserver({
+        phase: "before-atomic-replace",
+        relativePath: operation.relativePath,
+        destination: operation.destination,
+        stagePath
+      });
+      await assertNoLinkTraversal(root, operation.destination, label);
+      await assertNoLinkTraversal(root, stagePath, `${label} stage`);
+      await assertNoHardLinkedFile(stagePath, `${label} stage`);
+      if ((await fs.readFile(stagePath, "utf8")) !== operation.content) {
+        throw new Error(`${label} stage changed before atomic replacement.`);
+      }
+      await fs.rename(stagePath, operation.destination);
+    } finally {
+      await fs.rm(stagePath, { force: true });
+    }
   }
 }
 

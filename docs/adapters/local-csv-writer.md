@@ -14,11 +14,15 @@ The caller must:
 
 The adapter enforces configured owner and writer actors, protected-field denies, explicit
 environment policy, old-value preconditions, complete file read-back, and a zero-write replay
-check. Existing hard-linked targets are rejected. The target and receipt are staged, and a failure
-after target replacement restores the original bytes. Replay succeeds only when the validated
-receipt's manifest digest, plan, backup, original preconditions, and current target digest all
-match. `rollbackLocalWrite` restores the backup only when both backup and current post-write hashes
-match the receipt. It refuses rollback after unrelated target changes.
+check. Each manifest must use the exact canonical key fields for its sheet, row selectors cannot add
+alternate keys, and duplicate canonical IDs are rejected before mutation. Existing hard-linked
+targets are rejected. The target and receipt are staged; the target's exact approved bytes are
+rechecked immediately before atomic replacement. A concurrent pre-replacement change is preserved
+without a success receipt, while a failure after target replacement restores the original bytes.
+Replay succeeds only when the validated receipt's manifest digest, plan, backup, original
+preconditions, and current target digest all match. `rollbackLocalWrite` restores the backup only
+when both backup and current post-write hashes match the receipt. It refuses rollback after
+unrelated target changes.
 
 This reference implementation proves local control mechanics only. It is not cross-host evidence,
 an independent QC verdict, a production authorization, or a provider writer.

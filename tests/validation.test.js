@@ -316,7 +316,7 @@ test("validate enforces workbook row widths", async (t) => {
   assert.match(output.stderr.at(-1), /has 2 cells; expected 21/);
 });
 
-test("validate scans UTF-16LE and UTF-16BE secret canaries", async (t) => {
+test("validate scans both alignments of UTF-16LE and UTF-16BE secret canaries", async (t) => {
   const { target, output } = await initializedProject(t, "utf16-canaries");
   const extra = path.join(target, "extra");
   await fs.mkdir(extra);
@@ -342,11 +342,21 @@ test("validate scans UTF-16LE and UTF-16BE secret canaries", async (t) => {
     path.join(extra, "secret-be.bin"),
     Buffer.concat([Buffer.from([0xfe, 0xff]), be])
   );
+  await fs.writeFile(
+    path.join(extra, "secret-le-odd.bin"),
+    Buffer.concat([Buffer.from([0x7f]), Buffer.from(assignedCredential, "utf16le")])
+  );
+  await fs.writeFile(
+    path.join(extra, "secret-be-odd.bin"),
+    Buffer.concat([Buffer.from([0x7f]), be])
+  );
 
   assert.equal(await run(["validate", target], output.io), 1);
   const message = output.stderr.at(-1);
   assert.match(message, /secret-le\.bin/);
   assert.match(message, /secret-be\.bin/);
+  assert.match(message, /secret-le-odd\.bin/);
+  assert.match(message, /secret-be-odd\.bin/);
 });
 
 test("local writer rejects duplicate keys and hard-linked targets", async (t) => {
@@ -363,7 +373,7 @@ test("local writer rejects duplicate keys and hard-linked targets", async (t) =>
   const manifest = buildSafeManifest(config, sheet);
   await assert.rejects(
     applyLocalWrite(target, manifest, config),
-    /exactly one requested key.*found 2/
+    /duplicates canonical key/
   );
 
   rows.pop();
@@ -434,8 +444,9 @@ test("local writer restores original bytes after a post-mutation failure", async
       dryRun: false,
       approvedPlanHash: preview.planHash,
       transactionObserver: async ({ phase }) => {
-        assert.equal(phase, "target-replaced");
-        throw new Error("injected receipt-path failure");
+        if (phase === "target-replaced") {
+          throw new Error("injected receipt-path failure");
+        }
       }
     }),
     /original target was restored/
@@ -456,6 +467,165 @@ test("local writer restores original bytes after a post-mutation failure", async
   const retry = await applyLocalWrite(target, manifest, config);
   assert.equal(retry.plannedWrites, 1);
   assert.equal(retry.replay, undefined);
+});
+
+test("local writer preserves injected concurrent bytes and emits no receipt", async (t) => {
+  const { target } = await initializedProject(t, "writer-concurrent-mutation");
+  const config = await readJson(path.join(target, CONFIG_FILE));
+  const sheet = config.workbook.sheets.find((entry) => entry.key === "delivery_tickets");
+  const workbookPath = path.join(target, sheet.file);
+  const rows = parseCsv(await fs.readFile(workbookPath, "utf8"));
+  const record = rows[0].map(() => "");
+  record[rows[0].indexOf("ticket_id")] = "TKT-20260729-001";
+  record[rows[0].indexOf("status")] = "implementation_complete";
+  rows.push(record);
+  await fs.writeFile(workbookPath, stringifyCsv(rows), "utf8");
+  const manifest = buildSafeManifest(config, sheet);
+  const preview = await applyLocalWrite(target, manifest, config);
+  const concurrentRows = parseCsv(await fs.readFile(workbookPath, "utf8"));
+  concurrentRows[2][concurrentRows[0].indexOf("status")] = "blocked";
+  const concurrentBytes = stringifyCsv(concurrentRows);
+
+  await assert.rejects(
+    applyLocalWrite(target, manifest, config, {
+      dryRun: false,
+      approvedPlanHash: preview.planHash,
+      transactionObserver: async ({ phase }) => {
+        if (phase === "before-target-replace") {
+          await fs.writeFile(workbookPath, concurrentBytes, "utf8");
+        }
+      }
+    }),
+    /changed after the approved dry-run plan|target bytes were not modified/
+  );
+  assert.equal(await fs.readFile(workbookPath, "utf8"), concurrentBytes);
+  await assert.rejects(
+    fs.access(
+      path.join(
+        target,
+        ".product-ops",
+        "writes",
+        manifest.manifestId,
+        "receipt.json"
+      )
+    ),
+    { code: "ENOENT" }
+  );
+});
+
+test("write manifests cannot replace canonical keys with arbitrary selectors", async (t) => {
+  const { target } = await initializedProject(t, "writer-canonical-keys");
+  const config = await readJson(path.join(target, CONFIG_FILE));
+  const sheet = config.workbook.sheets.find((entry) => entry.key === "delivery_tickets");
+  const workbookPath = path.join(target, sheet.file);
+  const rows = parseCsv(await fs.readFile(workbookPath, "utf8"));
+  const first = rows[0].map(() => "");
+  first[rows[0].indexOf("ticket_id")] = "TKT-20260729-001";
+  first[rows[0].indexOf("event_id")] = "EVT-20260729-001";
+  first[rows[0].indexOf("status")] = "implementation_complete";
+  const duplicate = [...first];
+  duplicate[rows[0].indexOf("event_id")] = "EVT-20260729-002";
+  rows.push(first, duplicate);
+  await fs.writeFile(workbookPath, stringifyCsv(rows), "utf8");
+  const before = await fs.readFile(workbookPath);
+  const manifest = buildSafeManifest(config, sheet);
+  manifest.scope.keyFields = ["ticket_id", "event_id"];
+  manifest.scope.rows[0].key.event_id = "EVT-20260729-001";
+
+  const errors = validateWriteManifest(manifest, config).join("\n");
+  assert.match(errors, /keyFields must exactly match the canonical key contract/);
+  assert.match(errors, /key selectors must contain exactly ticket_id/);
+  await assert.rejects(
+    applyLocalWrite(target, manifest, config),
+    /Unsafe write manifest/
+  );
+  assert.deepEqual(await fs.readFile(workbookPath), before);
+
+  const extraSelector = buildSafeManifest(config, sheet);
+  extraSelector.scope.rows[0].key.event_id = "EVT-20260729-001";
+  assert.match(
+    validateWriteManifest(extraSelector, config).join("\n"),
+    /key selectors must contain exactly ticket_id/
+  );
+});
+
+test("placeholder rows reject noncanonical IDs and real controlled values", async (t) => {
+  const { target, output } = await initializedProject(t, "placeholder-controls");
+  const config = await readJson(path.join(target, CONFIG_FILE));
+  const workbookPath = path.join(target, "workbook", "11-delivery-tickets.csv");
+  const rows = parseCsv(await fs.readFile(workbookPath, "utf8"));
+  const headers = rows[0];
+  rows[1][headers.indexOf("ticket_id")] = "<NONCANONICAL_TICKET>";
+  rows[1][headers.indexOf("status")] = "accepted";
+  rows[1][headers.indexOf("priority")] = "P1";
+  rows[1][headers.indexOf("owner_actor_id")] =
+    config.agents.find((agent) => agent.id === "RB-06").actorId;
+  rows[1][headers.indexOf("implementation_reference")] = "deploy-real-value";
+  await fs.writeFile(workbookPath, stringifyCsv(rows), "utf8");
+
+  const releasePath = path.join(target, "workbook", "20-releases.csv");
+  const releaseRows = parseCsv(await fs.readFile(releasePath, "utf8"));
+  const releaseHeaders = releaseRows[0];
+  releaseRows[1][releaseHeaders.indexOf("status")] = "planned";
+  releaseRows[1][releaseHeaders.indexOf("target_environment")] = "production";
+  releaseRows[1][releaseHeaders.indexOf("human_authorization_id")] = "HUMAN-REAL";
+  releaseRows[1][releaseHeaders.indexOf("deployment_reference")] = "deploy-real";
+  await fs.writeFile(releasePath, stringifyCsv(releaseRows), "utf8");
+
+  assert.equal(await run(["validate", target], output.io), 1);
+  const message = output.stderr.at(-1);
+  assert.match(message, /non-canonical placeholder record key/);
+  assert.match(message, /placeholder record may not carry real controlled value in "status"/);
+  assert.match(message, /placeholder record may not carry real controlled value in "priority"/);
+  assert.match(message, /placeholder record may not carry real controlled value in "owner_actor_id"/);
+  assert.match(
+    message,
+    /placeholder record may not carry real controlled value in "implementation_reference"/
+  );
+  assert.match(
+    message,
+    /placeholder record may not carry real controlled value in "target_environment"/
+  );
+  assert.match(
+    message,
+    /placeholder record may not carry real controlled value in "human_authorization_id"/
+  );
+  assert.match(
+    message,
+    /placeholder record may not carry real controlled value in "deployment_reference"/
+  );
+});
+
+test("controlled verification rows require RB-12 and prevent design-owner self-verification", async (t) => {
+  const { target, output } = await initializedProject(t, "verifier-controls");
+  const config = await readJson(path.join(target, CONFIG_FILE));
+  const workbookPath = path.join(target, "workbook", "12-validation-plans.csv");
+  const rows = parseCsv(await fs.readFile(workbookPath, "utf8"));
+  const headers = rows[0];
+  const actor = (role) => config.agents.find((agent) => agent.id === role).actorId;
+  const rb08 = [...rows[1]];
+  rb08[headers.indexOf("plan_id")] = "VPL-20260729-001";
+  rb08[headers.indexOf("status")] = "draft";
+  rb08[headers.indexOf("risk")] = "low";
+  rb08[headers.indexOf("environment_alias")] = "local";
+  rb08[headers.indexOf("design_owner_actor_id")] = actor("RB-07");
+  rb08[headers.indexOf("verifier_role")] = "RB-08";
+  rb08[headers.indexOf("verifier_actor_id")] = actor("RB-08");
+  const selfVerified = [...rb08];
+  selfVerified[headers.indexOf("plan_id")] = "VPL-20260729-002";
+  selfVerified[headers.indexOf("verifier_role")] = "RB-07";
+  selfVerified[headers.indexOf("verifier_actor_id")] = actor("RB-07");
+  rows.splice(1, 1, rb08, selfVerified);
+  await fs.writeFile(workbookPath, stringifyCsv(rows), "utf8");
+
+  assert.equal(await run(["validate", target], output.io), 1);
+  const message = output.stderr.at(-1);
+  assert.match(message, /verifier_role.*active independent verifier "RB-12"/);
+  assert.match(message, /verifier actor must be the configured actor for "RB-12"/);
+  assert.match(
+    message,
+    /producer and verifier actors must be different.*design_owner_actor_id/
+  );
 });
 
 test("config rejects inactive mandatory verifier and extra roles", async (t) => {

@@ -66,7 +66,9 @@ scaffold, but it never deletes workbook or taskboard rows. Operational CSVs reta
 newly required columns are appended with blank values. A valid existing
 `product-ops.config.json`, including human authority, actor assignments, environments, and bounded
 workbook extensions, is retained byte-for-byte. If authority assignments change, migrate affected
-operational rows explicitly before expecting validation to pass.
+operational rows explicitly before expecting validation to pass. Changed scaffold is created in a
+same-directory stage and atomically renamed into place; existing hard-linked destinations are
+rejected, and a hard-link swap cannot cause the initializer to truncate the linked peer.
 
 ## Core promise
 
@@ -100,17 +102,18 @@ The current initializer creates:
 - disabled Git and development-agent adapter contracts;
 - a disabled local-CSV adapter plus an executable safe local writer library requiring dry-run plan
   approval, owner authorization, preconditions, complete read-back, zero-write replay, and
-  hash-guarded rollback. Existing hard-linked targets are rejected, failed transactions restore the
-  original bytes, and replay requires a matching validated receipt and backup;
+  hash-guarded rollback. Existing hard-linked targets are rejected, the target is rechecked against
+  the approved bytes immediately before atomic replacement, failed post-replacement transactions
+  restore the original bytes, and replay requires a matching validated receipt and backup;
 - a synthetic example project.
 
-`templates/config/operating-model.yaml` is the single role, tab, field-authority, environment, and
-scan-policy catalog used by the initializer. Each generated project receives a byte-for-byte
+`templates/config/operating-model.yaml` is the single role, tab, record-key, field-authority,
+environment, and scan-policy catalog used by the initializer. Each generated project receives a byte-for-byte
 snapshot at `config/operating-model.yaml`. Validation scans the whole bounded target tree,
 including binary inventory and UTF-8/Latin-1/UTF-16LE/UTF-16BE canaries, except for the explicit
 `.git` and `node_modules` directory exclusions. Workbook validation checks row widths, record-key
-uniqueness, canonical identities and statuses, actor/role assignments, producer/verifier
-separation, environments, and protected values.
+uniqueness, canonical identities and placeholder rows, canonical statuses, actor/role assignments,
+mandatory RB-12 verification, producer/verifier separation, environments, and protected values.
 
 The project is still a foundation release: generated formats and public interfaces may change
 before the first stable release.

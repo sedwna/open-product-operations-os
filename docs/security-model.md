@@ -34,6 +34,11 @@ Committed fixtures may contain public test constants only when all of these are 
 
 ## Controlled writes
 
+Initializer and workbook scaffold updates are written to exclusive same-directory stages and
+atomically renamed into place after containment checks. Existing hard-linked destinations are
+rejected. If a destination is swapped to a hard link after the final link-count check, rename
+replaces the directory entry without truncating the linked peer.
+
 A live writer must:
 
 1. accept only an owner-authorized manifest;
@@ -47,10 +52,12 @@ A live writer must:
 
 The packaged local CSV writer is deliberately limited to configured files inside the generated
 project. It requires the exact hash from a preceding dry run, writes an integrity-checked backup
-and receipt, rejects hard-linked targets, restores original bytes after a failed transaction,
-performs complete read-back, and accepts replay only with a matching validated receipt and original
-preconditions. It refuses rollback if the target changed after the write. It does not connect to a
-provider or production system.
+and receipt, rejects hard-linked targets, requires each sheet's canonical record key, rejects
+duplicate canonical keys, and rechecks the exact target bytes immediately before atomic
+replacement. A pre-replacement conflict preserves the concurrent bytes and emits no receipt; a
+post-replacement failure restores the original bytes. Replay is accepted only with a matching
+validated receipt and original preconditions. Rollback is refused if the target changed after the
+write. The implementation does not connect to a provider or production system.
 
 ## Validation scan boundary
 

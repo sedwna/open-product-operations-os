@@ -80,29 +80,29 @@ human_gates:
   - final_user_visible_acceptance
 
 workbook_tabs:
-  config: { name: "Config", file: "01-config.csv", owner: RB-01 }
-  status_catalog: { name: "Status Catalog", file: "02-status-catalog.csv", owner: RB-01 }
-  role_registry: { name: "Role Registry", file: "03-role-registry.csv", owner: RB-01 }
-  ownership: { name: "Ownership", file: "04-ownership.csv", owner: RB-01 }
-  events: { name: "Events", file: "05-events.csv", owner: RB-01 }
-  taskboard: { name: "Taskboard", file: "06-taskboard.csv", owner: RB-01 }
-  idea_inbox: { name: "Idea Inbox", file: "07-idea-inbox.csv", owner: RB-02 }
-  discovery: { name: "Discovery", file: "08-discovery.csv", owner: RB-03 }
-  decision_log: { name: "Decision Log", file: "09-decision-log.csv", owner: RB-02 }
-  issues: { name: "Issues", file: "10-issues.csv", owner: RB-05 }
-  delivery_tickets: { name: "Delivery Tickets", file: "11-delivery-tickets.csv", owner: RB-06 }
-  validation_plans: { name: "Validation Plans", file: "12-validation-plans.csv", owner: RB-07 }
-  validation_scenarios: { name: "Validation Scenarios", file: "13-validation-scenarios.csv", owner: RB-07 }
-  validation_runs: { name: "Validation Runs", file: "14-validation-runs.csv", owner: RB-09 }
-  validation_results: { name: "Validation Results", file: "15-validation-results.csv", owner: RB-09 }
-  evidence: { name: "Evidence", file: "16-evidence.csv", owner: RB-09 }
-  human_observations: { name: "Human Observations", file: "17-human-observations.csv", owner: RB-09 }
-  qc_log: { name: "QC Log", file: "18-qc-log.csv", owner: RB-12 }
-  readiness: { name: "Readiness", file: "19-readiness.csv", owner: RB-11 }
-  releases: { name: "Releases", file: "20-releases.csv", owner: RB-11 }
-  writer_manifests: { name: "Writer Manifests", file: "21-writer-manifests.csv", owner: RB-10 }
-  writer_receipts: { name: "Writer Receipts", file: "22-writer-receipts.csv", owner: RB-10 }
-  lineage: { name: "Lineage", file: "23-lineage.csv", owner: RB-01 }
+  config: { name: "Config", file: "01-config.csv", owner: RB-01, key_fields: [config_key] }
+  status_catalog: { name: "Status Catalog", file: "02-status-catalog.csv", owner: RB-01, key_fields: [status_family, status_value] }
+  role_registry: { name: "Role Registry", file: "03-role-registry.csv", owner: RB-01, key_fields: [role_key] }
+  ownership: { name: "Ownership", file: "04-ownership.csv", owner: RB-01, key_fields: [artifact_type] }
+  events: { name: "Events", file: "05-events.csv", owner: RB-01, key_fields: [event_id] }
+  taskboard: { name: "Taskboard", file: "06-taskboard.csv", owner: RB-01, key_fields: [task_id] }
+  idea_inbox: { name: "Idea Inbox", file: "07-idea-inbox.csv", owner: RB-02, key_fields: [idea_id] }
+  discovery: { name: "Discovery", file: "08-discovery.csv", owner: RB-03, key_fields: [discovery_id] }
+  decision_log: { name: "Decision Log", file: "09-decision-log.csv", owner: RB-02, key_fields: [decision_id] }
+  issues: { name: "Issues", file: "10-issues.csv", owner: RB-05, key_fields: [issue_id] }
+  delivery_tickets: { name: "Delivery Tickets", file: "11-delivery-tickets.csv", owner: RB-06, key_fields: [ticket_id] }
+  validation_plans: { name: "Validation Plans", file: "12-validation-plans.csv", owner: RB-07, key_fields: [plan_id] }
+  validation_scenarios: { name: "Validation Scenarios", file: "13-validation-scenarios.csv", owner: RB-07, key_fields: [scenario_id] }
+  validation_runs: { name: "Validation Runs", file: "14-validation-runs.csv", owner: RB-09, key_fields: [run_id] }
+  validation_results: { name: "Validation Results", file: "15-validation-results.csv", owner: RB-09, key_fields: [result_id] }
+  evidence: { name: "Evidence", file: "16-evidence.csv", owner: RB-09, key_fields: [evidence_item_id] }
+  human_observations: { name: "Human Observations", file: "17-human-observations.csv", owner: RB-09, key_fields: [observation_id] }
+  qc_log: { name: "QC Log", file: "18-qc-log.csv", owner: RB-12, key_fields: [qc_record_id] }
+  readiness: { name: "Readiness", file: "19-readiness.csv", owner: RB-11, key_fields: [readiness_id] }
+  releases: { name: "Releases", file: "20-releases.csv", owner: RB-11, key_fields: [release_id] }
+  writer_manifests: { name: "Writer Manifests", file: "21-writer-manifests.csv", owner: RB-10, key_fields: [write_manifest_id] }
+  writer_receipts: { name: "Writer Receipts", file: "22-writer-receipts.csv", owner: RB-10, key_fields: [write_receipt_id] }
+  lineage: { name: "Lineage", file: "23-lineage.csv", owner: RB-01, key_fields: [lineage_edge_id] }
 
 field_authority:
   protected_development_fields:

@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
+import fs from "node:fs";
+import { normalizeSbomRoot } from "./sbom-contract.mjs";
 
 const npmCli = process.env.npm_execpath;
 const command = npmCli ? process.execPath : process.platform === "win32" ? "npm.cmd" : "npm";
@@ -16,9 +18,25 @@ if (result.status !== 0) {
   );
 }
 
-const sbom = JSON.parse(result.stdout);
+const packageMetadata = JSON.parse(fs.readFileSync("package.json", "utf8"));
+const sbom = normalizeSbomRoot(JSON.parse(result.stdout), packageMetadata);
 assert.equal(sbom.bomFormat, "CycloneDX");
-assert.equal(sbom.metadata?.component?.name, "open-product-operations-os");
+assert.equal(sbom.metadata.component.name, packageMetadata.name);
+assert.equal(sbom.metadata.component.version, packageMetadata.version);
+assert.equal(
+  sbom.metadata.component["bom-ref"],
+  `${packageMetadata.name}@${packageMetadata.version}`
+);
+assert.equal(
+  sbom.metadata.component.purl,
+  `pkg:npm/${packageMetadata.name}@${packageMetadata.version}`
+);
+assert.ok(
+  sbom.dependencies.some(
+    (dependency) =>
+      dependency.ref === `${packageMetadata.name}@${packageMetadata.version}`
+  )
+);
 assert.ok(Array.isArray(sbom.components));
 assert.ok(sbom.components.length >= 3);
 for (const component of sbom.components) {

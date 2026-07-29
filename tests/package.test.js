@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { normalizeSbomRoot } from "../scripts/sbom-contract.mjs";
 
 const repositoryRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -34,6 +35,7 @@ test("npm package contains promised public templates, examples, docs, and metada
     "START-HERE.md",
     ".gitattributes",
     "npm-shrinkwrap.json",
+    "scripts/sbom-contract.mjs",
     "src/cli.js",
     "src/local-writer.js",
     "schemas/workbook-write-manifest.schema.json",
@@ -72,5 +74,43 @@ test("npm package contains promised public templates, examples, docs, and metada
     if (error.code !== "ENOENT") {
       throw error;
     }
+  }
+});
+
+test("SBOM root identity is invariant across clone and archive directory names", () => {
+  const packageMetadata = {
+    name: "open-product-operations-os",
+    version: "0.1.0"
+  };
+  for (const directoryName of [
+    "open-product-operations-os",
+    "arbitrary-source-archive",
+    "package"
+  ]) {
+    const priorReference = `${directoryName}@0.1.0`;
+    const normalized = normalizeSbomRoot(
+      {
+        bomFormat: "CycloneDX",
+        metadata: {
+          component: {
+            "bom-ref": priorReference,
+            name: directoryName,
+            version: "0.1.0",
+            purl: `pkg:npm/${directoryName}@0.1.0`
+          }
+        },
+        dependencies: [{ ref: priorReference, dependsOn: ["ajv@8.20.0"] }]
+      },
+      packageMetadata
+    );
+    assert.equal(normalized.metadata.component.name, packageMetadata.name);
+    assert.equal(
+      normalized.metadata.component["bom-ref"],
+      "open-product-operations-os@0.1.0"
+    );
+    assert.equal(
+      normalized.dependencies[0].ref,
+      "open-product-operations-os@0.1.0"
+    );
   }
 });

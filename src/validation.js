@@ -13,11 +13,13 @@ import { parseCsv, rowsToObjects } from "./csv.js";
 import {
   canonicalCatalog,
   getCanonicalRoles,
+  getCanonicalWorkbookSheets,
   readPackagedTemplate
 } from "./catalog.js";
 import { buildGovernance, buildProjectFiles, buildRegistry } from "./generator.js";
 import { assertNoLinkTraversal, resolveInside, toPosixPath } from "./paths.js";
 import { validatePublishedSchema } from "./schema-validation.js";
+import { CANONICAL_RECORD_KEYS, canonicalRecordKeys } from "./workbook-contract.js";
 
 const SECRET_PATTERNS = [
   { name: "private key", expression: /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/ },
@@ -39,32 +41,6 @@ const PRIVATE_PATH_PATTERNS = [
   /\/Users\/(?!Shared\/)[^/\s]+\//,
   /\/home\/[^/\s]+\//
 ];
-
-const RECORD_KEYS = {
-  config: ["config_key"],
-  status_catalog: ["status_family", "status_value"],
-  role_registry: ["role_key"],
-  ownership: ["artifact_type"],
-  events: ["event_id"],
-  taskboard: ["task_id"],
-  idea_inbox: ["idea_id"],
-  discovery: ["discovery_id"],
-  decision_log: ["decision_id"],
-  issues: ["issue_id"],
-  delivery_tickets: ["ticket_id"],
-  validation_plans: ["plan_id"],
-  validation_scenarios: ["scenario_id"],
-  validation_runs: ["run_id"],
-  validation_results: ["result_id"],
-  evidence: ["evidence_item_id"],
-  human_observations: ["observation_id"],
-  qc_log: ["qc_record_id"],
-  readiness: ["readiness_id"],
-  releases: ["release_id"],
-  writer_manifests: ["write_manifest_id"],
-  writer_receipts: ["write_receipt_id"],
-  lineage: ["lineage_edge_id"]
-};
 
 const RECORD_ID_PATTERNS = {
   events: /^EVT-[0-9]{8}-[0-9]{3}$/,
@@ -120,6 +96,31 @@ const ROLE_ACTOR_PAIRS = [
   ["writer_role", "writer_actor_id"],
   ["semantic_owner_role", "semantic_owner_actor_id"]
 ];
+
+const PRODUCER_ACTOR_FIELDS = [
+  "producer_actor_id",
+  "owner_actor_id",
+  "design_owner_actor_id",
+  "executor_actor_id",
+  "writer_actor_id",
+  "semantic_owner_actor_id"
+];
+
+const CANONICAL_PLACEHOLDER_KEYS = new Map(
+  getCanonicalWorkbookSheets().map((sheet) => {
+    const keyFields = canonicalRecordKeys(sheet.key);
+    const parsed = rowsToObjects(parseCsv(sheet.template));
+    return [
+      sheet.key,
+      new Set(
+        parsed.records
+          .map((record) => keyFields.map((field) => record[field]?.trim() ?? ""))
+          .filter((parts) => parts.some(isPlaceholder))
+          .map((parts) => JSON.stringify(parts))
+      )
+    ];
+  })
+);
 
 export async function validateProject(target, config) {
   const errors = [];
@@ -296,6 +297,22 @@ export function validateWriteManifest(manifest, config, relativePath = "write ma
   const columns = new Set(sheet.columns);
   const allowed = new Set(manifest.scope.allowedFields);
   const prohibited = new Set(manifest.scope.prohibitedFields);
+  let canonicalKeyFields = [];
+  try {
+    canonicalKeyFields = canonicalRecordKeys(sheet.key);
+  } catch (error) {
+    errors.push(`${relativePath} ${error.message}`);
+  }
+  if (
+    canonicalKeyFields.length > 0 &&
+    !sameArray(manifest.scope.keyFields, canonicalKeyFields)
+  ) {
+    errors.push(
+      `${relativePath} keyFields must exactly match the canonical key contract for "${sheet.name}": ${canonicalKeyFields.join(
+        ", "
+      )}.`
+    );
+  }
   const protectedFields = new Set([
     ...config.fieldAuthority.protectedDevelopmentFields,
     ...config.fieldAuthority.protectedHumanFields
@@ -315,6 +332,9 @@ export function validateWriteManifest(manifest, config, relativePath = "write ma
     if (prohibited.has(field)) {
       errors.push(`${relativePath} field "${field}" is both allowed and prohibited.`);
     }
+    if (canonicalKeyFields.includes(field)) {
+      errors.push(`${relativePath} may not allow canonical key field "${field}".`);
+    }
   }
   for (const field of sheet.columns.filter((column) => protectedFields.has(column))) {
     if (!prohibited.has(field)) {
@@ -324,10 +344,16 @@ export function validateWriteManifest(manifest, config, relativePath = "write ma
 
   for (const [index, row] of manifest.scope.rows.entries()) {
     const label = `${relativePath} row ${index + 1}`;
-    for (const keyField of manifest.scope.keyFields) {
-      if (!(keyField in row.key)) {
-        errors.push(`${label} is missing key field "${keyField}".`);
-      }
+    const rowKeyFields = Object.keys(row.key);
+    if (
+      canonicalKeyFields.length > 0 &&
+      !sameSet(rowKeyFields, canonicalKeyFields)
+    ) {
+      errors.push(
+        `${label} key selectors must contain exactly ${canonicalKeyFields.join(
+          ", "
+        )}.`
+      );
     }
     for (const field of Object.keys(row.changes)) {
       if (!allowed.has(field) || prohibited.has(field) || protectedFields.has(field)) {
@@ -408,6 +434,14 @@ function validateTaskboard(text, config, errors) {
       errors.push(`${label} references unknown verifier role.`);
     }
     if (
+      task.independent_verifier_role !==
+      config.separation.independentVerifierRole
+    ) {
+      errors.push(
+        `${label} verifier role must be the active independent verifier "${config.separation.independentVerifierRole}".`
+      );
+    }
+    if (
       task.verifier_actor_id !== actorByRole.get(task.independent_verifier_role) ||
       task.verifier_actor_id === task.owner_actor_id
     ) {
@@ -446,7 +480,7 @@ function validateWorkbook(sheet, text, config, errors) {
     return;
   }
 
-  const keyFields = RECORD_KEYS[sheet.key] ?? [sheet.columns[0]];
+  const keyFields = CANONICAL_RECORD_KEYS[sheet.key] ?? [sheet.columns[0]];
   const seenKeys = new Set();
   const actorByRole = new Map(config.agents.map((agent) => [agent.id, agent.actorId]));
   const roles = new Set(actorByRole.keys());
@@ -470,6 +504,17 @@ function validateWorkbook(sheet, text, config, errors) {
     }
 
     const identity = keyParts[0];
+    const placeholderKeyParts = keyParts.filter(isPlaceholder);
+    if (placeholderKeyParts.length > 0) {
+      if (placeholderKeyParts.length !== keyParts.length) {
+        errors.push(`${label} mixes placeholder and real canonical key values.`);
+      } else if (
+        !CANONICAL_PLACEHOLDER_KEYS.get(sheet.key)?.has(JSON.stringify(keyParts))
+      ) {
+        errors.push(`${label} uses a non-canonical placeholder record key.`);
+      }
+      validatePlaceholderRecord(record, label, sheet, config, errors);
+    }
     if (
       idPattern &&
       identity &&
@@ -503,7 +548,7 @@ function validateWorkbook(sheet, text, config, errors) {
 
     if (!isPlaceholder(identity)) {
       validateRecordRoles(record, label, roles, actorByRole, errors);
-      validateRecordSeparation(record, label, errors);
+      validateRecordSeparation(record, label, config, actorByRole, errors);
       validateRecordEnvironment(record, label, config, errors);
       validateProtectedRecordFields(record, label, sheet, config, errors);
     }
@@ -607,27 +652,78 @@ function validateRecordRoles(record, label, roles, actorByRole, errors) {
   }
 }
 
-function validateRecordSeparation(record, label, errors) {
-  if (!("producer_actor_id" in record) || !("verifier_actor_id" in record)) {
-    return;
-  }
-  const producer = record.producer_actor_id?.trim();
+function validateRecordSeparation(
+  record,
+  label,
+  config,
+  actorByRole,
+  errors
+) {
   const verifier = record.verifier_actor_id?.trim();
-  if (
-    (!producer || !verifier) &&
-    !isPlaceholder(Object.values(record)[0])
-  ) {
-    errors.push(`${label} requires assigned producer and verifier actors.`);
+  if ("verifier_actor_id" in record) {
+    const requiredRole = config.separation.independentVerifierRole;
+    const requiredActor = actorByRole.get(requiredRole);
+    for (const roleField of ["verifier_role", "independent_verifier_role"]) {
+      if (
+        roleField in record &&
+        record[roleField]?.trim() !== requiredRole
+      ) {
+        errors.push(
+          `${label} field "${roleField}" must assign the active independent verifier "${requiredRole}".`
+        );
+      }
+    }
+    if (!verifier || verifier !== requiredActor) {
+      errors.push(
+        `${label} verifier actor must be the configured actor for "${requiredRole}".`
+      );
+    }
+  }
+
+  if (!verifier || isPlaceholder(verifier)) {
     return;
   }
-  if (
-    producer &&
-    verifier &&
-    !isPlaceholder(producer) &&
-    !isPlaceholder(verifier) &&
-    producer === verifier
-  ) {
-    errors.push(`${label} producer and verifier actors must be different.`);
+  for (const producerField of PRODUCER_ACTOR_FIELDS) {
+    const producer = record[producerField]?.trim();
+    if (producer && !isPlaceholder(producer) && producer === verifier) {
+      errors.push(
+        `${label} producer and verifier actors must be different (producer field "${producerField}").`
+      );
+    }
+  }
+}
+
+function validatePlaceholderRecord(record, label, sheet, config, errors) {
+  const statusField = STATUS_FIELDS[sheet.key]?.[0];
+  const controlledFields = new Set([
+    statusField,
+    "environment_alias",
+    "target_environment",
+    "authorized_by_actor_id",
+    ...config.fieldAuthority.protectedDevelopmentFields,
+    ...config.fieldAuthority.protectedHumanFields
+  ]);
+  for (const field of Object.keys(record)) {
+    if (
+      field.endsWith("_actor_id") ||
+      field.startsWith("human_") ||
+      field.includes("environment") ||
+      field.includes("deployment") ||
+      /(?:^|_)(?:status|disposition|priority|risk|lifecycle)$/.test(field)
+    ) {
+      controlledFields.add(field);
+    }
+  }
+  for (const field of controlledFields) {
+    if (!field) {
+      continue;
+    }
+    const value = record[field]?.trim();
+    if (value && !isPlaceholder(value)) {
+      errors.push(
+        `${label} placeholder record may not carry real controlled value in "${field}".`
+      );
+    }
   }
 }
 
@@ -775,16 +871,23 @@ function searchableText(buffer) {
     buffer.toString("latin1"),
     buffer.toString("utf8")
   ];
-  if (buffer.length >= 2) {
-    const evenLength = buffer.length - (buffer.length % 2);
-    const paired = Buffer.from(buffer.subarray(0, evenLength));
-    representations.push(paired.toString("utf16le"));
-    for (let index = 0; index < paired.length; index += 2) {
-      const first = paired[index];
-      paired[index] = paired[index + 1];
-      paired[index + 1] = first;
+  for (const offset of [0, 1]) {
+    const available = buffer.length - offset;
+    const evenLength = available - (available % 2);
+    if (evenLength < 2) {
+      continue;
     }
-    representations.push(paired.toString("utf16le"));
+    const littleEndian = Buffer.from(
+      buffer.subarray(offset, offset + evenLength)
+    );
+    representations.push(littleEndian.toString("utf16le"));
+    const bigEndian = Buffer.from(littleEndian);
+    for (let index = 0; index < bigEndian.length; index += 2) {
+      const first = bigEndian[index];
+      bigEndian[index] = bigEndian[index + 1];
+      bigEndian[index + 1] = first;
+    }
+    representations.push(bigEndian.toString("utf16le"));
   }
   return representations.join("\n");
 }
@@ -889,4 +992,11 @@ function isPlaceholder(value) {
 
 function sameArray(left, right) {
   return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function sameSet(left, right) {
+  return (
+    left.length === right.length &&
+    left.every((value) => right.includes(value))
+  );
 }
