@@ -9,8 +9,8 @@ artifacts in that project's canonical repository.
 1. Customize `config/operating-model.yaml`. It is the only authority for identifiers, statuses,
    role keys, and workbook tab names.
 2. Confirm the 13 role boundaries in `governance/role-registry.yaml`. People, teams, or agents may
-   fill them, and one actor may fill several boundaries, but a producer may not independently
-   verify the same claim.
+   fill them. Generated projects require distinct active actor IDs so producer, writer,
+   development, and independent-verifier boundaries cannot collapse into one actor.
 3. Tailor `governance/ownership-matrix.csv` and `governance/routing-rules.yaml`.
 4. Import the CSV files under `workbook/tabs/` into one Google Sheets workbook by following
    `workbook/README.md`.

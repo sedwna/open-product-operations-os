@@ -1,194 +1,132 @@
 import path from "node:path";
+import { canonicalCatalog, getCanonicalRoles, getCanonicalWorkbookSheets } from "./catalog.js";
 import { SCHEMA_VERSION } from "./constants.js";
+
+const ROUTES = [
+  { event: "new_idea", owner: "RB-02", reviewers: ["RB-03", "RB-12"], output: "idea_inbox" },
+  { event: "user_finding", owner: "RB-05", reviewers: ["RB-06", "RB-12"], output: "issues" },
+  {
+    event: "delivery_ready_issue",
+    owner: "RB-06",
+    reviewers: ["RB-07", "RB-13", "RB-12"],
+    output: "delivery_tickets"
+  },
+  { event: "qa_retest", owner: "RB-07", reviewers: ["RB-09", "RB-12"], output: "validation_results" },
+  {
+    event: "workbook_or_status_change",
+    owner: "RB-10",
+    reviewers: ["RB-08", "RB-12"],
+    output: "writer_manifests"
+  },
+  { event: "release_transition", owner: "RB-11", reviewers: ["RB-12"], output: "releases" },
+  {
+    event: "governance_or_role_change",
+    owner: "RB-01",
+    reviewers: ["RB-08", "RB-12"],
+    output: "role_registry"
+  }
+];
+
+const TASK_STATUSES = [
+  {
+    id: "backlog",
+    description: "Captured but not ready to start.",
+    terminal: false,
+    transitions: ["ready", "blocked", "cancelled"]
+  },
+  {
+    id: "ready",
+    description: "Inputs and ownership are sufficient to start.",
+    terminal: false,
+    transitions: ["in_progress", "blocked", "cancelled"]
+  },
+  {
+    id: "in_progress",
+    description: "The owner is actively producing the required output.",
+    terminal: false,
+    transitions: ["blocked", "in_review", "cancelled"]
+  },
+  {
+    id: "blocked",
+    description: "Progress requires an explicit dependency or decision.",
+    terminal: false,
+    transitions: ["ready", "in_progress", "cancelled"]
+  },
+  {
+    id: "in_review",
+    description: "Output is awaiting independent review or acceptance.",
+    terminal: false,
+    transitions: ["in_progress", "done", "blocked", "cancelled"]
+  },
+  {
+    id: "done",
+    description: "Required outputs and evidence passed completion gates.",
+    terminal: true,
+    transitions: []
+  },
+  {
+    id: "cancelled",
+    description: "Work was explicitly cancelled with a durable disposition.",
+    terminal: true,
+    transitions: []
+  }
+];
 
 export function createDefaultConfig(target) {
   const folderName = path.basename(path.resolve(target));
   const projectId = toProjectId(folderName);
   const taskPrefix = toTaskPrefix(projectId);
+  const roles = getCanonicalRoles();
+  const sheets = getCanonicalWorkbookSheets();
 
   return {
     schemaVersion: SCHEMA_VERSION,
+    catalogVersion: canonicalCatalog.catalog_version,
+    catalogAuthority: canonicalCatalog.catalog_authority,
     project: {
       id: projectId,
       name: toDisplayName(folderName),
       vision: "Describe the product outcome this operating system should support.",
       targetUsers: ["Describe the primary user group."],
-      environments: ["development", "production"]
+      environments: ["local", "test", "staging", "production"],
+      humanAuthorityActorId: "human-product-owner"
     },
-    agents: [
-      {
-        id: "CONTROL",
-        name: "Control Plane Coordinator",
-        role: "Routes events, resolves dependencies, and consolidates reporting.",
-        responsibilities: ["routing", "taskboard", "governance"],
-        lifecycle: "active"
-      },
-      {
-        id: "PRODUCT",
-        name: "Product Definition",
-        role: "Owns discovery, decisions, product topology, and user journeys.",
-        responsibilities: ["discovery", "decisions", "product-map"],
-        lifecycle: "active"
-      },
-      {
-        id: "DELIVERY",
-        name: "Delivery Contract",
-        role: "Translates approved product intent into implementation-ready contracts.",
-        responsibilities: ["delivery-contracts", "acceptance-criteria"],
-        lifecycle: "active"
-      },
-      {
-        id: "VALIDATION",
-        name: "Validation Design",
-        role: "Defines reproducible validation plans before implementation completes.",
-        responsibilities: ["validation-plans", "test-data"],
-        lifecycle: "active"
-      },
-      {
-        id: "QUALITY",
-        name: "Independent Quality Control",
-        role: "Verifies claims, evidence, and operational state independently.",
-        responsibilities: ["evidence-review", "read-back", "quality-verdicts"],
-        lifecycle: "active"
-      }
-    ],
-    ownership: [
-      { artifact: "agent-registry", owner: "CONTROL" },
-      { artifact: "governance", owner: "CONTROL" },
-      { artifact: "taskboard", owner: "CONTROL" },
-      { artifact: "product-map", owner: "PRODUCT" },
-      { artifact: "delivery-contracts", owner: "DELIVERY" },
-      { artifact: "validation-plan", owner: "VALIDATION" },
-      { artifact: "quality-evidence", owner: "QUALITY" }
-    ],
-    routing: [
-      {
-        event: "new-idea",
-        owner: "CONTROL",
-        reviewers: ["PRODUCT"],
-        output: "product-map"
-      },
-      {
-        event: "approved-decision",
-        owner: "DELIVERY",
-        reviewers: ["PRODUCT", "VALIDATION"],
-        output: "delivery-contracts"
-      },
-      {
-        event: "implementation-ready",
-        owner: "VALIDATION",
-        reviewers: ["DELIVERY"],
-        output: "validation-plan"
-      },
-      {
-        event: "verification-requested",
-        owner: "QUALITY",
-        reviewers: ["CONTROL"],
-        output: "quality-evidence"
-      }
-    ],
+    agents: roles.map((role) => ({
+      id: role.roleKey,
+      actorId: `actor-${role.roleKey.toLowerCase()}`,
+      name: toDisplayName(role.boundary),
+      role: role.purpose,
+      responsibilities: role.may,
+      prohibitedActions: role.mustNot,
+      lifecycle: role.lifecycle
+    })),
+    separation: {
+      requireDistinctActiveActors: true,
+      writerRole: "RB-10",
+      independentVerifierRole: "RB-12",
+      developmentRole: "RB-13"
+    },
+    ownership: sheets.map((sheet) => ({ artifact: sheet.key, owner: sheet.owner })),
+    routing: ROUTES,
     taskIds: {
       prefix: taskPrefix,
       pattern: `^${taskPrefix}-[0-9]{4}$`
     },
-    statuses: [
-      {
-        id: "Backlog",
-        description: "Captured but not ready to start.",
-        terminal: false,
-        transitions: ["Ready", "Blocked"]
-      },
-      {
-        id: "Ready",
-        description: "Inputs and ownership are sufficient to start.",
-        terminal: false,
-        transitions: ["In Progress", "Blocked"]
-      },
-      {
-        id: "In Progress",
-        description: "The owner is actively producing the required output.",
-        terminal: false,
-        transitions: ["Blocked", "In Review"]
-      },
-      {
-        id: "Blocked",
-        description: "Progress requires an explicit dependency or decision.",
-        terminal: false,
-        transitions: ["Ready", "In Progress"]
-      },
-      {
-        id: "In Review",
-        description: "Output is awaiting independent review or acceptance.",
-        terminal: false,
-        transitions: ["In Progress", "Done", "Blocked"]
-      },
-      {
-        id: "Done",
-        description: "Required outputs and evidence have passed their completion gates.",
-        terminal: true,
-        transitions: []
-      }
-    ],
+    statuses: TASK_STATUSES,
     workbook: {
-      sheets: [
-        {
-          name: "Product Map",
-          file: "workbook/product-map.csv",
-          owner: "PRODUCT",
-          columns: ["Item ID", "Area", "Capability", "Description", "Status", "Evidence"]
-        },
-        {
-          name: "Decision Log",
-          file: "workbook/decision-log.csv",
-          owner: "PRODUCT",
-          columns: ["Decision ID", "Question", "Disposition", "Owner", "Date", "Evidence"]
-        },
-        {
-          name: "Delivery Contracts",
-          file: "workbook/delivery-contracts.csv",
-          owner: "DELIVERY",
-          columns: [
-            "Contract ID",
-            "Scope",
-            "Acceptance Criteria",
-            "Dependencies",
-            "Status",
-            "Evidence"
-          ]
-        },
-        {
-          name: "Validation Plan",
-          file: "workbook/validation-plan.csv",
-          owner: "VALIDATION",
-          columns: [
-            "Validation ID",
-            "Contract ID",
-            "Scenario",
-            "Expected Result",
-            "Environment",
-            "Status"
-          ]
-        },
-        {
-          name: "Evidence Log",
-          file: "workbook/evidence-log.csv",
-          owner: "QUALITY",
-          columns: [
-            "Evidence ID",
-            "Claim",
-            "Source",
-            "Observed At",
-            "Verifier",
-            "Verdict"
-          ]
-        },
-        {
-          name: "Release Readiness",
-          file: "workbook/release-readiness.csv",
-          owner: "CONTROL",
-          columns: ["Release ID", "Scope", "Gate", "Owner", "Status", "Evidence"]
-        }
-      ]
+      sheets: sheets.map(({ template, ...sheet }) => sheet)
+    },
+    fieldAuthority: {
+      protectedDevelopmentFields:
+        canonicalCatalog.field_authority.protected_development_fields,
+      protectedHumanFields: canonicalCatalog.field_authority.protected_human_fields,
+      protectedFieldTabs: canonicalCatalog.field_authority.protected_field_tabs,
+      writerEnvironments: canonicalCatalog.field_authority.writer_environments
+    },
+    validation: {
+      excludedDirectories: canonicalCatalog.validation.excluded_directories,
+      allowedSyntheticEmailDomains:
+        canonicalCatalog.validation.allowed_synthetic_email_domains
     },
     adapters: {
       development: {
@@ -202,7 +140,7 @@ export function createDefaultConfig(target) {
         file: "adapters/git.json"
       },
       spreadsheet: {
-        type: "placeholder",
+        type: "local-csv",
         enabled: false,
         file: "adapters/spreadsheet.json"
       }

@@ -1,4 +1,4 @@
-catalog_version: 1
+catalog_version: 2
 catalog_authority: templates/config/operating-model.yaml
 customization_note: Replace project placeholders and assignments; preserve stable keys after use.
 
@@ -80,29 +80,59 @@ human_gates:
   - final_user_visible_acceptance
 
 workbook_tabs:
-  config: "Config"
-  status_catalog: "Status Catalog"
-  role_registry: "Role Registry"
-  ownership: "Ownership"
-  events: "Events"
-  taskboard: "Taskboard"
-  idea_inbox: "Idea Inbox"
-  discovery: "Discovery"
-  decision_log: "Decision Log"
-  issues: "Issues"
-  delivery_tickets: "Delivery Tickets"
-  validation_plans: "Validation Plans"
-  validation_scenarios: "Validation Scenarios"
-  validation_runs: "Validation Runs"
-  validation_results: "Validation Results"
-  evidence: "Evidence"
-  human_observations: "Human Observations"
-  qc_log: "QC Log"
-  readiness: "Readiness"
-  releases: "Releases"
-  writer_manifests: "Writer Manifests"
-  writer_receipts: "Writer Receipts"
-  lineage: "Lineage"
+  config: { name: "Config", file: "01-config.csv", owner: RB-01 }
+  status_catalog: { name: "Status Catalog", file: "02-status-catalog.csv", owner: RB-01 }
+  role_registry: { name: "Role Registry", file: "03-role-registry.csv", owner: RB-01 }
+  ownership: { name: "Ownership", file: "04-ownership.csv", owner: RB-01 }
+  events: { name: "Events", file: "05-events.csv", owner: RB-01 }
+  taskboard: { name: "Taskboard", file: "06-taskboard.csv", owner: RB-01 }
+  idea_inbox: { name: "Idea Inbox", file: "07-idea-inbox.csv", owner: RB-02 }
+  discovery: { name: "Discovery", file: "08-discovery.csv", owner: RB-03 }
+  decision_log: { name: "Decision Log", file: "09-decision-log.csv", owner: RB-02 }
+  issues: { name: "Issues", file: "10-issues.csv", owner: RB-05 }
+  delivery_tickets: { name: "Delivery Tickets", file: "11-delivery-tickets.csv", owner: RB-06 }
+  validation_plans: { name: "Validation Plans", file: "12-validation-plans.csv", owner: RB-07 }
+  validation_scenarios: { name: "Validation Scenarios", file: "13-validation-scenarios.csv", owner: RB-07 }
+  validation_runs: { name: "Validation Runs", file: "14-validation-runs.csv", owner: RB-09 }
+  validation_results: { name: "Validation Results", file: "15-validation-results.csv", owner: RB-09 }
+  evidence: { name: "Evidence", file: "16-evidence.csv", owner: RB-09 }
+  human_observations: { name: "Human Observations", file: "17-human-observations.csv", owner: RB-09 }
+  qc_log: { name: "QC Log", file: "18-qc-log.csv", owner: RB-12 }
+  readiness: { name: "Readiness", file: "19-readiness.csv", owner: RB-11 }
+  releases: { name: "Releases", file: "20-releases.csv", owner: RB-11 }
+  writer_manifests: { name: "Writer Manifests", file: "21-writer-manifests.csv", owner: RB-10 }
+  writer_receipts: { name: "Writer Receipts", file: "22-writer-receipts.csv", owner: RB-10 }
+  lineage: { name: "Lineage", file: "23-lineage.csv", owner: RB-01 }
+
+field_authority:
+  protected_development_fields:
+    - implementation_reference
+    - development_status
+    - development_notes
+    - deployment_reference
+    - development_deployment_status
+  protected_human_fields:
+    - decision_maker_actor_id
+    - observer_actor_id
+    - human_risk_acceptance_id
+    - human_authorization_id
+    - human_production_authorization_id
+  protected_field_tabs:
+    implementation_reference: [delivery_tickets, validation_runs]
+    development_status: [delivery_tickets]
+    development_notes: [delivery_tickets]
+    deployment_reference: [releases]
+    development_deployment_status: [releases]
+    decision_maker_actor_id: [decision_log]
+    observer_actor_id: [human_observations]
+    human_risk_acceptance_id: [readiness]
+    human_authorization_id: [releases]
+    human_production_authorization_id: [writer_manifests]
+  writer_environments: [local, test, staging, production]
+
+validation:
+  excluded_directories: [.git, node_modules]
+  allowed_synthetic_email_domains: [example.com, example.org, example.net, invalid]
 
 guardrails:
   producer_may_self_verify: false

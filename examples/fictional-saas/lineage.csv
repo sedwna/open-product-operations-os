@@ -10,7 +10,7 @@ LIN-008,EVT-20260729-001,VSC-20260729-001,validation_scenario,executed_as,VRN-20
 LIN-009,EVT-20260729-001,VRN-20260729-001,validation_run,produces,VRS-20260729-001,validation_result,records/validation-result.md,2026-07-29T10:10:00Z,RB-09
 LIN-010,EVT-20260729-001,VRS-20260729-001,validation_result,supported_by,EVD-20260729-001,evidence_manifest,records/evidence-manifest.yaml,2026-07-29T10:11:00Z,RB-09
 LIN-011,EVT-20260729-001,VRS-20260729-001,validation_result,observed_by,HOB-20260729-001,human_observation,records/human-observation.md,2026-07-29T10:25:00Z,RB-11
-LIN-012,EVT-20260729-001,DEC-20260729-001,decision,authorizes,WRITE-001,write_manifest,records/writer-manifest.yaml,2026-07-29T10:30:00Z,RB-02
+LIN-012,EVT-20260729-001,DEC-20260729-001,decision,authorizes,WRITE-001,write_manifest,records/writer-manifest.json,2026-07-29T10:30:00Z,RB-02
 LIN-013,EVT-20260729-001,WRITE-001,write_manifest,produces,RECEIPT-001,write_receipt,records/writer-receipt.md,2026-07-29T10:35:00Z,RB-10
 LIN-014,EVT-20260729-001,VRS-20260729-001,validation_result,verified_by,QCV-20260729-001,qc_record,records/independent-verification.md,2026-07-29T10:45:00Z,RB-12
 LIN-015,EVT-20260729-001,RECEIPT-001,write_receipt,verified_by,QCV-20260729-001,qc_record,records/independent-verification.md,2026-07-29T10:45:00Z,RB-12

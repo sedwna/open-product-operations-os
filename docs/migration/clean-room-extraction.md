@@ -59,6 +59,11 @@ verification evidence
 The ledger describes concepts, not private values. Any item that cannot be safely generalized is
 omitted and replaced by a synthetic example.
 
+The completed generalized ledger for this public package is
+[clean-room-extraction-ledger.csv](clean-room-extraction-ledger.csv). Reviewer attribution is by
+public role boundary only; it does not identify private people, repositories, products, or source
+records.
+
 ## Publication rule
 
 A public release is blocked until repository-wide text and binary scans confirm that no

@@ -36,16 +36,16 @@ analytics source, and release process.
 The included initializer performs this sequence:
 
 ```text
-1. Validate the target folder and security boundary
-2. Collect product context
-3. Select or customize the role registry
-4. Generate governance and ownership contracts
-5. Generate the task board
-6. Generate the product workbook
-7. Configure Git and live-spreadsheet adapters
-8. Configure the development-agent adapter
-9. Run integrity and portability checks
-10. Create the first discovery event
+1. Validate lexical and resolved target paths before each write
+2. Create project placeholders from the canonical catalog
+3. Generate all 13 role packages with distinct default actor assignments
+4. Generate governance ownership routing and communication contracts
+5. Generate the task board and first owned task
+6. Generate all 23 workbook tabs
+7. Generate disabled Git spreadsheet and development adapter placeholders
+8. Copy the public schemas into the project
+9. Create the first draft discovery event idea and discovery record
+10. Leave validation as an explicit read-only command
 ```
 
 From the repository root, preview and create a project with:
@@ -62,9 +62,10 @@ Regenerate only the workbook templates with:
 node ./src/cli.js generate-workbook ./my-product
 ```
 
-The initializer is available now, but the package remains a foundation release. Keep all
-identifiers, statuses, roles, and tab names in the generated configuration source and review
-release notes before upgrading.
+The initializer is available now, but the package remains a foundation release. The packaged
+`templates/config/operating-model.yaml` catalog is canonical; generated project configuration may
+assign actors and product context and may add bounded extension tabs, but it cannot remove or
+redefine the canonical 13 roles, 23 tabs, protected fields, or separation controls.
 
 ## The first event
 

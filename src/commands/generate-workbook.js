@@ -17,7 +17,7 @@ export async function generateWorkbookCommand(target, options) {
 
   const operations = await planWrites(root, buildWorkbookFiles(config), options);
   if (!options.dryRun) {
-    await applyWrites(operations);
+    await applyWrites(root, operations);
   }
 
   return [

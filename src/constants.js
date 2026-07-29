@@ -6,14 +6,25 @@ export const GOVERNANCE_FILE = "governance/governance.json";
 export const TASKBOARD_FILE = "taskboard/tasks.csv";
 
 export const TASKBOARD_COLUMNS = [
-  "Task ID",
-  "Title",
-  "Owner",
-  "Status",
-  "Route",
-  "Depends On",
-  "Evidence",
-  "Updated At"
+  "task_id",
+  "event_id",
+  "title",
+  "owner_role",
+  "owner_actor_id",
+  "status",
+  "priority",
+  "dependency_ids",
+  "blocked_reason",
+  "next_owner_role",
+  "unblock_condition",
+  "canonical_output_refs",
+  "evidence_refs",
+  "handoff_id",
+  "independent_verifier_role",
+  "verifier_actor_id",
+  "human_gate",
+  "due_at",
+  "updated_at"
 ];
 
 export const REQUIRED_ADAPTERS = ["development", "git", "spreadsheet"];

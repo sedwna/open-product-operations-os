@@ -8,7 +8,7 @@ It combines:
 - role-based AI agents with explicit authority boundaries;
 - a Git-backed task board and durable handoffs;
 - a product workbook that links discovery, decisions, delivery, validation, QA, and readiness;
-- controlled synchronization to a live spreadsheet;
+- controlled-write contracts and a provider-free local CSV reference adapter;
 - reproducible QA evidence and human acceptance;
 - independent quality control before closure;
 - an adapter boundary for one or more development agents.
@@ -42,6 +42,7 @@ Read:
 4. [Security model](docs/security-model.md)
 5. [Public release gates](docs/publication-gates.md)
 6. [Clean-room extraction policy](docs/migration/clean-room-extraction.md)
+7. [Safe local CSV writer](docs/adapters/local-csv-writer.md)
 
 ## Quick start
 
@@ -60,7 +61,9 @@ node ./src/cli.js generate-workbook ./my-product
 ```
 
 The dry run reports the planned writes without changing the target directory. Existing generated
-files are preserved unless the explicit `--force` option is used.
+files are preserved unless the explicit `--force` option is used. `--force` refreshes replaceable
+scaffold, but it never deletes workbook or taskboard rows. Operational CSVs retain their rows;
+newly required columns are appended with blank values.
 
 ## Core promise
 
@@ -80,21 +83,33 @@ If one link is missing, the work is not silently treated as complete.
 
 ## What this repository generates
 
-The current initializer provides:
+The current initializer creates:
 
-- a configurable agent registry;
+- the canonical 13-role registry and 13 complete role packages with distinct default actor IDs;
 - governance, ownership, routing, and communication contracts;
-- a shared task board;
-- a multi-tab product workbook;
+- a shared task board with its first owned task;
+- the canonical 23-tab CSV workbook;
+- a first draft discovery event, idea, and discovery record;
 - status guides and lifecycle definitions;
 - idea, decision, discovery, issue, ticket, validation, QA, and release templates;
-- schemas for manifests, evidence, handoffs, and controlled writes;
+- local copies of the published schemas for manifests, evidence, handoffs, and controlled writes;
 - a project initializer and integrity validator;
-- spreadsheet, Git, and development-agent adapter contracts;
-- a complete example project.
+- disabled Git and development-agent adapter contracts;
+- a disabled local-CSV adapter plus an executable safe local writer library requiring dry-run plan
+  approval, owner authorization, preconditions, complete read-back, zero-write replay, and
+  hash-guarded rollback;
+- a synthetic example project.
+
+`templates/config/operating-model.yaml` is the single role, tab, field-authority, environment, and
+scan-policy catalog used by the initializer. Each generated project receives a byte-for-byte
+snapshot at `config/operating-model.yaml`. Validation scans the whole bounded target tree,
+including binary inventory, except for the explicit `.git` and `node_modules` directory exclusions.
 
 The project is still a foundation release: generated formats and public interfaces may change
 before the first stable release.
+
+Portable example evidence uses repository-controlled LF bytes via `.gitattributes`. The
+`npm run portability` check reproduces declared SHA-256 hashes and byte lengths on a normal clone.
 
 ## Non-goals
 

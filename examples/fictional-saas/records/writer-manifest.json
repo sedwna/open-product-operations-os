@@ -1,0 +1,55 @@
+{
+  "schemaVersion": "1.0.0",
+  "manifestId": "WRITE-001",
+  "eventId": "EVT-20260729-001",
+  "status": "authorized",
+  "semanticOwner": {
+    "role": "RB-06",
+    "actorId": "actor.delivery"
+  },
+  "authorization": {
+    "ownerActorId": "actor.delivery",
+    "authorizedByActorId": "human.owner",
+    "authorizedAt": "2026-07-29T10:30:00Z",
+    "ownerConfirmed": true,
+    "humanProductionAuthorizationId": "not_applicable"
+  },
+  "writer": {
+    "role": "RB-10",
+    "actorId": "actor.writer"
+  },
+  "target": {
+    "systemAlias": "local-demo-workbook",
+    "environment": "local",
+    "file": "workbook/11-delivery-tickets.csv"
+  },
+  "scope": {
+    "sheet": "Delivery Tickets",
+    "keyFields": ["ticket_id"],
+    "allowedFields": ["status"],
+    "prohibitedFields": [
+      "implementation_reference",
+      "development_status",
+      "development_notes"
+    ],
+    "rows": [
+      {
+        "key": { "ticket_id": "TKT-20260729-001" },
+        "preconditions": { "status": "implementation_complete" },
+        "changes": { "status": "accepted" }
+      }
+    ]
+  },
+  "controls": {
+    "dryRunRequired": true,
+    "smallestBoundedRange": "Delivery Tickets status cell for TKT-20260729-001",
+    "fullRecordReadbackRequired": true,
+    "secondReadPath": "csv_export_of_local_demo_workbook",
+    "replayMustWriteZero": true,
+    "rollbackPlan": "Restore status to implementation_complete using a separately authorized manifest.",
+    "refuseIfEnvironmentAmbiguous": true,
+    "refuseIfPreconditionMismatch": true,
+    "secretValuesForbidden": true
+  },
+  "createdAt": "2026-07-29T10:30:00Z"
+}

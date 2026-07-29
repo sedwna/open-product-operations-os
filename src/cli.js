@@ -20,7 +20,7 @@ Commands:
 
 Options:
   --dry-run  Report planned writes without changing files.
-  --force    Replace generated files that already differ.
+  --force    Refresh replaceable scaffold; preserve operational CSV rows.
   -h, --help Show this help.
 `;
 

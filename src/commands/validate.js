@@ -20,7 +20,9 @@ export async function validateCommand(target) {
 
   return [
     `Validation passed for ${root}.`,
-    `Checked project configuration and ${result.checkedFiles} generated file(s).`
+    `Checked project configuration and ${result.checkedFiles} file(s) across the bounded target tree.`,
+    `Binary inventory: ${result.binaryFiles.length} file(s).`,
+    ...result.warnings.map((warning) => `Warning: ${warning}`)
   ];
 }
 

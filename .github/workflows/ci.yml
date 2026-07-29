@@ -9,10 +9,11 @@ permissions:
 
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
         node-version: [20, 22]
 
     steps:
@@ -23,9 +24,31 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ matrix.node-version }}
+          cache: npm
 
-      - name: Check syntax and run tests
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Check syntax, tests, and portable hashes
         run: npm run check
 
       - name: Run CLI smoke test
         run: npm run smoke
+
+  supply-chain:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Audit dependencies, licenses, and generated SBOM
+        run: npm run supply-chain

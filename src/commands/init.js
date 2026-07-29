@@ -10,7 +10,7 @@ export async function initCommand(target, options) {
   const operations = await planWrites(root, files, options);
 
   if (!options.dryRun) {
-    await applyWrites(operations);
+    await applyWrites(root, operations);
   }
 
   return [

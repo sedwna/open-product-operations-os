@@ -3,6 +3,8 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import Ajv2020 from "ajv/dist/2020.js";
+import addFormats from "ajv-formats";
 
 const repositoryRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -21,9 +23,12 @@ test("all public JSON schemas parse and declare Draft 2020-12", async () => {
     "evidence-receipt.schema.json",
     "handoff.schema.json",
     "project-config.schema.json",
-    "workbook-write-manifest.schema.json"
+    "workbook-write-manifest.schema.json",
+    "workbook-write-receipt.schema.json"
   ]);
 
+  const ajv = new Ajv2020({ strict: true, allowUnionTypes: true });
+  addFormats(ajv);
   for (const file of files) {
     const schema = JSON.parse(
       await fs.readFile(path.join(schemaDirectory, file), "utf8")
@@ -35,5 +40,6 @@ test("all public JSON schemas parse and declare Draft 2020-12", async () => {
     );
     assert.equal(typeof schema.title, "string", file);
     assert.equal(schema.type, "object", file);
+    assert.equal(typeof ajv.compile(schema), "function", file);
   }
 });

@@ -5,68 +5,86 @@
   "additionalProperties": false,
   "required": [
     "schemaVersion",
+    "catalogVersion",
+    "catalogAuthority",
     "project",
     "agents",
+    "separation",
     "ownership",
     "routing",
     "taskIds",
     "statuses",
     "workbook",
+    "fieldAuthority",
+    "validation",
     "adapters"
   ],
   "properties": {
-    "schemaVersion": {
+    "schemaVersion": { "type": "string", "const": "1.0.0" },
+    "catalogVersion": { "type": "integer", "minimum": 1 },
+    "catalogAuthority": {
       "type": "string",
-      "const": "1.0.0"
+      "const": "templates/config/operating-model.yaml"
     },
     "project": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["id", "name", "vision", "targetUsers", "environments"],
+      "required": [
+        "id",
+        "name",
+        "vision",
+        "targetUsers",
+        "environments",
+        "humanAuthorityActorId"
+      ],
       "properties": {
         "id": {
           "type": "string",
           "pattern": "^[a-z0-9]+(?:-[a-z0-9]+)*$"
         },
-        "name": {
-          "type": "string",
-          "minLength": 1
-        },
-        "vision": {
-          "type": "string",
-          "minLength": 1
-        },
-        "targetUsers": {
-          "$ref": "#/$defs/nonEmptyStringArray"
-        },
+        "name": { "type": "string", "minLength": 1 },
+        "vision": { "type": "string", "minLength": 1 },
+        "targetUsers": { "$ref": "#/$defs/nonEmptyStringArray" },
         "environments": {
-          "$ref": "#/$defs/nonEmptyStringArray"
-        }
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["local", "test", "staging", "production"] }
+        },
+        "humanAuthorityActorId": { "type": "string", "minLength": 2 }
       }
     },
     "agents": {
       "type": "array",
-      "minItems": 1,
-      "items": {
-        "$ref": "#/$defs/agent"
+      "minItems": 13,
+      "items": { "$ref": "#/$defs/agent" }
+    },
+    "separation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "requireDistinctActiveActors",
+        "writerRole",
+        "independentVerifierRole",
+        "developmentRole"
+      ],
+      "properties": {
+        "requireDistinctActiveActors": { "const": true },
+        "writerRole": { "const": "RB-10" },
+        "independentVerifierRole": { "const": "RB-12" },
+        "developmentRole": { "const": "RB-13" }
       }
     },
     "ownership": {
       "type": "array",
-      "minItems": 1,
+      "minItems": 23,
       "items": {
         "type": "object",
         "additionalProperties": false,
         "required": ["artifact", "owner"],
         "properties": {
-          "artifact": {
-            "type": "string",
-            "minLength": 1
-          },
-          "owner": {
-            "type": "string",
-            "minLength": 2
-          }
+          "artifact": { "type": "string", "minLength": 1 },
+          "owner": { "type": "string", "pattern": "^RB-[0-9]{2}$" }
         }
       }
     },
@@ -78,26 +96,15 @@
         "additionalProperties": false,
         "required": ["event", "owner", "reviewers", "output"],
         "properties": {
-          "event": {
-            "type": "string",
-            "minLength": 1
-          },
-          "owner": {
-            "type": "string",
-            "minLength": 2
-          },
+          "event": { "type": "string", "minLength": 1 },
+          "owner": { "type": "string", "pattern": "^RB-[0-9]{2}$" },
           "reviewers": {
             "type": "array",
+            "minItems": 1,
             "uniqueItems": true,
-            "items": {
-              "type": "string",
-              "minLength": 2
-            }
+            "items": { "type": "string", "pattern": "^RB-[0-9]{2}$" }
           },
-          "output": {
-            "type": "string",
-            "minLength": 1
-          }
+          "output": { "type": "string", "minLength": 1 }
         }
       }
     },
@@ -106,14 +113,8 @@
       "additionalProperties": false,
       "required": ["prefix", "pattern"],
       "properties": {
-        "prefix": {
-          "type": "string",
-          "pattern": "^[A-Z][A-Z0-9]{1,7}$"
-        },
-        "pattern": {
-          "type": "string",
-          "minLength": 1
-        }
+        "prefix": { "type": "string", "pattern": "^[A-Z][A-Z0-9]{1,7}$" },
+        "pattern": { "type": "string", "minLength": 1 }
       }
     },
     "statuses": {
@@ -124,24 +125,13 @@
         "additionalProperties": false,
         "required": ["id", "description", "terminal", "transitions"],
         "properties": {
-          "id": {
-            "type": "string",
-            "minLength": 1
-          },
-          "description": {
-            "type": "string",
-            "minLength": 1
-          },
-          "terminal": {
-            "type": "boolean"
-          },
+          "id": { "type": "string", "minLength": 1 },
+          "description": { "type": "string", "minLength": 1 },
+          "terminal": { "type": "boolean" },
           "transitions": {
             "type": "array",
             "uniqueItems": true,
-            "items": {
-              "type": "string",
-              "minLength": 1
-            }
+            "items": { "type": "string", "minLength": 1 }
           }
         }
       }
@@ -153,30 +143,62 @@
       "properties": {
         "sheets": {
           "type": "array",
-          "minItems": 1,
+          "minItems": 23,
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["name", "file", "owner", "columns"],
+            "required": ["key", "name", "file", "owner", "columns"],
             "properties": {
-              "name": {
-                "type": "string",
-                "minLength": 1
-              },
+              "key": { "type": "string", "minLength": 1 },
+              "name": { "type": "string", "minLength": 1 },
               "file": {
                 "type": "string",
                 "pattern": "^workbook/(?!.*\\.\\.)[^/].*\\.csv$"
               },
-              "owner": {
-                "type": "string",
-                "minLength": 2
-              },
-              "columns": {
-                "$ref": "#/$defs/nonEmptyStringArray"
-              }
+              "owner": { "type": "string", "pattern": "^RB-[0-9]{2}$" },
+              "columns": { "$ref": "#/$defs/nonEmptyStringArray" }
             }
           }
         }
+      }
+    },
+    "fieldAuthority": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "protectedDevelopmentFields",
+        "protectedHumanFields",
+        "protectedFieldTabs",
+        "writerEnvironments"
+      ],
+      "properties": {
+        "protectedDevelopmentFields": { "$ref": "#/$defs/nonEmptyStringArray" },
+        "protectedHumanFields": { "$ref": "#/$defs/nonEmptyStringArray" },
+        "protectedFieldTabs": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": { "$ref": "#/$defs/nonEmptyStringArray" }
+        },
+        "writerEnvironments": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": ["local", "test", "staging", "production"] }
+        }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["excludedDirectories", "allowedSyntheticEmailDomains"],
+      "properties": {
+        "excludedDirectories": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "enum": [".git", "node_modules"] }
+        },
+        "allowedSyntheticEmailDomains": { "$ref": "#/$defs/nonEmptyStringArray" }
       }
     },
     "adapters": {
@@ -184,15 +206,9 @@
       "additionalProperties": false,
       "required": ["development", "git", "spreadsheet"],
       "properties": {
-        "development": {
-          "$ref": "#/$defs/adapter"
-        },
-        "git": {
-          "$ref": "#/$defs/adapter"
-        },
-        "spreadsheet": {
-          "$ref": "#/$defs/adapter"
-        }
+        "development": { "$ref": "#/$defs/adapter" },
+        "git": { "$ref": "#/$defs/adapter" },
+        "spreadsheet": { "$ref": "#/$defs/adapter" }
       }
     }
   },
@@ -201,40 +217,28 @@
       "type": "array",
       "minItems": 1,
       "uniqueItems": true,
-      "items": {
-        "type": "string",
-        "minLength": 1
-      }
+      "items": { "type": "string", "minLength": 1 }
     },
     "agent": {
       "type": "object",
       "additionalProperties": false,
       "required": [
         "id",
+        "actorId",
         "name",
         "role",
         "responsibilities",
+        "prohibitedActions",
         "lifecycle"
       ],
       "properties": {
-        "id": {
-          "type": "string",
-          "pattern": "^[A-Z][A-Z0-9_-]{1,31}$"
-        },
-        "name": {
-          "type": "string",
-          "minLength": 1
-        },
-        "role": {
-          "type": "string",
-          "minLength": 1
-        },
-        "responsibilities": {
-          "$ref": "#/$defs/nonEmptyStringArray"
-        },
-        "lifecycle": {
-          "enum": ["active", "inactive", "proposed"]
-        }
+        "id": { "type": "string", "pattern": "^RB-[0-9]{2}$" },
+        "actorId": { "type": "string", "minLength": 2 },
+        "name": { "type": "string", "minLength": 1 },
+        "role": { "type": "string", "minLength": 1 },
+        "responsibilities": { "$ref": "#/$defs/nonEmptyStringArray" },
+        "prohibitedActions": { "$ref": "#/$defs/nonEmptyStringArray" },
+        "lifecycle": { "enum": ["active", "suspended", "retired", "proposed"] }
       }
     },
     "adapter": {
@@ -242,13 +246,8 @@
       "additionalProperties": false,
       "required": ["type", "enabled", "file"],
       "properties": {
-        "type": {
-          "type": "string",
-          "minLength": 1
-        },
-        "enabled": {
-          "type": "boolean"
-        },
+        "type": { "type": "string", "minLength": 1 },
+        "enabled": { "type": "boolean" },
         "file": {
           "type": "string",
           "pattern": "^adapters/(?!.*\\.\\.)[^/].*\\.json$"

@@ -1,12 +1,16 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+import { canonicalCatalog, getCanonicalRoles, getCanonicalWorkbookSheets } from "./catalog.js";
 import { CONFIG_FILE, REQUIRED_ADAPTERS, SCHEMA_VERSION } from "./constants.js";
-import { assertSafeRelativePath } from "./paths.js";
+import { assertNoLinkTraversal, assertSafeRelativePath } from "./paths.js";
+import { validatePublishedSchema } from "./schema-validation.js";
 
 export async function loadConfig(target) {
-  const configPath = path.join(path.resolve(target), CONFIG_FILE);
+  const root = path.resolve(target);
+  const configPath = path.join(root, CONFIG_FILE);
   let text;
   try {
+    await assertNoLinkTraversal(root, configPath, "Project configuration");
     text = await fs.readFile(configPath, "utf8");
   } catch (error) {
     if (error.code === "ENOENT") {
@@ -23,149 +27,32 @@ export async function loadConfig(target) {
 }
 
 export function validateConfig(config) {
-  const errors = [];
-  const object = isObject(config);
-
-  if (!object) {
+  if (!isObject(config)) {
     return ["Project configuration must be a JSON object."];
   }
+  const errors = validatePublishedSchema("project-config.schema.json", config).map(
+    (error) => `Project configuration schema: ${error}.`
+  );
   if (config.schemaVersion !== SCHEMA_VERSION) {
     errors.push(`schemaVersion must be "${SCHEMA_VERSION}".`);
   }
 
-  requireString(config.project?.id, "project.id", errors);
-  if (
-    typeof config.project?.id === "string" &&
-    !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(config.project.id)
-  ) {
-    errors.push("project.id must be a lowercase, hyphen-separated identifier.");
-  }
-  requireString(config.project?.name, "project.name", errors);
-  requireString(config.project?.vision, "project.vision", errors);
-  requireStringArray(config.project?.targetUsers, "project.targetUsers", errors);
-  requireStringArray(config.project?.environments, "project.environments", errors);
+  validateUnique(config.agents, "id", "agent id", errors);
+  validateUnique(config.agents, "actorId", "agent actorId", errors);
+  validateUnique(config.ownership, "artifact", "ownership artifact", errors);
+  validateUnique(config.routing, "event", "routing event", errors);
+  validateUnique(config.statuses, "id", "status id", errors);
+  validateUnique(config.workbook?.sheets, "key", "workbook sheet key", errors);
+  validateUnique(config.workbook?.sheets, "name", "workbook sheet name", errors);
+  validateUnique(config.workbook?.sheets, "file", "workbook file", errors);
 
-  if (!Array.isArray(config.agents) || config.agents.length === 0) {
-    errors.push("agents must contain at least one agent.");
-  } else {
-    const ids = new Set();
-    config.agents.forEach((agent, index) => {
-      const label = `agents[${index}]`;
-      requireString(agent?.id, `${label}.id`, errors);
-      requireString(agent?.name, `${label}.name`, errors);
-      requireString(agent?.role, `${label}.role`, errors);
-      requireStringArray(agent?.responsibilities, `${label}.responsibilities`, errors);
-      if (!["active", "inactive", "proposed"].includes(agent?.lifecycle)) {
-        errors.push(`${label}.lifecycle must be active, inactive, or proposed.`);
-      }
-      if (typeof agent?.id === "string") {
-        if (!/^[A-Z][A-Z0-9_-]{1,31}$/.test(agent.id)) {
-          errors.push(`${label}.id must use 2-32 uppercase letters, digits, "_" or "-".`);
-        }
-        if (ids.has(agent.id)) {
-          errors.push(`Duplicate agent id "${agent.id}".`);
-        }
-        ids.add(agent.id);
-      }
-    });
+  for (const [index, sheet] of (config.workbook?.sheets ?? []).entries()) {
+    validateSafePath(sheet?.file, `workbook.sheets[${index}].file`, "workbook/", errors);
   }
-
-  if (!Array.isArray(config.ownership) || config.ownership.length === 0) {
-    errors.push("ownership must contain at least one assignment.");
-  } else {
-    const artifacts = new Set();
-    config.ownership.forEach((entry, index) => {
-      requireString(entry?.artifact, `ownership[${index}].artifact`, errors);
-      requireString(entry?.owner, `ownership[${index}].owner`, errors);
-      if (typeof entry?.artifact === "string" && artifacts.has(entry.artifact)) {
-        errors.push(`Duplicate ownership artifact "${entry.artifact}".`);
-      }
-      artifacts.add(entry?.artifact);
-    });
-  }
-
-  if (!Array.isArray(config.routing) || config.routing.length === 0) {
-    errors.push("routing must contain at least one route.");
-  } else {
-    const events = new Set();
-    config.routing.forEach((route, index) => {
-      requireString(route?.event, `routing[${index}].event`, errors);
-      requireString(route?.owner, `routing[${index}].owner`, errors);
-      requireStringArray(route?.reviewers, `routing[${index}].reviewers`, errors, true);
-      requireString(route?.output, `routing[${index}].output`, errors);
-      if (typeof route?.event === "string" && events.has(route.event)) {
-        errors.push(`Duplicate routing event "${route.event}".`);
-      }
-      events.add(route?.event);
-    });
-  }
-
-  requireString(config.taskIds?.prefix, "taskIds.prefix", errors);
-  if (
-    typeof config.taskIds?.prefix === "string" &&
-    !/^[A-Z][A-Z0-9]{1,7}$/.test(config.taskIds.prefix)
-  ) {
-    errors.push("taskIds.prefix must use 2-8 uppercase letters or digits.");
-  }
-  requireString(config.taskIds?.pattern, "taskIds.pattern", errors);
-  if (typeof config.taskIds?.pattern === "string") {
-    try {
-      new RegExp(config.taskIds.pattern);
-    } catch (error) {
-      errors.push(`taskIds.pattern is not a valid regular expression: ${error.message}`);
-    }
-  }
-
-  if (!Array.isArray(config.statuses) || config.statuses.length === 0) {
-    errors.push("statuses must contain at least one status definition.");
-  } else {
-    const statuses = new Set();
-    config.statuses.forEach((status, index) => {
-      const label = `statuses[${index}]`;
-      requireString(status?.id, `${label}.id`, errors);
-      requireString(status?.description, `${label}.description`, errors);
-      if (typeof status?.terminal !== "boolean") {
-        errors.push(`${label}.terminal must be a boolean.`);
-      }
-      requireStringArray(status?.transitions, `${label}.transitions`, errors, true);
-      if (typeof status?.id === "string" && statuses.has(status.id)) {
-        errors.push(`Duplicate status id "${status.id}".`);
-      }
-      statuses.add(status?.id);
-    });
-  }
-
-  if (!Array.isArray(config.workbook?.sheets) || config.workbook.sheets.length === 0) {
-    errors.push("workbook.sheets must contain at least one sheet.");
-  } else {
-    const names = new Set();
-    const files = new Set();
-    config.workbook.sheets.forEach((sheet, index) => {
-      const label = `workbook.sheets[${index}]`;
-      requireString(sheet?.name, `${label}.name`, errors);
-      requireString(sheet?.owner, `${label}.owner`, errors);
-      requireStringArray(sheet?.columns, `${label}.columns`, errors);
-      validateSafePath(sheet?.file, `${label}.file`, "workbook/", errors);
-      if (typeof sheet?.name === "string" && names.has(sheet.name)) {
-        errors.push(`Duplicate workbook sheet name "${sheet.name}".`);
-      }
-      if (typeof sheet?.file === "string" && files.has(sheet.file)) {
-        errors.push(`Duplicate workbook file "${sheet.file}".`);
-      }
-      names.add(sheet?.name);
-      files.add(sheet?.file);
-    });
-  }
-
   for (const adapterName of REQUIRED_ADAPTERS) {
     const adapter = config.adapters?.[adapterName];
     if (!isObject(adapter)) {
-      errors.push(`adapters.${adapterName} must be an object.`);
       continue;
-    }
-    requireString(adapter.type, `adapters.${adapterName}.type`, errors);
-    if (typeof adapter.enabled !== "boolean") {
-      errors.push(`adapters.${adapterName}.enabled must be a boolean.`);
     }
     validateSafePath(
       adapter.file,
@@ -181,6 +68,7 @@ export function validateConfig(config) {
 export function validateConfigRelationships(config) {
   const errors = [];
   const agentIds = new Set(config.agents.map((agent) => agent.id));
+  const actorByRole = new Map(config.agents.map((agent) => [agent.id, agent.actorId]));
   const artifacts = new Set(config.ownership.map((entry) => entry.artifact));
   const statusIds = new Set(config.statuses.map((status) => status.id));
   const generatedPaths = new Map();
@@ -190,6 +78,47 @@ export function validateConfigRelationships(config) {
     errors.push(
       `taskIds.pattern must accept generated IDs such as "${config.taskIds.prefix}-0001".`
     );
+  }
+
+  const agentsById = new Map(config.agents.map((agent) => [agent.id, agent]));
+  for (const canonicalRole of getCanonicalRoles()) {
+    const agent = agentsById.get(canonicalRole.roleKey);
+    if (!agent) {
+      errors.push(`Canonical role "${canonicalRole.roleKey}" is missing from agents.`);
+      continue;
+    }
+    if (
+      agent.role !== canonicalRole.purpose ||
+      !sameArray(agent.responsibilities, canonicalRole.may) ||
+      !sameArray(agent.prohibitedActions, canonicalRole.mustNot)
+    ) {
+      errors.push(
+        `Canonical role "${canonicalRole.roleKey}" authority must match ${config.catalogAuthority}.`
+      );
+    }
+  }
+  if (config.catalogVersion !== canonicalCatalog.catalog_version) {
+    errors.push(
+      `catalogVersion must match canonical catalog version ${canonicalCatalog.catalog_version}.`
+    );
+  }
+
+  if (config.separation.requireDistinctActiveActors) {
+    const seenActors = new Map();
+    for (const agent of config.agents.filter((entry) => entry.lifecycle === "active")) {
+      if (seenActors.has(agent.actorId)) {
+        errors.push(
+          `Active roles "${seenActors.get(agent.actorId)}" and "${agent.id}" use the same actor "${agent.actorId}"; producer, writer, development, and verifier actors must be distinct.`
+        );
+      } else {
+        seenActors.set(agent.actorId, agent.id);
+      }
+    }
+    if (seenActors.has(config.project.humanAuthorityActorId)) {
+      errors.push(
+        `Human authority actor "${config.project.humanAuthorityActorId}" must be distinct from active role "${seenActors.get(config.project.humanAuthorityActorId)}".`
+      );
+    }
   }
 
   for (const entry of config.ownership) {
@@ -210,6 +139,11 @@ export function validateConfigRelationships(config) {
           `Route "${route.event}" references unknown reviewer "${reviewer}".`
         );
       }
+      if (actorByRole.get(route.owner) === actorByRole.get(reviewer)) {
+        errors.push(
+          `Route "${route.event}" owner and reviewer must be assigned to different actors.`
+        );
+      }
     }
     if (!artifacts.has(route.output)) {
       errors.push(
@@ -218,6 +152,29 @@ export function validateConfigRelationships(config) {
     }
   }
 
+  const sheetsByKey = new Map(config.workbook.sheets.map((sheet) => [sheet.key, sheet]));
+  for (const canonicalSheet of getCanonicalWorkbookSheets()) {
+    const sheet = sheetsByKey.get(canonicalSheet.key);
+    if (!sheet) {
+      errors.push(`Canonical workbook tab "${canonicalSheet.key}" is missing.`);
+      continue;
+    }
+    if (
+      sheet.name !== canonicalSheet.name ||
+      sheet.file !== canonicalSheet.file ||
+      sheet.owner !== canonicalSheet.owner ||
+      !sameArray(sheet.columns, canonicalSheet.columns)
+    ) {
+      errors.push(
+        `Canonical workbook tab "${canonicalSheet.key}" must match ${config.catalogAuthority}.`
+      );
+    }
+  }
+
+  const protectedFields = new Set([
+    ...config.fieldAuthority.protectedDevelopmentFields,
+    ...config.fieldAuthority.protectedHumanFields
+  ]);
   for (const sheet of config.workbook.sheets) {
     if (!agentIds.has(sheet.owner)) {
       errors.push(
@@ -225,6 +182,40 @@ export function validateConfigRelationships(config) {
       );
     }
     addGeneratedPath(sheet.file, `workbook sheet "${sheet.name}"`, generatedPaths, errors);
+    for (const field of sheet.columns.filter((column) => protectedFields.has(column))) {
+      const allowedTabs = config.fieldAuthority.protectedFieldTabs[field] ?? [];
+      if (!allowedTabs.includes(sheet.key)) {
+        errors.push(
+          `Protected field "${field}" is not authorized in workbook tab "${sheet.key}".`
+        );
+      }
+    }
+  }
+
+  for (const field of [
+    ...canonicalCatalog.field_authority.protected_development_fields,
+    ...canonicalCatalog.field_authority.protected_human_fields
+  ]) {
+    if (!protectedFields.has(field)) {
+      errors.push(`Canonical protected field "${field}" may not be removed.`);
+    }
+  }
+  for (const [field, canonicalTabs] of Object.entries(
+    canonicalCatalog.field_authority.protected_field_tabs
+  )) {
+    if (!sameArray(config.fieldAuthority.protectedFieldTabs[field] ?? [], canonicalTabs)) {
+      errors.push(
+        `Protected-field tab authority for "${field}" must match ${config.catalogAuthority}.`
+      );
+    }
+  }
+  if (
+    !sameArray(
+      config.validation.allowedSyntheticEmailDomains,
+      canonicalCatalog.validation.allowed_synthetic_email_domains
+    )
+  ) {
+    errors.push("Synthetic email-domain allowlist must match the canonical catalog.");
   }
 
   for (const [name, adapter] of Object.entries(config.adapters)) {
@@ -262,23 +253,17 @@ function addGeneratedPath(file, owner, paths, errors) {
   }
 }
 
-function requireString(value, label, errors) {
-  if (typeof value !== "string" || value.trim() === "") {
-    errors.push(`${label} must be a non-empty string.`);
+function validateUnique(entries, key, label, errors) {
+  if (!Array.isArray(entries)) {
+    return;
   }
-}
-
-function requireStringArray(value, label, errors, allowEmpty = false) {
-  if (
-    !Array.isArray(value) ||
-    (!allowEmpty && value.length === 0) ||
-    value.some((item) => typeof item !== "string" || item.trim() === "")
-  ) {
-    errors.push(
-      `${label} must be ${allowEmpty ? "an" : "a non-empty"} array of non-empty strings.`
-    );
-  } else if (new Set(value).size !== value.length) {
-    errors.push(`${label} must not contain duplicate values.`);
+  const seen = new Set();
+  for (const entry of entries) {
+    const value = entry?.[key];
+    if (typeof value === "string" && seen.has(value)) {
+      errors.push(`Duplicate ${label} "${value}".`);
+    }
+    seen.add(value);
   }
 }
 
@@ -291,6 +276,10 @@ function validateSafePath(value, label, prefix, errors) {
   } catch (error) {
     errors.push(error.message);
   }
+}
+
+function sameArray(left, right) {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
 }
 
 function isObject(value) {

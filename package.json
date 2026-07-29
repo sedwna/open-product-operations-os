@@ -3,21 +3,53 @@
   "version": "0.1.0",
   "description": "Vendor-neutral Product Operations OS project initializer and validator",
   "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sedwna/open-product-operations-os.git"
+  },
+  "homepage": "https://github.com/sedwna/open-product-operations-os#readme",
+  "bugs": {
+    "url": "https://github.com/sedwna/open-product-operations-os/issues"
+  },
+  "author": "Open Product Operations OS contributors",
+  "funding": false,
+  "publishConfig": {
+    "provenance": true,
+    "access": "public"
+  },
   "type": "module",
   "bin": {
     "product-ops": "./src/cli.js"
   },
   "files": [
     "src",
-    "schemas"
+    "schemas",
+    "templates",
+    "examples",
+    "docs",
+    "scripts",
+    "AGENTS.md",
+    "CHANGELOG.md",
+    "CONTRIBUTING.md",
+    "SECURITY.md",
+    "START-HERE.md"
   ],
   "scripts": {
     "test": "node --test",
     "test:coverage": "node --test --experimental-test-coverage",
-    "check": "node --check src/cli.js && npm test",
-    "smoke": "node scripts/smoke.mjs"
+    "check": "node --check src/cli.js && npm test && npm run portability",
+    "smoke": "node scripts/smoke.mjs",
+    "portability": "node scripts/verify-portability.mjs",
+    "sbom:check": "node scripts/check-sbom.mjs",
+    "licenses:check": "node scripts/check-licenses.mjs",
+    "supply-chain": "npm audit --omit=dev --audit-level=high && npm run licenses:check && npm run sbom:check"
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "yaml": "2.9.0"
   }
 }

@@ -1,0 +1,13 @@
+source_concept,public_destination,treatment,reviewer_role,privacy_result,license_result,verification_evidence
+role boundaries,templates/config/operating-model.yaml,generalized stable role keys and authority boundaries,RB-12,no source identity or assignment retained,new Apache-2.0 expression,canonical catalog and 13-role consistency tests
+status vocabulary,templates/config/operating-model.yaml,generalized lifecycle families,RB-12,no source records retained,new Apache-2.0 expression,schema compilation and initializer tests
+workbook topology,templates/workbook/,re-authored 23-tab provider-neutral CSV model,RB-12,no workbook identifiers URLs or operational rows retained,new Apache-2.0 expression,23-tab catalog and blank-init tests
+task coordination,templates/operations/,generalized durable task and handoff contracts,RB-12,no source cards IDs or backlog retained,new Apache-2.0 expression,generated taskboard validation tests
+event lifecycle,docs/architecture/event-lifecycle.md,re-authored generic event-to-release sequence,RB-12,no source decisions or history retained,new Apache-2.0 expression,documentation link check
+ownership controls,templates/governance/,generalized semantic owner writer verifier and human boundaries,RB-12,no person or organization assignments retained,new Apache-2.0 expression,actor-separation negative tests
+controlled writes,schemas/workbook-write-manifest.schema.json,re-authored bounded local manifest and receipt contract,RB-12,no provider credentials aliases or live identifiers retained,new Apache-2.0 expression,unsafe-manifest and local replay rollback tests
+development adapter,docs/adapters/development-agent.md,generalized disabled adapter boundary,RB-12,no repository deployment or implementation identifiers retained,new Apache-2.0 expression,generated disabled-adapter validation
+validation evidence,templates/validation/,re-authored reproducible evidence contracts,RB-12,no source screenshots logs or customer observations retained,new Apache-2.0 expression,fictional evidence hash and byte-length check
+fictional lifecycle,examples/fictional-saas/,new synthetic local-only example,RB-12,synthetic identifiers and no personal records,new Apache-2.0 expression,lineage and portability tests
+security boundary,SECURITY.md and docs/security-model.md,generalized deny rules and safe exclusions,RB-12,no secrets private paths URLs or production fixtures retained,new Apache-2.0 expression,whole-tree text binary secret and PII negative tests
+package automation,src/ and scripts/,new implementation from public contracts,RB-12,no source code copied and no private paths retained,new Apache-2.0 expression,full test smoke pack and supply-chain checks

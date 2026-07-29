@@ -47,3 +47,7 @@ BLOCKED
 
 Only an independent release-control role may promote a candidate after inspecting the required
 proof. Producers may report readiness but may not certify their own output.
+
+Repository CI can generate and validate a CycloneDX SBOM, audit locked dependencies, and enforce a
+dependency-license allowlist without publishing. Those producer checks are necessary evidence,
+not an independent release verdict or signed-release proof.
