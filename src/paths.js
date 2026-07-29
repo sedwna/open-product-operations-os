@@ -40,13 +40,9 @@ export async function assertNoLinkTraversal(root, destination, label = "Path") {
     throw new Error(`${label} resolves outside the project directory.`);
   }
 
-  const filesystemRoot = path.parse(absoluteRoot).root;
-  const candidates = [filesystemRoot];
-  let current = filesystemRoot;
-  for (const segment of path.relative(filesystemRoot, absoluteRoot).split(path.sep).filter(Boolean)) {
-    current = path.join(current, segment);
-    candidates.push(current);
-  }
+  const canonicalRoot = await canonicalizePotentialPath(absoluteRoot);
+  const candidates = [absoluteRoot];
+  let current = absoluteRoot;
   for (const segment of relative.split(path.sep).filter(Boolean)) {
     current = path.join(current, segment);
     candidates.push(current);
@@ -69,10 +65,35 @@ export async function assertNoLinkTraversal(root, destination, label = "Path") {
     }
 
     const real = await fs.realpath(candidate);
-    if (!sameFilesystemPath(real, candidate)) {
+    const expected = path.resolve(
+      canonicalRoot,
+      path.relative(absoluteRoot, candidate)
+    );
+    if (!sameFilesystemPath(real, expected)) {
       throw new Error(
         `${label} traverses a redirected filesystem path at "${candidate}".`
       );
+    }
+  }
+}
+
+async function canonicalizePotentialPath(value) {
+  const missingSegments = [];
+  let existing = value;
+  while (true) {
+    try {
+      const real = await fs.realpath(existing);
+      return path.join(real, ...missingSegments);
+    } catch (error) {
+      if (error.code !== "ENOENT") {
+        throw error;
+      }
+      const parent = path.dirname(existing);
+      if (parent === existing) {
+        throw error;
+      }
+      missingSegments.unshift(path.basename(existing));
+      existing = parent;
     }
   }
 }

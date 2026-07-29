@@ -138,7 +138,7 @@ test("init rejects symlink or junction traversal before any escaped write", asyn
   assert.deepEqual(await fs.readdir(outside), []);
 });
 
-test("init rejects a linked ancestor even when the target does not exist", async (t) => {
+test("init rejects a target root that is itself a symlink or junction", async (t) => {
   const parent = await makeTempDirectory();
   t.after(() => fs.rm(parent, { recursive: true, force: true }));
   const realParent = path.join(parent, "real-parent");
@@ -152,11 +152,30 @@ test("init rejects a linked ancestor even when the target does not exist", async
   const output = captureIo();
 
   assert.equal(
-    await run(["init", path.join(linkedParent, "new-product")], output.io),
+    await run(["init", linkedParent], output.io),
     1
   );
   assert.match(output.stderr.at(-1), /symbolic link, junction, or reparse point/);
   assert.deepEqual(await fs.readdir(realParent), []);
+});
+
+test("init canonicalizes a pre-existing alias outside the selected target root", async (t) => {
+  const parent = await makeTempDirectory();
+  t.after(() => fs.rm(parent, { recursive: true, force: true }));
+  const realParent = path.join(parent, "real-parent");
+  const linkedParent = path.join(parent, "linked-parent");
+  await fs.mkdir(realParent);
+  await fs.symlink(
+    realParent,
+    linkedParent,
+    process.platform === "win32" ? "junction" : "dir"
+  );
+  const target = path.join(linkedParent, "new-product");
+  const output = captureIo();
+
+  assert.equal(await run(["init", target], output.io), 0);
+  assert.equal(await run(["validate", target], output.io), 0);
+  await fs.access(path.join(realParent, "new-product", CONFIG_FILE));
 });
 
 test("unknown CLI options fail cleanly", async () => {
