@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import path from "node:path";
+import fs from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { generateWorkbookCommand } from "./commands/generate-workbook.js";
 import { initCommand } from "./commands/init.js";
@@ -86,10 +87,24 @@ function parseArguments(argv) {
   };
 }
 
-const isEntryPoint =
-  process.argv[1] &&
-  path.resolve(process.argv[1]) === path.resolve(fileURLToPath(import.meta.url));
+async function isEntryPoint() {
+  if (!process.argv[1]) {
+    return false;
+  }
 
-if (isEntryPoint) {
+  const invokedPath = path.resolve(process.argv[1]);
+  const modulePath = path.resolve(fileURLToPath(import.meta.url));
+  try {
+    const [invokedRealPath, moduleRealPath] = await Promise.all([
+      fs.realpath(invokedPath),
+      fs.realpath(modulePath)
+    ]);
+    return invokedRealPath === moduleRealPath;
+  } catch {
+    return invokedPath === modulePath;
+  }
+}
+
+if (await isEntryPoint()) {
   process.exitCode = await run(process.argv.slice(2));
 }

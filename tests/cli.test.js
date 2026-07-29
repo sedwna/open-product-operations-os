@@ -242,7 +242,7 @@ test("init refuses existing hard-linked scaffold without modifying its peer", as
   assert.equal(await fs.readFile(outside, "utf8"), before);
 });
 
-test("initializer atomic replacement cannot truncate a hard-link swapped after its final check", async (t) => {
+test("initializer refuses a hard-link swap instead of replacing it", async (t) => {
   const parent = await makeTempDirectory();
   t.after(() => fs.rm(parent, { recursive: true, force: true }));
   const target = path.join(parent, "atomic-hardlink-race");
@@ -251,23 +251,10 @@ test("initializer atomic replacement cannot truncate a hard-link swapped after i
   await fs.mkdir(target);
   await fs.writeFile(destination, "old scaffold\n");
   await fs.writeFile(outside, "outside bytes must survive\n");
-  const operations = await planWrites(
-    target,
-    new Map([["scaffold.txt", "new scaffold\n"]]),
-    { force: true }
-  );
-  let injected = false;
-
+  const hardLinkProbe = path.join(target, "hard-link-probe.txt");
   try {
-    await applyWrites(target, operations, {
-      transactionObserver: async ({ phase, relativePath }) => {
-        assert.equal(phase, "before-atomic-replace");
-        assert.equal(relativePath, "scaffold.txt");
-        await fs.rm(destination);
-        await fs.link(outside, destination);
-        injected = true;
-      }
-    });
+    await fs.link(outside, hardLinkProbe);
+    await fs.rm(hardLinkProbe);
   } catch (error) {
     if (["EPERM", "ENOTSUP", "EACCES"].includes(error.code)) {
       t.skip(`hard links unavailable: ${error.code}`);
@@ -275,9 +262,94 @@ test("initializer atomic replacement cannot truncate a hard-link swapped after i
     }
     throw error;
   }
+  const operations = await planWrites(
+    target,
+    new Map([["scaffold.txt", "new scaffold\n"]]),
+    { force: true }
+  );
+  let injected = false;
+
+  await assert.rejects(
+    applyWrites(target, operations, {
+      transactionObserver: async ({ phase, relativePath }) => {
+        assert.equal(phase, "before-atomic-replace");
+        assert.equal(relativePath, "scaffold.txt");
+        await fs.rm(destination);
+        await fs.link(outside, destination);
+        injected = true;
+      }
+    }),
+    /hard-linked/
+  );
 
   assert.equal(injected, true);
-  assert.equal(await fs.readFile(destination, "utf8"), "new scaffold\n");
+  assert.equal(await fs.readFile(destination, "utf8"), "outside bytes must survive\n");
   assert.equal(await fs.readFile(outside, "utf8"), "outside bytes must survive\n");
-  assert.equal((await fs.lstat(destination)).nlink, 1);
+  assert.ok((await fs.lstat(destination)).nlink >= 2);
+});
+
+test("initializer refuses to overwrite a destination created after planning", async (t) => {
+  const parent = await makeTempDirectory();
+  t.after(() => fs.rm(parent, { recursive: true, force: true }));
+  const target = path.join(parent, "atomic-create-race");
+  const destination = path.join(target, "scaffold.txt");
+  await fs.mkdir(target);
+  const operations = await planWrites(
+    target,
+    new Map([["scaffold.txt", "new scaffold\n"]]),
+    { force: true }
+  );
+
+  await assert.rejects(
+    applyWrites(target, operations, {
+      transactionObserver: async ({ phase }) => {
+        if (phase === "before-atomic-replace") {
+          await fs.writeFile(destination, "concurrent create\n", {
+            encoding: "utf8",
+            flag: "wx"
+          });
+        }
+      }
+    }),
+    /created or recreated concurrently/
+  );
+  assert.equal(await fs.readFile(destination, "utf8"), "concurrent create\n");
+});
+
+test("initializer preserves a concurrently recreated destination and quarantined original", async (t) => {
+  const parent = await makeTempDirectory();
+  t.after(() => fs.rm(parent, { recursive: true, force: true }));
+  const target = path.join(parent, "atomic-recreate-race");
+  const destination = path.join(target, "scaffold.txt");
+  await fs.mkdir(target);
+  await fs.writeFile(destination, "old scaffold\n");
+  const operations = await planWrites(
+    target,
+    new Map([["scaffold.txt", "new scaffold\n"]]),
+    { force: true }
+  );
+
+  await assert.rejects(
+    applyWrites(target, operations, {
+      transactionObserver: async ({ phase }) => {
+        if (phase === "after-target-quarantine-verified") {
+          await fs.writeFile(destination, "concurrent recreate\n", {
+            encoding: "utf8",
+            flag: "wx"
+          });
+        }
+      }
+    }),
+    /created or recreated concurrently.*Recoverable prior bytes were retained/
+  );
+
+  assert.equal(await fs.readFile(destination, "utf8"), "concurrent recreate\n");
+  const retained = (await fs.readdir(target)).filter((name) =>
+    /^\.scaffold\.txt\..+\.before\.tmp$/.test(name)
+  );
+  assert.equal(retained.length, 1);
+  assert.equal(
+    await fs.readFile(path.join(target, retained[0]), "utf8"),
+    "old scaffold\n"
+  );
 });

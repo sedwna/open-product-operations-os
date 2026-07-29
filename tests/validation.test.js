@@ -283,6 +283,41 @@ test("safe local writer enforces dry-run, read-back, replay, and rollback", asyn
   assert.equal(await run(["validate", target], output.io), 0);
 });
 
+test("rollback replay rejects unrelated target bytes and a corrupted backup", async (t) => {
+  const { target } = await initializedProject(t, "rollback-replay-integrity");
+  const config = await readJson(path.join(target, CONFIG_FILE));
+  const sheet = config.workbook.sheets.find((entry) => entry.key === "delivery_tickets");
+  const workbookPath = path.join(target, sheet.file);
+  const rows = parseCsv(await fs.readFile(workbookPath, "utf8"));
+  const record = rows[0].map(() => "");
+  record[rows[0].indexOf("ticket_id")] = "TKT-20260729-001";
+  record[rows[0].indexOf("status")] = "implementation_complete";
+  rows.push(record);
+  const original = stringifyCsv(rows);
+  await fs.writeFile(workbookPath, original, "utf8");
+
+  const manifest = buildSafeManifest(config, sheet);
+  const preview = await applyLocalWrite(target, manifest, config);
+  const receipt = await applyLocalWrite(target, manifest, config, {
+    dryRun: false,
+    approvedPlanHash: preview.planHash
+  });
+  await rollbackLocalWrite(target, receipt.receiptFile);
+
+  await fs.appendFile(workbookPath, "unrelated bytes\n");
+  await assert.rejects(
+    rollbackLocalWrite(target, receipt.receiptFile),
+    /restored target no longer matches beforeSha256/
+  );
+
+  await fs.writeFile(workbookPath, original, "utf8");
+  await fs.appendFile(path.join(target, receipt.backupFile), "corrupt backup\n");
+  await assert.rejects(
+    rollbackLocalWrite(target, receipt.receiptFile),
+    /backup integrity check failed/
+  );
+});
+
 test("validate rejects malformed, duplicate, unauthorized workbook records", async (t) => {
   const { target, output } = await initializedProject(t, "invalid-workbook-records");
   const config = await readJson(path.join(target, CONFIG_FILE));

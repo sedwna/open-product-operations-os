@@ -36,14 +36,16 @@ export async function planWrites(root, files, { force = false } = {}) {
         action: merged === existing ? "preserved" : "merge",
         relativePath,
         destination,
-        content: merged
+        content: merged,
+        expectedCurrent: existing
       });
     } else {
       operations.push({
         action: existing === undefined ? "create" : "replace",
         relativePath,
         destination,
-        content
+        content,
+        expectedCurrent: existing
       });
     }
   }
@@ -92,6 +94,14 @@ export async function applyWrites(
       path.dirname(operation.destination),
       `.${path.basename(operation.destination)}.${crypto.randomUUID()}.tmp`
     );
+    const quarantinePath = path.join(
+      path.dirname(operation.destination),
+      `.${path.basename(operation.destination)}.${crypto.randomUUID()}.before.tmp`
+    );
+    const displacedPath = path.join(
+      path.dirname(operation.destination),
+      `.${path.basename(operation.destination)}.${crypto.randomUUID()}.displaced.tmp`
+    );
     try {
       await assertNoLinkTraversal(root, stagePath, `${label} stage`);
       await fs.writeFile(stagePath, operation.content, {
@@ -110,16 +120,235 @@ export async function applyWrites(
         stagePath
       });
       await assertNoLinkTraversal(root, operation.destination, label);
-      await assertNoLinkTraversal(root, stagePath, `${label} stage`);
-      await assertNoHardLinkedFile(stagePath, `${label} stage`);
-      if ((await fs.readFile(stagePath, "utf8")) !== operation.content) {
-        throw new Error(`${label} stage changed before atomic replacement.`);
+      await assertStageIntegrity(root, stagePath, operation.content, `${label} stage`);
+      if (operation.action === "create") {
+        await installStageNoOverwrite(root, stagePath, operation.destination, label);
+      } else {
+        await replaceWithNoOverwrite(root, {
+          destination: operation.destination,
+          stagePath,
+          quarantinePath,
+          displacedPath,
+          expectedCurrent: operation.expectedCurrent,
+          replacement: operation.content,
+          label,
+          transactionObserver,
+          relativePath: operation.relativePath
+        });
       }
-      await fs.rename(stagePath, operation.destination);
     } finally {
       await fs.rm(stagePath, { force: true });
     }
   }
+}
+
+async function replaceWithNoOverwrite(
+  root,
+  {
+    destination,
+    stagePath,
+    quarantinePath,
+    displacedPath,
+    expectedCurrent,
+    replacement,
+    label,
+    transactionObserver,
+    relativePath
+  }
+) {
+  let quarantined = false;
+  let installed = false;
+  try {
+    await assertNoLinkTraversal(root, quarantinePath, `${label} quarantine`);
+    await assertNoLinkTraversal(root, displacedPath, `${label} displaced recovery`);
+    await assertAbsent(quarantinePath, `${label} quarantine`);
+    await assertAbsent(displacedPath, `${label} displaced recovery`);
+    await assertNoHardLinkedFile(destination, label);
+    const current = await fs.readFile(destination, "utf8");
+    if (current !== expectedCurrent) {
+      throw new Error(`${label} changed before atomic quarantine.`);
+    }
+
+    await fs.rename(destination, quarantinePath);
+    quarantined = true;
+    await assertNoLinkTraversal(root, quarantinePath, `${label} quarantine`);
+    await assertNoHardLinkedFile(quarantinePath, `${label} quarantine`);
+    if ((await fs.readFile(quarantinePath, "utf8")) !== expectedCurrent) {
+      throw new Error(
+        `${label} changed during atomic quarantine; the moved bytes will be preserved.`
+      );
+    }
+
+    await transactionObserver({
+      phase: "after-target-quarantine-verified",
+      relativePath,
+      destination,
+      stagePath,
+      quarantinePath
+    });
+    await assertStageIntegrity(root, stagePath, replacement, `${label} stage`);
+    try {
+      await installStageNoOverwrite(root, stagePath, destination, label);
+      installed = true;
+    } catch (error) {
+      installed = error.destinationLinked === true;
+      throw error;
+    }
+    await cleanupCommittedQuarantine(
+      root,
+      quarantinePath,
+      expectedCurrent,
+      `${label} quarantine`
+    );
+  } catch (error) {
+    if (!quarantined) {
+      throw error;
+    }
+    const recovery = await recoverReplacement(root, {
+      destination,
+      quarantinePath,
+      displacedPath,
+      replacement,
+      installed
+    });
+    if (recovery.status === "retained") {
+      throw new Error(
+        `${error.message} Recoverable prior bytes were retained at "${quarantinePath}" without overwriting the current destination.`,
+        { cause: error }
+      );
+    }
+    if (recovery.status === "failed") {
+      throw new AggregateError(
+        [error, recovery.error],
+        `${label} replacement failed and automatic recovery also failed; recoverable artifacts were retained.`
+      );
+    }
+    throw error;
+  }
+}
+
+async function assertStageIntegrity(root, stagePath, expected, label) {
+  await assertNoLinkTraversal(root, stagePath, label);
+  await assertNoHardLinkedFile(stagePath, label);
+  if ((await fs.readFile(stagePath, "utf8")) !== expected) {
+    throw new Error(`${label} changed before no-overwrite installation.`);
+  }
+}
+
+async function installStageNoOverwrite(root, stagePath, destination, label) {
+  await assertNoLinkTraversal(root, path.dirname(destination), `${label} parent`);
+  let destinationLinked = false;
+  try {
+    await fs.link(stagePath, destination);
+    destinationLinked = true;
+    await fs.unlink(stagePath);
+    await assertNoLinkTraversal(root, destination, label);
+    await assertNoHardLinkedFile(destination, label);
+  } catch (error) {
+    if (error.code === "EEXIST") {
+      const concurrent = new Error(
+        `${label} was created or recreated concurrently; no-overwrite installation refused to replace it.`,
+        { cause: error }
+      );
+      concurrent.destinationLinked = destinationLinked;
+      throw concurrent;
+    }
+    error.destinationLinked = destinationLinked;
+    throw error;
+  }
+}
+
+async function recoverReplacement(
+  root,
+  { destination, quarantinePath, displacedPath, replacement, installed }
+) {
+  if (!installed) {
+    return restoreRetainedPath(root, quarantinePath, destination);
+  }
+
+  try {
+    await assertNoLinkTraversal(
+      root,
+      path.dirname(destination),
+      "Generated-file recovery target parent"
+    );
+    await assertAbsent(displacedPath, "Generated-file displaced recovery");
+    await fs.rename(destination, displacedPath);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return restoreRetainedPath(root, quarantinePath, destination);
+    }
+    return { status: "failed", error };
+  }
+
+  let displaced;
+  try {
+    displaced = await fs.readFile(displacedPath, "utf8");
+  } catch (error) {
+    const restored = await restoreRetainedPath(root, displacedPath, destination);
+    return restored.status === "restored" ? { status: "retained" } : restored;
+  }
+
+  if (displaced === replacement) {
+    const restored = await restoreRetainedPath(root, quarantinePath, destination);
+    if (restored.status === "restored") {
+      await fs.rm(displacedPath, { force: true });
+      return restored;
+    }
+    return restored;
+  }
+
+  const concurrent = await restoreRetainedPath(root, displacedPath, destination);
+  return concurrent.status === "restored" ? { status: "retained" } : concurrent;
+}
+
+async function restoreRetainedPath(root, source, destination) {
+  try {
+    await assertNoLinkTraversal(
+      root,
+      path.dirname(source),
+      "Generated-file recovery source parent"
+    );
+    await assertNoLinkTraversal(
+      root,
+      path.dirname(destination),
+      "Generated-file recovery target parent"
+    );
+    await fs.link(source, destination);
+    await fs.unlink(source);
+    return { status: "restored" };
+  } catch (error) {
+    if (error.code === "EEXIST") {
+      return { status: "retained" };
+    }
+    return { status: "failed", error };
+  }
+}
+
+async function cleanupCommittedQuarantine(root, file, expected, label) {
+  try {
+    await assertNoLinkTraversal(root, file, label);
+    await assertNoHardLinkedFile(file, label);
+    if ((await fs.readFile(file, "utf8")) !== expected) {
+      return false;
+    }
+    await fs.rm(file);
+    return true;
+  } catch (error) {
+    return error.code === "ENOENT";
+  }
+}
+
+async function assertAbsent(file, label) {
+  try {
+    await fs.lstat(file);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return;
+    }
+    throw error;
+  }
+  throw new Error(`${label} already exists.`);
 }
 
 export function summarizeWrites(root, operations, dryRun) {

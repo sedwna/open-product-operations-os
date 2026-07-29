@@ -187,14 +187,28 @@ export async function rollbackLocalWrite(root, receiptRelativePath) {
   const receiptText = await fs.readFile(receiptPath, "utf8");
   const receipt = JSON.parse(receiptText);
   assertValidReceipt(receipt, "Rollback receipt");
-  if (receipt.rolledBack) {
-    return { ...receipt, rollbackReplay: true };
-  }
-
   const targetPath = resolveInside(absoluteRoot, receipt.targetFile, "Rollback target");
   const backupPath = resolveInside(absoluteRoot, receipt.backupFile, "Rollback backup");
   await assertWritableExistingFile(absoluteRoot, targetPath, "Rollback target");
   await assertWritableExistingFile(absoluteRoot, backupPath, "Rollback backup");
+  if (receipt.rolledBack) {
+    const [restored, backup] = await Promise.all([
+      fs.readFile(targetPath, "utf8"),
+      fs.readFile(backupPath, "utf8")
+    ]);
+    if (sha256(restored) !== receipt.beforeSha256) {
+      throw new Error(
+        "Rollback replay refused because the restored target no longer matches beforeSha256."
+      );
+    }
+    if (sha256(backup) !== receipt.beforeSha256) {
+      throw new Error(
+        "Rollback replay refused because the backup integrity check failed."
+      );
+    }
+    return { ...receipt, rollbackReplay: true };
+  }
+
   const current = await fs.readFile(targetPath, "utf8");
   if (sha256(current) !== receipt.afterSha256) {
     throw new Error("Rollback refused because the target changed after the controlled write.");

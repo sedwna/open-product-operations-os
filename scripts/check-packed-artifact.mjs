@@ -8,7 +8,9 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const temporary = await fs.mkdtemp(path.join(os.tmpdir(), "product-ops-pack-"));
 const extracted = path.join(temporary, "extracted");
+const consumer = path.join(temporary, "consumer");
 await fs.mkdir(extracted);
+await fs.mkdir(consumer);
 
 try {
   const packResult = runNpm(["pack", "--json", "--pack-destination", temporary], root);
@@ -34,8 +36,25 @@ try {
   for (const script of ["check", "smoke", "licenses:check", "sbom:check"]) {
     runNpm(["run", script], packageRoot);
   }
+  await fs.writeFile(
+    path.join(consumer, "package.json"),
+    `${JSON.stringify({ name: "packed-consumer", private: true }, null, 2)}\n`
+  );
+  runNpm(
+    ["install", "--ignore-scripts", "--no-audit", "--no-fund", tarball],
+    consumer
+  );
+  const cli = path.join(
+    consumer,
+    "node_modules",
+    ".bin",
+    process.platform === "win32" ? "product-ops.cmd" : "product-ops"
+  );
+  const help = run(cli, ["--help"], consumer);
+  assert.match(help.stdout, /Product Operations OS CLI/);
+  assert.match(help.stdout, /product-ops init <target>/);
   console.log(
-    "Packed artifact installed and passed tests, smoke, portability, license, and SBOM checks."
+    "Packed artifact installed, its consumer CLI executed, and tests, smoke, portability, license, and SBOM checks passed."
   );
 } finally {
   await fs.rm(temporary, { recursive: true, force: true });
