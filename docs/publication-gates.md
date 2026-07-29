@@ -48,6 +48,16 @@ BLOCKED
 Only an independent release-control role may promote a candidate after inspecting the required
 proof. Producers may report readiness but may not certify their own output.
 
+## Current evidence
+
+- Corrective producer evidence:
+  [2026-07-29](verification/2026-07-29-corrective-producer-evidence.md)
+- Two-host Git-only resume proof:
+  [2026-07-29](verification/2026-07-29-two-host-git-only-proof.md)
+
+These links document completed producer controls. They do not mark Independent QC, Release, or
+Stable gates as passed.
+
 Repository CI can generate and validate a CycloneDX SBOM, audit locked dependencies, and enforce a
 dependency-license allowlist without publishing. The SBOM check normalizes the root component from
 package metadata, so its identity is independent of the clone or extracted archive directory name.

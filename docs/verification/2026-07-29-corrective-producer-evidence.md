@@ -47,8 +47,11 @@ Environment: Microsoft Windows NT 10.0.26200.0, Node.js 25.9.0, npm 11.12.1.
 
 ## Remaining external gates
 
-- A fresh independent verifier must inspect the pushed revision and issue the release verdict.
-- Two-host Git-only resume evidence is not produced here.
+- A fresh independent verifier must inspect the final evidence-bearing revision and issue the
+  release verdict.
+- Two-host Git-only resume evidence is now recorded in
+  [the dedicated proof](2026-07-29-two-host-git-only-proof.md); it remains producer-collected
+  evidence until independently verified.
 - No signed tag or release is created.
 - No PR is merged and no package is published.
 - Any upstream private task reconciliation remains outside this public-repository change.

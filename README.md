@@ -119,6 +119,13 @@ mandatory RB-12 verification, producer/verifier separation, environments, and pr
 The project is still a foundation release: generated formats and public interfaces may change
 before the first stable release.
 
+The exact public revision used for the current portability evidence was resumed from Git alone on
+Windows with Codex CLI and in an isolated Docker Linux environment. Both runs passed 39 tests,
+generated the canonical 13 roles and 23 tabs, and preserved configuration plus an operational row
+through forced re-initialization. See the
+[two-host proof](docs/verification/2026-07-29-two-host-git-only-proof.md). This is producer evidence,
+not an independent release verdict.
+
 Portable example evidence uses repository-controlled LF bytes via `.gitattributes`. The
 `npm run portability` check reproduces declared SHA-256 hashes and byte lengths on a normal clone.
 The npm payload includes the portability contract, tests, and a publishable shrinkwrap lock;
