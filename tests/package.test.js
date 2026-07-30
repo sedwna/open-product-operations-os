@@ -8,19 +8,33 @@ import {
   npmInvocation,
   runProcess
 } from "../scripts/process-runner.mjs";
+import { makeTempDirectory } from "./helpers.js";
 
 const repositoryRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
   ".."
 );
 
-test("npm package contains promised public templates, examples, docs, and metadata", async () => {
+test("npm package inspection is isolated and contains promised public files", async (t) => {
+  const packageSource = await makeIsolatedPackageSource(t);
+  const guardedTemplate = path.join(
+    repositoryRoot,
+    "templates",
+    "config",
+    "operating-model.yaml"
+  );
+  const guardedTemplateBefore = await fs.readFile(guardedTemplate);
   const invocation = npmInvocation(["pack", "--dry-run", "--json"]);
   const result = runProcess(invocation.command, invocation.args, {
-    cwd: repositoryRoot,
+    cwd: packageSource,
     encoding: "utf8"
   });
   assert.equal(result.status, 0, result.stderr || result.error?.message);
+  assert.deepEqual(
+    await fs.readFile(guardedTemplate),
+    guardedTemplateBefore,
+    "package inspection must not normalize the live checkout"
+  );
   const [pack] = JSON.parse(result.stdout);
   const files = new Set(pack.files.map((entry) => entry.path));
   for (const required of [
@@ -51,7 +65,7 @@ test("npm package contains promised public templates, examples, docs, and metada
   }
 
   const packageJson = JSON.parse(
-    await fs.readFile(path.join(repositoryRoot, "package.json"), "utf8")
+    await fs.readFile(path.join(packageSource, "package.json"), "utf8")
   );
   assert.equal(packageJson.license, "Apache-2.0");
   assert.match(packageJson.repository.url, /open-product-operations-os/);
@@ -59,11 +73,11 @@ test("npm package contains promised public templates, examples, docs, and metada
   assert.match(packageJson.bugs.url, /open-product-operations-os/);
   assert.equal(packageJson.publishConfig.provenance, true);
   const shrinkwrap = JSON.parse(
-    await fs.readFile(path.join(repositoryRoot, "npm-shrinkwrap.json"), "utf8")
+    await fs.readFile(path.join(packageSource, "npm-shrinkwrap.json"), "utf8")
   );
   try {
     const lock = JSON.parse(
-      await fs.readFile(path.join(repositoryRoot, "package-lock.json"), "utf8")
+      await fs.readFile(path.join(packageSource, "package-lock.json"), "utf8")
     );
     assert.deepEqual(
       shrinkwrap,
@@ -76,6 +90,28 @@ test("npm package contains promised public templates, examples, docs, and metada
     }
   }
 });
+
+async function makeIsolatedPackageSource(t) {
+  const temporary = await makeTempDirectory("product-ops-package-test-");
+  t.after(() => fs.rm(temporary, { recursive: true, force: true }));
+  const packageSource = path.join(temporary, "source");
+  await fs.cp(repositoryRoot, packageSource, {
+    recursive: true,
+    filter(source) {
+      const relativePath = path.relative(repositoryRoot, source);
+      if (relativePath === "") {
+        return true;
+      }
+      const [topLevel] = relativePath.split(path.sep);
+      return (
+        ![".git", "node_modules"].includes(topLevel) &&
+        !/^open-product-operations-os-.*\.tgz$/i.test(topLevel) &&
+        topLevel !== ".product-ops-pack-source-state.json"
+      );
+    }
+  });
+  return packageSource;
+}
 
 test("npm subprocess execution never delegates argument arrays to a command shell", () => {
   const invocation = npmInvocation(["--version"]);
