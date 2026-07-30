@@ -42,6 +42,10 @@ jobs:
         if: runner.os == 'Windows' && matrix.node-version == 22
         run: npm run clean-clone:check
 
+      - name: Verify clean Git archive package
+        if: runner.os == 'Linux' && matrix.node-version == 22
+        run: npm run clean-archive:check
+
   supply-chain:
     runs-on: ubuntu-latest
     steps:

@@ -37,5 +37,10 @@ only that identity with a generic category. The correction must:
    [BRD-0-149 producer correction status](2026-07-30-brd-0-149-producer-correction-status.md)
    supersedes only that producer portability claim, records the corrective design, and requires
    fresh exact-head independent verification.
+6. The predecessor correction `cc391dc` passed its Windows path but produced different Windows and
+   Linux npm package hashes. The
+   [BRD-0-149 cross-host follow-up status](2026-07-30-brd-0-149-cross-host-follow-up-status.md)
+   preserves that mismatch, supersedes the predecessor's producer hash claim, and routes the final
+   exact head back to independent verification.
 
 No entry in this chain is an independent `PASS`, merge authorization, tag, or release decision.

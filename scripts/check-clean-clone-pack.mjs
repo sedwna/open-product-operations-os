@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -14,6 +15,10 @@ const temporary = await fs.mkdtemp(
 );
 const remote = path.join(temporary, "source.git");
 const clone = path.join(temporary, "ordinary-clone");
+const clonePack = path.join(temporary, "clone-pack");
+const sourceArchive = path.join(temporary, "source.tar");
+const archiveSource = path.join(temporary, "archive-source");
+const archivePack = path.join(temporary, "archive-pack");
 const globalConfig = path.join(temporary, "gitconfig");
 const sourceHead = run("git", ["rev-parse", "HEAD"], root).stdout.trim();
 assert.equal(
@@ -86,6 +91,59 @@ try {
   );
 
   runNpm(["ci"], clone, gitEnvironment);
+  await fs.mkdir(clonePack);
+  await fs.mkdir(archiveSource);
+  await fs.mkdir(archivePack);
+  const cloneTarball = await packTarball(
+    clone,
+    clonePack,
+    gitEnvironment
+  );
+  run(
+    "git",
+    [
+      "archive",
+      "--format=tar",
+      `--output=${sourceArchive}`,
+      sourceHead
+    ],
+    clone,
+    gitEnvironment
+  );
+  run(
+    "tar",
+    ["-xf", sourceArchive, "-C", archiveSource],
+    clone,
+    gitEnvironment
+  );
+  assert.equal(
+    await exists(path.join(archiveSource, ".git")),
+    false,
+    "archive regression must run without Git metadata"
+  );
+  const archiveReadme = await fs.readFile(
+    path.join(archiveSource, "README.md")
+  );
+  assert.equal(
+    archiveReadme.includes(Buffer.from("\r\n")),
+    true,
+    "archive regression must exercise CRLF export bytes"
+  );
+  const archiveTarball = await packTarball(
+    archiveSource,
+    archivePack,
+    gitEnvironment
+  );
+  assert.deepEqual(
+    archiveTarball,
+    cloneTarball,
+    "ordinary autocrlf clone and CRLF Git archive must pack byte-for-byte identically"
+  );
+  assert.deepEqual(
+    await fs.readFile(path.join(archiveSource, "README.md")),
+    archiveReadme,
+    "archive postpack must restore exported CRLF bytes"
+  );
   const packed = runNpm(
     ["run", "packed:check"],
     clone,
@@ -99,6 +157,7 @@ try {
   )
     .trim()
     .split(/\s+/);
+  assert.equal(sha256(cloneTarball), expectedHash);
   assert.match(packed.stdout, new RegExp(expectedHash));
   assert.equal(
     run(
@@ -111,7 +170,7 @@ try {
     "prepack/postpack must restore the ordinary clone exactly"
   );
   console.log(
-    `Ordinary autocrlf clean clone ${sourceHead} produced and installed canonical package ${expectedHash}.`
+    `Ordinary autocrlf clean clone and CRLF archive ${sourceHead} produced identical canonical package ${expectedHash}; the installed CLI path passed.`
   );
 } finally {
   await fs.rm(temporary, { recursive: true, force: true });
@@ -120,6 +179,32 @@ try {
 function runNpm(args, cwd, env) {
   const invocation = npmInvocation(args);
   return run(invocation.command, invocation.args, cwd, env);
+}
+
+async function packTarball(source, destination, env) {
+  const result = runNpm(
+    ["pack", "--json", "--pack-destination", destination],
+    source,
+    env
+  );
+  const [pack] = JSON.parse(result.stdout);
+  return fs.readFile(path.join(destination, pack.filename));
+}
+
+async function exists(file) {
+  try {
+    await fs.lstat(file);
+    return true;
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return false;
+    }
+    throw error;
+  }
+}
+
+function sha256(value) {
+  return crypto.createHash("sha256").update(value).digest("hex");
 }
 
 function run(command, args, cwd, env = process.env) {

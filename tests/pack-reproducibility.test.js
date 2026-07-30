@@ -129,6 +129,71 @@ test("postpack recovery cannot overwrite concurrent bytes", async (t) => {
   await fs.access(path.resolve(root, statePath));
 });
 
+test("prepack canonicalizes and restores promised CRLF files from a Git archive", async (t) => {
+  const root = await makeArchiveSource(t);
+  const proof = path.join(root, "docs", "proof.md");
+  const original = await fs.readFile(proof);
+
+  const result = await prepareCanonicalPackSource(root);
+  assert.equal(result.gitWorktree, false);
+  assert.deepEqual(
+    result.conversions.map((entry) => entry.path),
+    ["LICENSE", "README.md", "docs/proof.md"]
+  );
+  assert.equal(
+    (await fs.readFile(proof)).includes(Buffer.from("\r\n")),
+    false
+  );
+  await fs.access(
+    path.join(root, ".product-ops-pack-source-state.json")
+  );
+
+  await restorePackSource(root);
+  assert.deepEqual(await fs.readFile(proof), original);
+  await assert.rejects(
+    fs.access(path.join(root, ".product-ops-pack-source-state.json")),
+    { code: "ENOENT" }
+  );
+});
+
+test("archive prepack refuses concurrent normalization and restore preserves concurrent bytes", async (t) => {
+  const root = await makeArchiveSource(t);
+  const proof = path.join(root, "docs", "proof.md");
+  await prepareCanonicalPackSource(root);
+
+  await assert.rejects(
+    prepareCanonicalPackSource(root),
+    /prior pack normalization state remains/
+  );
+  await fs.writeFile(proof, "concurrent archive bytes\n", "utf8");
+  await assert.rejects(
+    restorePackSource(root),
+    /recovery is fail-closed/
+  );
+  assert.equal(
+    await fs.readFile(proof, "utf8"),
+    "concurrent archive bytes\n"
+  );
+  await fs.access(
+    path.join(root, ".product-ops-pack-source-state.json")
+  );
+});
+
+test("archive prepack refuses CRLF normalization in promised binary bytes", async (t) => {
+  const root = await makeArchiveSource(t);
+  const binary = path.join(root, "docs", "binary.dat");
+  await fs.writeFile(binary, Buffer.from([0, 13, 10, 255]));
+
+  await assert.rejects(
+    prepareCanonicalPackSource(root),
+    /CRLF in a binary file: docs\/binary\.dat/
+  );
+  await assert.rejects(
+    fs.access(path.join(root, ".product-ops-pack-source-state.json")),
+    { code: "ENOENT" }
+  );
+});
+
 async function makeCrlfCheckout(t) {
   const root = await makeTempDirectory();
   t.after(() => fs.rm(root, { recursive: true, force: true }));
@@ -151,6 +216,40 @@ async function makeCrlfCheckout(t) {
   await fs.rm(path.join(root, ".gitattributes"));
   await fs.rm(path.join(root, "proof.md"));
   runGit(root, ["checkout", "--", ".gitattributes", "proof.md"]);
+  return root;
+}
+
+async function makeArchiveSource(t) {
+  const root = await makeTempDirectory();
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  await fs.mkdir(path.join(root, "docs"));
+  await fs.writeFile(
+    path.join(root, "package.json"),
+    `${JSON.stringify({
+      name: "archive-pack-fixture",
+      version: "1.0.0",
+      files: ["docs"],
+      bin: {
+        proof: "./docs/proof.md"
+      }
+    }, null, 2)}\n`,
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(root, "README.md"),
+    "archive readme\r\nsecond line\r\n",
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(root, "LICENSE"),
+    "archive license\r\n",
+    "utf8"
+  );
+  await fs.writeFile(
+    path.join(root, "docs", "proof.md"),
+    "first line\r\nsecond line\r\n",
+    "utf8"
+  );
   return root;
 }
 

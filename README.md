@@ -131,7 +131,10 @@ The later BRD-0-141
 is historical: independent BRD-0-149 verification found that its Windows clean-clone portability
 claim did not hold at exact head `e224428`. The current
 [BRD-0-149 producer correction status](docs/verification/2026-07-30-brd-0-149-producer-correction-status.md)
-records the response and still requires fresh exact-head proof and independent verification.
+records the first response. A subsequently reproduced cross-host package SHA mismatch is preserved
+and superseded by the
+[BRD-0-149 cross-host follow-up status](docs/verification/2026-07-30-brd-0-149-cross-host-follow-up-status.md),
+which still requires fresh exact-head proof and independent verification.
 Earlier proofs remain available under the documented
 [supersession and redaction policy](docs/verification/evidence-supersession-and-redaction.md);
 none is an independent release verdict.
@@ -147,7 +150,9 @@ repository-controlled SHA-256. The npm payload includes the portability contract
 publishable shrinkwrap lock; `npm run packed:check` installs the actual tarball, exercises its
 installed command through dry-run/init/validate/force, and executes its checks. A separate
 clean-clone regression performs a plain clone that inherits `core.autocrlf=true`, proves the clone
-is clean and CRLF-backed, then runs the actual packed-artifact path.
+is clean and CRLF-backed, compares its package byte-for-byte with a no-Git CRLF archive, then runs
+the actual installed packed-artifact path. A clean-archive regression proves source restoration,
+and an exact Docker regression compares a real Windows autocrlf clone with a clean Linux archive.
 
 ## Non-goals
 
