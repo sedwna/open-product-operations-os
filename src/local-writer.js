@@ -145,7 +145,8 @@ export async function applyLocalWrite(
           absoluteRoot,
           paths.receiptStagePath,
           paths.receiptPath,
-          "Write receipt"
+          "Write receipt",
+          transactionObserver
         );
       }
     });
@@ -166,7 +167,7 @@ export async function applyLocalWrite(
     if (error.transactionRecovery?.status === "failed") {
       throw new AggregateError(
         [error, error.transactionRecovery.error],
-        `Controlled write failed and automatic recovery could not safely restore the target; recovery artifacts remain beside the target and at "${paths.backupRelativePath}".`
+        `Controlled write failed and automatic recovery could not safely restore the target; recovery artifacts remain beside the target and at "${paths.backupRelativePath}". ${error.message}`
       );
     }
     await fs.rm(paths.backupPath, { force: true });
@@ -274,7 +275,8 @@ export async function rollbackLocalWrite(
           receiptPath,
           receiptStage,
           receiptText,
-          "Rollback receipt"
+          "Rollback receipt",
+          transactionObserver
         );
       }
     });
@@ -296,7 +298,7 @@ export async function rollbackLocalWrite(
     if (error.transactionRecovery?.status === "failed") {
       throw new AggregateError(
         [error, error.transactionRecovery.error],
-        "Rollback failed and automatic transaction recovery also failed; recovery artifacts were retained."
+        `Rollback failed and automatic transaction recovery also failed; recovery artifacts were retained. ${error.message}`
       );
     }
     throw error;
@@ -600,11 +602,14 @@ async function atomicNoOverwriteReplace(
         destination,
         quarantinePath,
         `${label} quarantine`,
-        { expectedContent: expectedCurrent }
+        {
+          expectedContent: expectedCurrent,
+          moveObserver: transactionObserver
+        }
       );
       quarantined = true;
     } catch (error) {
-      quarantined = error.sourceUnlinked === true;
+      quarantined = error.moveCommitted === true;
       throw error;
     }
 
@@ -626,10 +631,16 @@ async function atomicNoOverwriteReplace(
     });
     await assertStageIntegrity(root, stagePath, replacement, `${label} stage`);
     try {
-      await installStageNoOverwrite(root, stagePath, destination, label);
+      await installStageNoOverwrite(
+        root,
+        stagePath,
+        destination,
+        label,
+        transactionObserver
+      );
       installed = true;
     } catch (error) {
-      installed = error.sourceUnlinked === true;
+      installed = error.moveCommitted === true;
       throw error;
     }
     await transactionObserver({
@@ -670,11 +681,18 @@ async function installStageNoOverwrite(
   root,
   stagePath,
   destination,
-  label
+  label,
+  moveObserver = async () => {}
 ) {
   await assertNoLinkTraversal(root, path.dirname(destination), `${label} parent`);
   try {
-    await moveFileNoOverwrite(root, stagePath, destination, `${label} install`);
+    await moveFileNoOverwrite(
+      root,
+      stagePath,
+      destination,
+      `${label} install`,
+      { moveObserver }
+    );
   } catch (error) {
     if (error.code === "EEXIST") {
       throw Object.assign(
@@ -684,7 +702,9 @@ async function installStageNoOverwrite(
         ),
         {
           destinationLinked: error.destinationLinked === true,
-          sourceUnlinked: error.sourceUnlinked === true
+          sourceUnlinked: error.sourceUnlinked === true,
+          sourceRestored: error.sourceRestored === true,
+          moveCommitted: false
         }
       );
     }
@@ -710,7 +730,12 @@ async function recoverAtomicReplacement(
     return { status: "restored" };
   }
   if (!installed) {
-    return restoreRetainedPath(root, quarantinePath, destination);
+    return restoreRetainedPath(
+      root,
+      quarantinePath,
+      destination,
+      transactionObserver
+    );
   }
 
   let destinationStat;
@@ -722,7 +747,12 @@ async function recoverAtomicReplacement(
     }
   }
   if (!destinationStat) {
-    return restoreRetainedPath(root, quarantinePath, destination);
+    return restoreRetainedPath(
+      root,
+      quarantinePath,
+      destination,
+      transactionObserver
+    );
   }
   if (!destinationStat.isFile()) {
     return { status: "retained" };
@@ -747,7 +777,8 @@ async function recoverAtomicReplacement(
       root,
       destination,
       displacedPath,
-      "Transaction displaced recovery"
+      "Transaction displaced recovery",
+      { moveObserver: transactionObserver }
     );
   } catch (error) {
     return { status: "failed", error };
@@ -760,7 +791,8 @@ async function recoverAtomicReplacement(
     const concurrentRecovery = await restoreRetainedPath(
       root,
       displacedPath,
-      destination
+      destination,
+      transactionObserver
     );
     return concurrentRecovery.status === "restored"
       ? { status: "retained" }
@@ -779,7 +811,8 @@ async function recoverAtomicReplacement(
     const originalRecovery = await restoreRetainedPath(
       root,
       quarantinePath,
-      destination
+      destination,
+      transactionObserver
     );
     if (originalRecovery.status === "restored") {
       await fs.rm(displacedPath, { force: true });
@@ -791,14 +824,20 @@ async function recoverAtomicReplacement(
   const concurrentRecovery = await restoreRetainedPath(
     root,
     displacedPath,
-    destination
+    destination,
+    transactionObserver
   );
   return concurrentRecovery.status === "restored"
     ? { status: "retained" }
     : concurrentRecovery;
 }
 
-async function restoreRetainedPath(root, source, destination) {
+async function restoreRetainedPath(
+  root,
+  source,
+  destination,
+  moveObserver = async () => {}
+) {
   try {
     await assertNoLinkTraversal(
       root,
@@ -814,7 +853,8 @@ async function restoreRetainedPath(root, source, destination) {
       root,
       source,
       destination,
-      "Transaction retained recovery"
+      "Transaction retained recovery",
+      { moveObserver }
     );
     return { status: "restored" };
   } catch (error) {
@@ -825,7 +865,14 @@ async function restoreRetainedPath(root, source, destination) {
   }
 }
 
-async function replaceReceipt(root, receiptPath, receiptStage, current, label) {
+async function replaceReceipt(
+  root,
+  receiptPath,
+  receiptStage,
+  current,
+  label,
+  transactionObserver
+) {
   const quarantinePath = `${receiptPath}.rollback-current.tmp`;
   const displacedPath = `${receiptPath}.rollback-displaced.tmp`;
   await assertAbsent(quarantinePath, `${label} quarantine`);
@@ -838,7 +885,7 @@ async function replaceReceipt(root, receiptPath, receiptStage, current, label) {
     expectedCurrent: current,
     replacement: await fs.readFile(receiptStage, "utf8"),
     label,
-    transactionObserver: async () => {},
+    transactionObserver,
     manifestId: "receipt-rollback",
     afterInstall: async () => {}
   });

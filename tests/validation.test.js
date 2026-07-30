@@ -670,6 +670,83 @@ test("controlled write cannot overwrite a quarantine artifact created after the 
   await assert.rejects(fs.access(receiptPath), { code: "ENOENT" });
 });
 
+for (const [phase, windowName] of [
+  ["after-final-pre-unlink-validation", "after final pre-unlink validation"],
+  [
+    "after-source-unlink-before-commit-validation",
+    "after source unlink before commit validation"
+  ]
+]) {
+  test(`controlled write emits no receipt and retains anchored source when destination changes ${windowName}`, async (t) => {
+    const { target } = await initializedProject(t, `writer-${phase}`);
+    const config = await readJson(path.join(target, CONFIG_FILE));
+    const sheet = config.workbook.sheets.find(
+      (entry) => entry.key === "delivery_tickets"
+    );
+    const workbookPath = path.join(target, sheet.file);
+    const rows = parseCsv(await fs.readFile(workbookPath, "utf8"));
+    const record = rows[0].map(() => "");
+    record[rows[0].indexOf("ticket_id")] = "TKT-20260729-001";
+    record[rows[0].indexOf("status")] = "implementation_complete";
+    rows.push(record);
+    const originalBytes = stringifyCsv(rows);
+    await fs.writeFile(workbookPath, originalBytes, "utf8");
+    const manifest = buildSafeManifest(config, sheet);
+    const preview = await applyLocalWrite(target, manifest, config);
+    const transactionDirectory = path.join(
+      target,
+      ".product-ops",
+      "writes",
+      manifest.manifestId
+    );
+    const concurrentBytes = `concurrent controlled-write bytes at ${phase}\n`;
+    let anchorPath;
+    let stagePath;
+
+    await assert.rejects(
+      applyLocalWrite(target, manifest, config, {
+        dryRun: false,
+        approvedPlanHash: preview.planHash,
+        transactionObserver: async (event) => {
+          if (
+            event.phase === phase &&
+            event.label === "Write target install"
+          ) {
+            anchorPath = event.anchorPath;
+            stagePath = event.source;
+            await fs.unlink(workbookPath);
+            await fs.writeFile(workbookPath, concurrentBytes, {
+              encoding: "utf8",
+              flag: "wx"
+            });
+          }
+        }
+      }),
+      /Safety anchor retained/
+    );
+
+    assert.equal(await fs.readFile(workbookPath, "utf8"), concurrentBytes);
+    assert.equal(
+      await fs.readFile(
+        `${workbookPath}.${manifest.manifestId}.before.tmp`,
+        "utf8"
+      ),
+      originalBytes
+    );
+    const anchoredReplacement = await fs.readFile(anchorPath, "utf8");
+    assert.match(anchoredReplacement, /accepted/);
+    await assert.rejects(fs.access(stagePath), { code: "ENOENT" });
+    assert.equal(
+      await fs.readFile(path.join(transactionDirectory, "before.csv"), "utf8"),
+      originalBytes
+    );
+    await assert.rejects(
+      fs.access(path.join(transactionDirectory, "receipt.json")),
+      { code: "ENOENT" }
+    );
+  });
+}
+
 test("controlled-write recovery preserves displaced replacement after a later destination race", async (t) => {
   const { target } = await initializedProject(t, "writer-late-recovery-race");
   const config = await readJson(path.join(target, CONFIG_FILE));

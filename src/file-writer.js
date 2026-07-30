@@ -123,7 +123,13 @@ export async function applyWrites(
       await assertNoLinkTraversal(root, operation.destination, label);
       await assertStageIntegrity(root, stagePath, operation.content, `${label} stage`);
       if (operation.action === "create") {
-        await installStageNoOverwrite(root, stagePath, operation.destination, label);
+        await installStageNoOverwrite(
+          root,
+          stagePath,
+          operation.destination,
+          label,
+          transactionObserver
+        );
       } else {
         await replaceWithNoOverwrite(root, {
           destination: operation.destination,
@@ -184,11 +190,14 @@ async function replaceWithNoOverwrite(
         destination,
         quarantinePath,
         `${label} quarantine`,
-        { expectedContent: expectedCurrent }
+        {
+          expectedContent: expectedCurrent,
+          moveObserver: transactionObserver
+        }
       );
       quarantined = true;
     } catch (error) {
-      quarantined = error.sourceUnlinked === true;
+      quarantined = error.moveCommitted === true;
       throw error;
     }
     await assertNoLinkTraversal(root, quarantinePath, `${label} quarantine`);
@@ -208,10 +217,16 @@ async function replaceWithNoOverwrite(
     });
     await assertStageIntegrity(root, stagePath, replacement, `${label} stage`);
     try {
-      await installStageNoOverwrite(root, stagePath, destination, label);
+      await installStageNoOverwrite(
+        root,
+        stagePath,
+        destination,
+        label,
+        transactionObserver
+      );
       installed = true;
     } catch (error) {
-      installed = error.sourceUnlinked === true;
+      installed = error.moveCommitted === true;
       throw error;
     }
     await transactionObserver({
@@ -250,7 +265,7 @@ async function replaceWithNoOverwrite(
     if (recovery.status === "failed") {
       throw new AggregateError(
         [error, recovery.error],
-        `${label} replacement failed and automatic recovery also failed; recoverable artifacts were retained.`
+        `${label} replacement failed and automatic recovery also failed; recoverable artifacts were retained. ${error.message}`
       );
     }
     throw error;
@@ -265,10 +280,22 @@ async function assertStageIntegrity(root, stagePath, expected, label) {
   }
 }
 
-async function installStageNoOverwrite(root, stagePath, destination, label) {
+async function installStageNoOverwrite(
+  root,
+  stagePath,
+  destination,
+  label,
+  moveObserver = async () => {}
+) {
   await assertNoLinkTraversal(root, path.dirname(destination), `${label} parent`);
   try {
-    await moveFileNoOverwrite(root, stagePath, destination, `${label} install`);
+    await moveFileNoOverwrite(
+      root,
+      stagePath,
+      destination,
+      `${label} install`,
+      { moveObserver }
+    );
   } catch (error) {
     if (error.code === "EEXIST") {
       const concurrent = new Error(
@@ -277,6 +304,8 @@ async function installStageNoOverwrite(root, stagePath, destination, label) {
       );
       concurrent.destinationLinked = error.destinationLinked === true;
       concurrent.sourceUnlinked = error.sourceUnlinked === true;
+      concurrent.sourceRestored = error.sourceRestored === true;
+      concurrent.moveCommitted = false;
       throw concurrent;
     }
     throw error;
@@ -296,7 +325,12 @@ async function recoverReplacement(
   }
 ) {
   if (!installed) {
-    return restoreRetainedPath(root, quarantinePath, destination);
+    return restoreRetainedPath(
+      root,
+      quarantinePath,
+      destination,
+      transactionObserver
+    );
   }
 
   try {
@@ -317,11 +351,17 @@ async function recoverReplacement(
       root,
       destination,
       displacedPath,
-      "Generated-file displaced recovery"
+      "Generated-file displaced recovery",
+      { moveObserver: transactionObserver }
     );
   } catch (error) {
     if (error.code === "ENOENT") {
-      return restoreRetainedPath(root, quarantinePath, destination);
+      return restoreRetainedPath(
+        root,
+        quarantinePath,
+        destination,
+        transactionObserver
+      );
     }
     return { status: "failed", error };
   }
@@ -330,12 +370,22 @@ async function recoverReplacement(
   try {
     displaced = await fs.readFile(displacedPath, "utf8");
   } catch (error) {
-    const restored = await restoreRetainedPath(root, displacedPath, destination);
+    const restored = await restoreRetainedPath(
+      root,
+      displacedPath,
+      destination,
+      transactionObserver
+    );
     return restored.status === "restored" ? { status: "retained" } : restored;
   }
 
   if (displaced === replacement) {
-    const restored = await restoreRetainedPath(root, quarantinePath, destination);
+    const restored = await restoreRetainedPath(
+      root,
+      quarantinePath,
+      destination,
+      transactionObserver
+    );
     if (restored.status === "restored") {
       await fs.rm(displacedPath, { force: true });
       return restored;
@@ -343,11 +393,21 @@ async function recoverReplacement(
     return restored;
   }
 
-  const concurrent = await restoreRetainedPath(root, displacedPath, destination);
+  const concurrent = await restoreRetainedPath(
+    root,
+    displacedPath,
+    destination,
+    transactionObserver
+  );
   return concurrent.status === "restored" ? { status: "retained" } : concurrent;
 }
 
-async function restoreRetainedPath(root, source, destination) {
+async function restoreRetainedPath(
+  root,
+  source,
+  destination,
+  moveObserver = async () => {}
+) {
   try {
     await assertNoLinkTraversal(
       root,
@@ -363,7 +423,8 @@ async function restoreRetainedPath(root, source, destination) {
       root,
       source,
       destination,
-      "Generated-file retained recovery"
+      "Generated-file retained recovery",
+      { moveObserver }
     );
     return { status: "restored" };
   } catch (error) {

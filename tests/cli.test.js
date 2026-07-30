@@ -478,3 +478,149 @@ test("atomic move retains its source when the destination is replaced before fin
   assert.equal((await fs.lstat(source)).nlink, 1);
   assert.equal((await fs.lstat(destination)).nlink, 1);
 });
+
+for (const [phase, windowName] of [
+  ["after-final-pre-unlink-validation", "after final pre-unlink validation"],
+  [
+    "after-source-unlink-before-commit-validation",
+    "after source unlink before commit validation"
+  ]
+]) {
+  test(`atomic move restores source and retains its anchor when destination changes ${windowName}`, async (t) => {
+    const parent = await makeTempDirectory();
+    t.after(() => fs.rm(parent, { recursive: true, force: true }));
+    const source = path.join(parent, "source.tmp");
+    const destination = path.join(parent, "destination.txt");
+    const originalBytes = "original anchored source bytes\n";
+    const concurrentBytes = `concurrent destination at ${phase}\n`;
+    await fs.writeFile(source, originalBytes);
+    let anchorPath;
+    let failure;
+
+    try {
+      await moveFileNoOverwrite(parent, source, destination, "Anchored race probe", {
+        expectedContent: originalBytes,
+        moveObserver: async (event) => {
+          if (event.phase === phase) {
+            anchorPath = event.anchorPath;
+            await fs.unlink(destination);
+            await fs.writeFile(destination, concurrentBytes, {
+              encoding: "utf8",
+              flag: "wx"
+            });
+          }
+        }
+      });
+    } catch (error) {
+      failure = error;
+    }
+
+    assert.ok(failure);
+    assert.equal(failure.sourceRestored, true);
+    assert.equal(failure.moveCommitted, false);
+    assert.equal(failure.safetyAnchorPath, anchorPath);
+    assert.match(failure.message, new RegExp(escapeRegExp(anchorPath)));
+    assert.equal(await fs.readFile(source, "utf8"), originalBytes);
+    assert.equal(await fs.readFile(anchorPath, "utf8"), originalBytes);
+    assert.equal(await fs.readFile(destination, "utf8"), concurrentBytes);
+    assert.equal((await fs.lstat(source)).nlink, 2);
+    assert.equal((await fs.lstat(anchorPath)).nlink, 2);
+    assert.equal((await fs.lstat(destination)).nlink, 1);
+  });
+
+  test(`initializer emits no success summary and retains recovery links when destination changes ${windowName}`, async (t) => {
+    const parent = await makeTempDirectory();
+    t.after(() => fs.rm(parent, { recursive: true, force: true }));
+    const target = path.join(parent, `initializer-${phase}`);
+    const destination = path.join(target, "scaffold.txt");
+    await fs.mkdir(target);
+    await fs.writeFile(destination, "old scaffold\n");
+    const operations = await planWrites(
+      target,
+      new Map([["scaffold.txt", "new scaffold\n"]]),
+      { force: true }
+    );
+    const successSummary = [];
+    const concurrentBytes = `concurrent initializer bytes at ${phase}\n`;
+    let anchorPath;
+    let stagePath;
+
+    await assert.rejects(
+      (async () => {
+        await applyWrites(target, operations, {
+          transactionObserver: async (event) => {
+            if (
+              event.phase === phase &&
+              event.label === 'Generated file "scaffold.txt" install'
+            ) {
+              anchorPath = event.anchorPath;
+              stagePath = event.source;
+              await fs.unlink(destination);
+              await fs.writeFile(destination, concurrentBytes, {
+                encoding: "utf8",
+                flag: "wx"
+              });
+            }
+          }
+        });
+        successSummary.push(...summarizeWrites(target, operations, false));
+      })(),
+      /Safety anchor retained/
+    );
+
+    assert.equal(await fs.readFile(destination, "utf8"), concurrentBytes);
+    assert.equal(await fs.readFile(anchorPath, "utf8"), "new scaffold\n");
+    await assert.rejects(fs.access(stagePath), { code: "ENOENT" });
+    const quarantines = (await fs.readdir(target)).filter((name) =>
+      /^\.scaffold\.txt\..+\.before\.tmp$/.test(name)
+    );
+    assert.equal(quarantines.length, 1);
+    assert.equal(
+      await fs.readFile(path.join(target, quarantines[0]), "utf8"),
+      "old scaffold\n"
+    );
+    assert.deepEqual(successSummary, []);
+  });
+}
+
+test("atomic move makes safety-anchor cleanup failure explicit and recoverable", async (t) => {
+  const parent = await makeTempDirectory();
+  t.after(() => fs.rm(parent, { recursive: true, force: true }));
+  const source = path.join(parent, "source.tmp");
+  const destination = path.join(parent, "destination.txt");
+  const originalBytes = "cleanup failure source bytes\n";
+  await fs.writeFile(source, originalBytes);
+  let anchorPath;
+  let failure;
+
+  try {
+    await moveFileNoOverwrite(parent, source, destination, "Cleanup probe", {
+      expectedContent: originalBytes,
+      moveObserver: async (event) => {
+        if (event.phase === "before-safety-anchor-cleanup") {
+          anchorPath = event.anchorPath;
+          throw new Error("injected safety-anchor cleanup failure");
+        }
+      }
+    });
+  } catch (error) {
+    failure = error;
+  }
+
+  assert.ok(failure);
+  assert.equal(failure.sourceRestored, true);
+  assert.equal(failure.moveCommitted, false);
+  assert.equal(failure.safetyAnchorPath, anchorPath);
+  assert.match(failure.message, /injected safety-anchor cleanup failure/);
+  assert.match(failure.message, new RegExp(escapeRegExp(anchorPath)));
+  assert.equal(await fs.readFile(source, "utf8"), originalBytes);
+  assert.equal(await fs.readFile(anchorPath, "utf8"), originalBytes);
+  assert.equal(await fs.readFile(destination, "utf8"), originalBytes);
+  assert.equal((await fs.lstat(source)).nlink, 3);
+  assert.equal((await fs.lstat(anchorPath)).nlink, 3);
+  assert.equal((await fs.lstat(destination)).nlink, 3);
+});
+
+function escapeRegExp(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
