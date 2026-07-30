@@ -1,0 +1,33 @@
+{
+  "host": "Docker Linux node:20-bookworm",
+  "sourceSha": "fd5b620138c6be93721f5c1fe02f0709ff5b2d52",
+  "repositoryOnlyContext": true,
+  "publicGitBundleTransport": true,
+  "npmCi": true,
+  "testsPassed": 56,
+  "testsFailed": 0,
+  "packedCheck": true,
+  "supplyChain": true,
+  "installedCli": true,
+  "dryRun": true,
+  "init": true,
+  "validateBefore": true,
+  "stableReinit": true,
+  "validateAfter": true,
+  "roles": 13,
+  "tabs": 23,
+  "preservedOperationalRow": true,
+  "preservedConfig": true,
+  "configHashBefore": "bb05b2ef9d77f3c734aff07536c7584b5a9363508616dc611d476a256ca107ad",
+  "configHashAfter": "bb05b2ef9d77f3c734aff07536c7584b5a9363508616dc611d476a256ca107ad",
+  "preservedRowId": "IDEA-20260730-757",
+  "verifiedAt": "2026-07-30T09:15:11+03:30",
+  "blockers": [],
+  "notes": [
+    "Fresh clone from a Git bundle produced from the public pull-request head",
+    "No host repository, private LinkUp files, chat context, or handoff files were mounted",
+    "Only the public Git bundle and a generic read-only proof script were mounted",
+    "All workspace operations used the product-ops binary installed from the real npm tarball",
+    "This receipt supersedes earlier implementation receipts for release evaluation without deleting historical evidence"
+  ]
+}
