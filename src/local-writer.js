@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { moveFileNoOverwrite } from "./atomic-move.js";
 import { parseCsv, stringifyCsv } from "./csv.js";
 import {
   assertNoHardLinkedFile,
@@ -178,8 +179,15 @@ export async function applyLocalWrite(
   return { ...receipt, receiptFile: paths.receiptRelativePath };
 }
 
-export async function rollbackLocalWrite(root, receiptRelativePath) {
+export async function rollbackLocalWrite(
+  root,
+  receiptRelativePath,
+  { transactionObserver = async () => {} } = {}
+) {
   const absoluteRoot = path.resolve(root);
+  if (typeof transactionObserver !== "function") {
+    throw new Error("transactionObserver must be a function when provided.");
+  }
   const safeReceipt = assertSafeRelativePath(receiptRelativePath, "Receipt path");
   const receiptPath = resolveInside(absoluteRoot, safeReceipt, "Receipt path");
   await assertNoLinkTraversal(absoluteRoot, receiptPath, "Receipt path");
@@ -249,7 +257,7 @@ export async function rollbackLocalWrite(root, receiptRelativePath) {
       expectedCurrent: current,
       replacement: backup,
       label: "Rollback target",
-      transactionObserver: async () => {},
+      transactionObserver,
       manifestId: receipt.manifestId,
       afterInstall: async () => {
         if (sha256(await fs.readFile(targetPath)) !== receipt.beforeSha256) {
@@ -578,8 +586,27 @@ async function atomicNoOverwriteReplace(
     await assertWritableExistingFile(root, destination, label);
     await assertAbsent(quarantinePath, `${label} quarantine`);
     await assertAbsent(displacedPath, `${label} displaced recovery`);
-    await fs.rename(destination, quarantinePath);
-    quarantined = true;
+    await transactionObserver({
+      phase: "before-target-quarantine-move",
+      manifestId,
+      label,
+      destination,
+      quarantinePath,
+      displacedPath
+    });
+    try {
+      await moveFileNoOverwrite(
+        root,
+        destination,
+        quarantinePath,
+        `${label} quarantine`,
+        { expectedContent: expectedCurrent }
+      );
+      quarantined = true;
+    } catch (error) {
+      quarantined = error.sourceUnlinked === true;
+      throw error;
+    }
 
     await assertNoLinkTraversal(root, quarantinePath, `${label} quarantine`);
     await assertNoHardLinkedFile(quarantinePath, `${label} quarantine`);
@@ -605,6 +632,14 @@ async function atomicNoOverwriteReplace(
       installed = error.destinationLinked === true;
       throw error;
     }
+    await transactionObserver({
+      phase: "after-target-installed",
+      manifestId,
+      label,
+      destination,
+      quarantinePath,
+      displacedPath
+    });
     await afterInstall();
     return;
   } catch (error) {
@@ -614,7 +649,10 @@ async function atomicNoOverwriteReplace(
       displacedPath,
       replacement,
       quarantined,
-      installed
+      installed,
+      transactionObserver,
+      manifestId,
+      label
     });
     throw error;
   }
@@ -635,19 +673,19 @@ async function installStageNoOverwrite(
   label
 ) {
   await assertNoLinkTraversal(root, path.dirname(destination), `${label} parent`);
-  let destinationLinked = false;
   try {
-    await fs.link(stagePath, destination);
-    destinationLinked = true;
-    await fs.unlink(stagePath);
-    await assertNoLinkTraversal(root, destination, label);
-    await assertNoHardLinkedFile(destination, label);
+    await moveFileNoOverwrite(root, stagePath, destination, `${label} install`);
   } catch (error) {
-    error.destinationLinked = destinationLinked;
     if (error.code === "EEXIST") {
-      throw new Error(
-        `${label} was recreated concurrently; no-overwrite installation refused to replace it.`,
-        { cause: error }
+      throw Object.assign(
+        new Error(
+          `${label} was recreated concurrently; no-overwrite installation refused to replace it.`,
+          { cause: error }
+        ),
+        {
+          destinationLinked: error.destinationLinked === true,
+          sourceUnlinked: error.sourceUnlinked === true
+        }
       );
     }
     throw error;
@@ -662,7 +700,10 @@ async function recoverAtomicReplacement(
     displacedPath,
     replacement,
     quarantined,
-    installed
+    installed,
+    transactionObserver,
+    manifestId,
+    label
   }
 ) {
   if (!quarantined) {
@@ -694,7 +735,20 @@ async function recoverAtomicReplacement(
       "Transaction recovery target parent"
     );
     await assertAbsent(displacedPath, "Transaction displaced recovery");
-    await fs.rename(destination, displacedPath);
+    await transactionObserver({
+      phase: "before-displaced-recovery-move",
+      manifestId,
+      label,
+      destination,
+      quarantinePath,
+      displacedPath
+    });
+    await moveFileNoOverwrite(
+      root,
+      destination,
+      displacedPath,
+      "Transaction displaced recovery"
+    );
   } catch (error) {
     return { status: "failed", error };
   }
@@ -749,8 +803,12 @@ async function restoreRetainedPath(root, source, destination) {
       path.dirname(destination),
       "Transaction recovery target parent"
     );
-    await fs.link(source, destination);
-    await fs.unlink(source);
+    await moveFileNoOverwrite(
+      root,
+      source,
+      destination,
+      "Transaction retained recovery"
+    );
     return { status: "restored" };
   } catch (error) {
     if (error.code === "EEXIST") {

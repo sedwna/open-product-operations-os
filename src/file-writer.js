@@ -1,6 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { moveFileNoOverwrite } from "./atomic-move.js";
 import { parseCsv, stringifyCsv } from "./csv.js";
 import {
   assertNoHardLinkedFile,
@@ -169,8 +170,27 @@ async function replaceWithNoOverwrite(
       throw new Error(`${label} changed before atomic quarantine.`);
     }
 
-    await fs.rename(destination, quarantinePath);
-    quarantined = true;
+    await transactionObserver({
+      phase: "before-target-quarantine-move",
+      relativePath,
+      destination,
+      stagePath,
+      quarantinePath,
+      displacedPath
+    });
+    try {
+      await moveFileNoOverwrite(
+        root,
+        destination,
+        quarantinePath,
+        `${label} quarantine`,
+        { expectedContent: expectedCurrent }
+      );
+      quarantined = true;
+    } catch (error) {
+      quarantined = error.sourceUnlinked === true;
+      throw error;
+    }
     await assertNoLinkTraversal(root, quarantinePath, `${label} quarantine`);
     await assertNoHardLinkedFile(quarantinePath, `${label} quarantine`);
     if ((await fs.readFile(quarantinePath, "utf8")) !== expectedCurrent) {
@@ -194,6 +214,14 @@ async function replaceWithNoOverwrite(
       installed = error.destinationLinked === true;
       throw error;
     }
+    await transactionObserver({
+      phase: "after-target-installed",
+      relativePath,
+      destination,
+      stagePath,
+      quarantinePath,
+      displacedPath
+    });
     await cleanupCommittedQuarantine(
       root,
       quarantinePath,
@@ -209,7 +237,9 @@ async function replaceWithNoOverwrite(
       quarantinePath,
       displacedPath,
       replacement,
-      installed
+      installed,
+      transactionObserver,
+      relativePath
     });
     if (recovery.status === "retained") {
       throw new Error(
@@ -237,30 +267,33 @@ async function assertStageIntegrity(root, stagePath, expected, label) {
 
 async function installStageNoOverwrite(root, stagePath, destination, label) {
   await assertNoLinkTraversal(root, path.dirname(destination), `${label} parent`);
-  let destinationLinked = false;
   try {
-    await fs.link(stagePath, destination);
-    destinationLinked = true;
-    await fs.unlink(stagePath);
-    await assertNoLinkTraversal(root, destination, label);
-    await assertNoHardLinkedFile(destination, label);
+    await moveFileNoOverwrite(root, stagePath, destination, `${label} install`);
   } catch (error) {
     if (error.code === "EEXIST") {
       const concurrent = new Error(
         `${label} was created or recreated concurrently; no-overwrite installation refused to replace it.`,
         { cause: error }
       );
-      concurrent.destinationLinked = destinationLinked;
+      concurrent.destinationLinked = error.destinationLinked === true;
+      concurrent.sourceUnlinked = error.sourceUnlinked === true;
       throw concurrent;
     }
-    error.destinationLinked = destinationLinked;
     throw error;
   }
 }
 
 async function recoverReplacement(
   root,
-  { destination, quarantinePath, displacedPath, replacement, installed }
+  {
+    destination,
+    quarantinePath,
+    displacedPath,
+    replacement,
+    installed,
+    transactionObserver,
+    relativePath
+  }
 ) {
   if (!installed) {
     return restoreRetainedPath(root, quarantinePath, destination);
@@ -273,7 +306,19 @@ async function recoverReplacement(
       "Generated-file recovery target parent"
     );
     await assertAbsent(displacedPath, "Generated-file displaced recovery");
-    await fs.rename(destination, displacedPath);
+    await transactionObserver({
+      phase: "before-displaced-recovery-move",
+      relativePath,
+      destination,
+      quarantinePath,
+      displacedPath
+    });
+    await moveFileNoOverwrite(
+      root,
+      destination,
+      displacedPath,
+      "Generated-file displaced recovery"
+    );
   } catch (error) {
     if (error.code === "ENOENT") {
       return restoreRetainedPath(root, quarantinePath, destination);
@@ -314,8 +359,12 @@ async function restoreRetainedPath(root, source, destination) {
       path.dirname(destination),
       "Generated-file recovery target parent"
     );
-    await fs.link(source, destination);
-    await fs.unlink(source);
+    await moveFileNoOverwrite(
+      root,
+      source,
+      destination,
+      "Generated-file retained recovery"
+    );
     return { status: "restored" };
   } catch (error) {
     if (error.code === "EEXIST") {

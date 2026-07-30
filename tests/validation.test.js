@@ -619,6 +619,116 @@ test("local writer cannot erase a mutation after quarantine verification and bef
   );
 });
 
+test("controlled write cannot overwrite a quarantine artifact created after the final absence check", async (t) => {
+  const { target } = await initializedProject(t, "writer-quarantine-race");
+  const config = await readJson(path.join(target, CONFIG_FILE));
+  const sheet = config.workbook.sheets.find((entry) => entry.key === "delivery_tickets");
+  const workbookPath = path.join(target, sheet.file);
+  const rows = parseCsv(await fs.readFile(workbookPath, "utf8"));
+  const record = rows[0].map(() => "");
+  record[rows[0].indexOf("ticket_id")] = "TKT-20260729-001";
+  record[rows[0].indexOf("status")] = "implementation_complete";
+  rows.push(record);
+  const originalBytes = stringifyCsv(rows);
+  await fs.writeFile(workbookPath, originalBytes, "utf8");
+  const manifest = buildSafeManifest(config, sheet);
+  const preview = await applyLocalWrite(target, manifest, config);
+  const receiptPath = path.join(
+    target,
+    ".product-ops",
+    "writes",
+    manifest.manifestId,
+    "receipt.json"
+  );
+  let quarantinePath;
+
+  await assert.rejects(
+    applyLocalWrite(target, manifest, config, {
+      dryRun: false,
+      approvedPlanHash: preview.planHash,
+      transactionObserver: async (event) => {
+        if (
+          event.phase === "before-target-quarantine-move" &&
+          event.label === "Write target"
+        ) {
+          quarantinePath = event.quarantinePath;
+          await fs.writeFile(quarantinePath, "concurrent quarantine\n", {
+            encoding: "utf8",
+            flag: "wx"
+          });
+        }
+      }
+    }),
+    /quarantine destination already exists.*no-overwrite move refused/
+  );
+
+  assert.equal(await fs.readFile(workbookPath, "utf8"), originalBytes);
+  assert.equal(
+    await fs.readFile(quarantinePath, "utf8"),
+    "concurrent quarantine\n"
+  );
+  await assert.rejects(fs.access(receiptPath), { code: "ENOENT" });
+});
+
+test("rollback recovery cannot overwrite a displaced artifact created after the final absence check", async (t) => {
+  const { target } = await initializedProject(t, "rollback-displaced-race");
+  const config = await readJson(path.join(target, CONFIG_FILE));
+  const sheet = config.workbook.sheets.find((entry) => entry.key === "delivery_tickets");
+  const workbookPath = path.join(target, sheet.file);
+  const rows = parseCsv(await fs.readFile(workbookPath, "utf8"));
+  const record = rows[0].map(() => "");
+  record[rows[0].indexOf("ticket_id")] = "TKT-20260729-001";
+  record[rows[0].indexOf("status")] = "implementation_complete";
+  rows.push(record);
+  const originalBytes = stringifyCsv(rows);
+  await fs.writeFile(workbookPath, originalBytes, "utf8");
+  const manifest = buildSafeManifest(config, sheet);
+  const preview = await applyLocalWrite(target, manifest, config);
+  const receipt = await applyLocalWrite(target, manifest, config, {
+    dryRun: false,
+    approvedPlanHash: preview.planHash
+  });
+  const receiptPath = path.join(target, receipt.receiptFile);
+  const receiptBytes = await fs.readFile(receiptPath, "utf8");
+  const postWriteBytes = await fs.readFile(workbookPath, "utf8");
+  let quarantinePath;
+  let displacedPath;
+
+  await assert.rejects(
+    rollbackLocalWrite(target, receipt.receiptFile, {
+      transactionObserver: async (event) => {
+        if (
+          event.phase === "after-target-installed" &&
+          event.label === "Rollback target"
+        ) {
+          quarantinePath = event.quarantinePath;
+          throw new Error("injected rollback receipt failure");
+        }
+        if (
+          event.phase === "before-displaced-recovery-move" &&
+          event.label === "Rollback target"
+        ) {
+          displacedPath = event.displacedPath;
+          await fs.writeFile(displacedPath, "concurrent displaced\n", {
+            encoding: "utf8",
+            flag: "wx"
+          });
+        }
+      }
+    }),
+    /automatic transaction recovery also failed; recovery artifacts were retained/
+  );
+
+  assert.equal(await fs.readFile(workbookPath, "utf8"), originalBytes);
+  assert.equal(await fs.readFile(quarantinePath, "utf8"), postWriteBytes);
+  assert.equal(
+    await fs.readFile(displacedPath, "utf8"),
+    "concurrent displaced\n"
+  );
+  assert.equal(await fs.readFile(receiptPath, "utf8"), receiptBytes);
+  assert.equal(JSON.parse(receiptBytes).rolledBack, false);
+});
+
 test("write manifests cannot replace canonical keys with arbitrary selectors", async (t) => {
   const { target } = await initializedProject(t, "writer-canonical-keys");
   const config = await readJson(path.join(target, CONFIG_FILE));

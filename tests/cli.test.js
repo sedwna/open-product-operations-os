@@ -4,7 +4,11 @@ import path from "node:path";
 import test from "node:test";
 import { CONFIG_FILE } from "../src/constants.js";
 import { run } from "../src/cli.js";
-import { applyWrites, planWrites } from "../src/file-writer.js";
+import {
+  applyWrites,
+  planWrites,
+  summarizeWrites
+} from "../src/file-writer.js";
 import { captureIo, makeTempDirectory, readJson, writeJson } from "./helpers.js";
 
 test("init creates the canonical 13-role, 23-tab project and validate accepts it", async (t) => {
@@ -352,4 +356,92 @@ test("initializer preserves a concurrently recreated destination and quarantined
     await fs.readFile(path.join(target, retained[0]), "utf8"),
     "old scaffold\n"
   );
+});
+
+test("force init cannot overwrite a quarantine artifact created after the final absence check", async (t) => {
+  const parent = await makeTempDirectory();
+  t.after(() => fs.rm(parent, { recursive: true, force: true }));
+  const target = path.join(parent, "atomic-quarantine-race");
+  const destination = path.join(target, "scaffold.txt");
+  await fs.mkdir(target);
+  await fs.writeFile(destination, "old scaffold\n");
+  const operations = await planWrites(
+    target,
+    new Map([["scaffold.txt", "new scaffold\n"]]),
+    { force: true }
+  );
+  const successSummary = [];
+  let quarantinePath;
+
+  await assert.rejects(
+    (async () => {
+      await applyWrites(target, operations, {
+        transactionObserver: async (event) => {
+          if (event.phase === "before-target-quarantine-move") {
+            quarantinePath = event.quarantinePath;
+            await fs.writeFile(quarantinePath, "concurrent quarantine\n", {
+              encoding: "utf8",
+              flag: "wx"
+            });
+          }
+        }
+      });
+      successSummary.push(...summarizeWrites(target, operations, false));
+    })(),
+    /quarantine destination already exists.*no-overwrite move refused/
+  );
+
+  assert.equal(await fs.readFile(destination, "utf8"), "old scaffold\n");
+  assert.equal(
+    await fs.readFile(quarantinePath, "utf8"),
+    "concurrent quarantine\n"
+  );
+  assert.deepEqual(successSummary, []);
+});
+
+test("initializer recovery cannot overwrite a displaced artifact created after the final absence check", async (t) => {
+  const parent = await makeTempDirectory();
+  t.after(() => fs.rm(parent, { recursive: true, force: true }));
+  const target = path.join(parent, "atomic-displaced-race");
+  const destination = path.join(target, "scaffold.txt");
+  await fs.mkdir(target);
+  await fs.writeFile(destination, "old scaffold\n");
+  const operations = await planWrites(
+    target,
+    new Map([["scaffold.txt", "new scaffold\n"]]),
+    { force: true }
+  );
+  const successSummary = [];
+  let quarantinePath;
+  let displacedPath;
+
+  await assert.rejects(
+    (async () => {
+      await applyWrites(target, operations, {
+        transactionObserver: async (event) => {
+          if (event.phase === "after-target-installed") {
+            quarantinePath = event.quarantinePath;
+            throw new Error("injected post-install failure");
+          }
+          if (event.phase === "before-displaced-recovery-move") {
+            displacedPath = event.displacedPath;
+            await fs.writeFile(displacedPath, "concurrent displaced\n", {
+              encoding: "utf8",
+              flag: "wx"
+            });
+          }
+        }
+      });
+      successSummary.push(...summarizeWrites(target, operations, false));
+    })(),
+    /automatic recovery also failed; recoverable artifacts were retained/
+  );
+
+  assert.equal(await fs.readFile(destination, "utf8"), "new scaffold\n");
+  assert.equal(await fs.readFile(quarantinePath, "utf8"), "old scaffold\n");
+  assert.equal(
+    await fs.readFile(displacedPath, "utf8"),
+    "concurrent displaced\n"
+  );
+  assert.deepEqual(successSummary, []);
 });
