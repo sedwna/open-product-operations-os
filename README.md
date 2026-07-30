@@ -126,20 +126,28 @@ Windows and isolated Docker Linux each passed 56 tests, exercised the command in
 real npm tarball, generated 13 roles and 23 tabs, and preserved configuration plus an operational
 row through forced re-initialization. See the
 [56-test installed-package proof](docs/verification/2026-07-30-final-fd5b620-two-host-proof.md).
-The corrective implementation now on this branch changes that revision, so its
+The later BRD-0-141
 [producer correction status](docs/verification/2026-07-30-brd-0-141-producer-correction-status.md)
-requires fresh exact-head proof and independent verification. Earlier proofs remain available
-under the documented
+is historical: independent BRD-0-149 verification found that its Windows clean-clone portability
+claim did not hold at exact head `e224428`. The current
+[BRD-0-149 producer correction status](docs/verification/2026-07-30-brd-0-149-producer-correction-status.md)
+records the response and still requires fresh exact-head proof and independent verification.
+Earlier proofs remain available under the documented
 [supersession and redaction policy](docs/verification/evidence-supersession-and-redaction.md);
 none is an independent release verdict.
 
-Portable example evidence uses repository-controlled LF bytes via `.gitattributes`. The
-`npm run portability` check reproduces declared SHA-256 hashes and byte lengths on a normal clone.
-Before packing, raw tracked bytes must match the Git index, so a clean-filtered CRLF worktree cannot
-silently produce a different payload. Every CI host compares the real npm tarball to the same
+Portable example evidence canonicalizes text before reproducing declared SHA-256 hashes and byte
+lengths. A checkout may use the platform EOL selected by Git and `.gitattributes`. Before packing,
+the source guard compares the canonical Git blob, the bytes Git's current checkout filter is
+expected to produce, and the actual worktree bytes. Only an exact, EOL-only Git checkout conversion
+may be normalized temporarily to the canonical blob for packing; postpack restores the original
+checkout bytes. Content tamper, stale attributes-transition drift, concurrent packing, and unsafe
+restore remain fail-closed. Every CI host compares the real npm tarball to the same
 repository-controlled SHA-256. The npm payload includes the portability contract, tests, and a
 publishable shrinkwrap lock; `npm run packed:check` installs the actual tarball, exercises its
-installed command through dry-run/init/validate/force, and executes its checks.
+installed command through dry-run/init/validate/force, and executes its checks. A separate
+clean-clone regression performs a plain clone that inherits `core.autocrlf=true`, proves the clone
+is clean and CRLF-backed, then runs the actual packed-artifact path.
 
 ## Non-goals
 

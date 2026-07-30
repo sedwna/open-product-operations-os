@@ -38,13 +38,15 @@
     "START-HERE.md"
   ],
   "scripts": {
-    "prepack": "node scripts/check-pack-source.mjs",
+    "prepack": "node scripts/check-pack-source.mjs prepare",
+    "postpack": "node scripts/check-pack-source.mjs restore",
     "test": "node --test",
     "test:coverage": "node --test --experimental-test-coverage",
     "check": "node --check src/cli.js && npm run clean-room:check && npm test && npm run portability",
     "smoke": "node scripts/smoke.mjs",
     "portability": "node scripts/verify-portability.mjs",
     "clean-room:check": "node scripts/check-clean-room.mjs",
+    "clean-clone:check": "node scripts/check-clean-clone-pack.mjs",
     "sbom:check": "node scripts/check-sbom.mjs",
     "licenses:check": "node scripts/check-licenses.mjs",
     "packed:check": "node scripts/check-packed-artifact.mjs",

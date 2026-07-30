@@ -31,6 +31,11 @@ only that identity with a generic category. The correction must:
    implementation revision.
 4. The corrective implementation that contains
    [the BRD-0-141 producer status](2026-07-30-brd-0-141-producer-correction-status.md) changes that
-   implementation. It therefore requires fresh exact-head proof and a new independent verdict.
+   implementation. Independent BRD-0-149 verification later found its Windows clean-clone
+   portability claim false at exact head `e224428`; the file remains historical evidence.
+5. The
+   [BRD-0-149 producer correction status](2026-07-30-brd-0-149-producer-correction-status.md)
+   supersedes only that producer portability claim, records the corrective design, and requires
+   fresh exact-head independent verification.
 
 No entry in this chain is an independent `PASS`, merge authorization, tag, or release decision.

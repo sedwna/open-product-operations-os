@@ -50,8 +50,10 @@ proof. Producers may report readiness but may not certify their own output.
 
 ## Current evidence
 
+- BRD-0-149 Windows clean-clone producer correction status:
+  [current branch](verification/2026-07-30-brd-0-149-producer-correction-status.md)
 - BRD-0-141 producer correction status:
-  [current branch](verification/2026-07-30-brd-0-141-producer-correction-status.md)
+  [historical / portability claim superseded](verification/2026-07-30-brd-0-141-producer-correction-status.md)
 - Latest completed two-host installed-package producer proof:
   [fd5b620 / 56 tests](verification/2026-07-30-final-fd5b620-two-host-proof.md)
 - Corrective producer evidence:
@@ -60,9 +62,10 @@ proof. Producers may report readiness but may not certify their own output.
   [current chain](verification/evidence-supersession-and-redaction.md)
 
 The 39-test and 46-test proofs remain historical and superseded; the 56-test proof is the latest
-completed producer proof for its exact prior implementation. The current corrective branch
-requires fresh exact-head proof. These links do not mark Independent QC, Release, or Stable gates
-as passed.
+completed producer proof for its exact prior implementation. Independent BRD-0-149 evidence
+supersedes the clean-clone portability claim made by the BRD-0-141 producer status at `e224428`.
+The current corrective branch requires fresh exact-head proof. These links do not mark Independent
+QC, Release, or Stable gates as passed.
 
 Repository CI can generate and validate a CycloneDX SBOM, audit locked dependencies, and enforce a
 dependency-license allowlist without publishing. The SBOM check normalizes the root component from

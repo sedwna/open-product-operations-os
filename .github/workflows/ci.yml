@@ -38,6 +38,10 @@ jobs:
       - name: Verify cross-host pack hash and installed CLI
         run: npm run packed:check
 
+      - name: Verify ordinary Windows autocrlf clean clone
+        if: runner.os == 'Windows' && matrix.node-version == 22
+        run: npm run clean-clone:check
+
   supply-chain:
     runs-on: ubuntu-latest
     steps:

@@ -25,7 +25,7 @@ for (const item of manifest.items) {
 }
 
 const attributes = await fs.readFile(path.join(root, ".gitattributes"), "utf8");
-assert.match(attributes, /^\* text=auto eol=lf$/m);
+assert.match(attributes, /^\* text=auto$/m);
 console.log(
   `Portability contract verified: detached manifest and ${manifest.items.length} evidence item(s).`
 );

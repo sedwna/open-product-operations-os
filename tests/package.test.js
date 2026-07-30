@@ -30,6 +30,7 @@ test("npm package contains promised public templates, examples, docs, and metada
     ".gitattributes",
     "npm-shrinkwrap.json",
     "scripts/check-clean-room.mjs",
+    "scripts/check-clean-clone-pack.mjs",
     "scripts/check-pack-source.mjs",
     "scripts/process-runner.mjs",
     "scripts/sbom-contract.mjs",

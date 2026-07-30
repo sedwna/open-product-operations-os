@@ -42,6 +42,7 @@ try {
     "npm-shrinkwrap.json",
     "tests/package.test.js",
     "scripts/check-clean-room.mjs",
+    "scripts/check-clean-clone-pack.mjs",
     "scripts/check-licenses.mjs",
     "scripts/check-pack-source.mjs",
     "scripts/check-sbom.mjs",

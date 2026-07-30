@@ -4,6 +4,8 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+- Made npm packing deterministic from ordinary `core.autocrlf=true` clean clones while preserving
+  fail-closed content-tamper and attributes-transition detection.
 - Unified initialization around the canonical 13-role and 23-tab catalog.
 - Added resolved-path link and junction containment before every write.
 - Made forced workbook refresh preserve operational rows and bounded schema extensions.
