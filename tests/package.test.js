@@ -1,10 +1,13 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 import { normalizeSbomRoot } from "../scripts/sbom-contract.mjs";
+import {
+  npmInvocation,
+  runProcess
+} from "../scripts/process-runner.mjs";
 
 const repositoryRoot = path.resolve(
   path.dirname(fileURLToPath(import.meta.url)),
@@ -12,19 +15,10 @@ const repositoryRoot = path.resolve(
 );
 
 test("npm package contains promised public templates, examples, docs, and metadata", async () => {
-  const npmCli = process.env.npm_execpath;
-  const command = npmCli
-    ? process.execPath
-    : process.platform === "win32"
-      ? "npm.cmd"
-      : "npm";
-  const args = npmCli
-    ? [npmCli, "pack", "--dry-run", "--json"]
-    : ["pack", "--dry-run", "--json"];
-  const result = spawnSync(command, args, {
+  const invocation = npmInvocation(["pack", "--dry-run", "--json"]);
+  const result = runProcess(invocation.command, invocation.args, {
     cwd: repositoryRoot,
-    encoding: "utf8",
-    shell: !npmCli && process.platform === "win32"
+    encoding: "utf8"
   });
   assert.equal(result.status, 0, result.stderr || result.error?.message);
   const [pack] = JSON.parse(result.stdout);
@@ -35,6 +29,9 @@ test("npm package contains promised public templates, examples, docs, and metada
     "START-HERE.md",
     ".gitattributes",
     "npm-shrinkwrap.json",
+    "scripts/check-clean-room.mjs",
+    "scripts/check-pack-source.mjs",
+    "scripts/process-runner.mjs",
     "scripts/sbom-contract.mjs",
     "src/cli.js",
     "src/local-writer.js",
@@ -75,6 +72,15 @@ test("npm package contains promised public templates, examples, docs, and metada
       throw error;
     }
   }
+});
+
+test("npm subprocess execution never delegates argument arrays to a command shell", () => {
+  const invocation = npmInvocation(["--version"]);
+  if (process.platform === "win32") {
+    assert.equal(invocation.command, process.execPath);
+    assert.match(invocation.args[0], /npm-cli\.js$/i);
+  }
+  assert.equal(invocation.args.includes("npm.cmd"), false);
 });
 
 test("SBOM root identity is invariant across clone and archive directory names", () => {

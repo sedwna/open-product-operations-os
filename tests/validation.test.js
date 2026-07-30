@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
@@ -68,6 +69,40 @@ function buildSafeManifest(config, sheet) {
       secretValuesForbidden: true
     },
     createdAt: "2026-07-29T10:30:00Z"
+  };
+}
+
+async function preparedWriter(t, name) {
+  const { target } = await initializedProject(t, name);
+  const config = await readJson(path.join(target, CONFIG_FILE));
+  const sheet = config.workbook.sheets.find(
+    (entry) => entry.key === "delivery_tickets"
+  );
+  const workbookPath = path.join(target, sheet.file);
+  const rows = parseCsv(await fs.readFile(workbookPath, "utf8"));
+  const record = rows[0].map(() => "");
+  record[rows[0].indexOf("ticket_id")] = "TKT-20260729-001";
+  record[rows[0].indexOf("status")] = "implementation_complete";
+  rows.push(record);
+  const originalBytes = stringifyCsv(rows);
+  await fs.writeFile(workbookPath, originalBytes, "utf8");
+  const manifest = buildSafeManifest(config, sheet);
+  const preview = await applyLocalWrite(target, manifest, config);
+  const transactionDirectory = path.join(
+    target,
+    ".product-ops",
+    "writes",
+    manifest.manifestId
+  );
+  return {
+    target,
+    config,
+    workbookPath,
+    originalBytes,
+    manifest,
+    preview,
+    transactionDirectory,
+    receiptPath: path.join(transactionDirectory, "receipt.json")
   };
 }
 
@@ -924,6 +959,181 @@ test("rollback recovery preserves displaced bytes and receipt after a later dest
   assert.equal(await fs.readFile(displacedPath, "utf8"), originalBytes);
   assert.equal(await fs.readFile(receiptPath, "utf8"), receiptBytes);
   assert.equal(JSON.parse(receiptBytes).rolledBack, false);
+});
+
+test("controlled write invalidates its receipt when target diverges during receipt commit", async (t) => {
+  const {
+    target,
+    config,
+    workbookPath,
+    manifest,
+    preview,
+    receiptPath
+  } = await preparedWriter(t, "writer-stale-receipt-race");
+  const concurrentBytes = "concurrent bytes after final target read-back\n";
+  const invalidReceiptPath = `${receiptPath}.${manifest.manifestId}.invalidated.tmp`;
+  let raceInjected = false;
+  let failure;
+
+  try {
+    await applyLocalWrite(target, manifest, config, {
+      dryRun: false,
+      approvedPlanHash: preview.planHash,
+      transactionObserver: async (event) => {
+        if (
+          !raceInjected &&
+          event.phase === "before-source-unlink-validation" &&
+          event.label === "Write receipt install"
+        ) {
+          raceInjected = true;
+          await fs.unlink(workbookPath);
+          await fs.writeFile(workbookPath, concurrentBytes, {
+            encoding: "utf8",
+            flag: "wx"
+          });
+        }
+      }
+    });
+  } catch (error) {
+    failure = error;
+  }
+
+  assert.equal(raceInjected, true);
+  assert.ok(failure);
+  assert.equal(failure.code, "ERECOVERYRETAINED");
+  assert.ok(failure.recoveryPaths.includes(invalidReceiptPath));
+  assert.equal(await fs.readFile(workbookPath, "utf8"), concurrentBytes);
+  await assert.rejects(fs.access(receiptPath), { code: "ENOENT" });
+  const invalidReceipt = JSON.parse(
+    await fs.readFile(invalidReceiptPath, "utf8")
+  );
+  assert.equal(invalidReceipt.fullReadbackMatch, true);
+  assert.notEqual(
+    invalidReceipt.afterSha256,
+    crypto
+      .createHash("sha256")
+      .update(await fs.readFile(workbookPath))
+      .digest("hex")
+  );
+  await assert.rejects(
+    applyLocalWrite(target, manifest, config),
+    (error) =>
+      error.code === "ERECOVERYRETAINED" &&
+      error.recoveryPaths.includes(invalidReceiptPath)
+  );
+});
+
+test("controlled-write recovery retains a displaced-path replacement and reports it", async (t) => {
+  const {
+    target,
+    config,
+    workbookPath,
+    originalBytes,
+    manifest,
+    preview
+  } = await preparedWriter(t, "writer-displaced-cleanup-race");
+  let displacedPath;
+  let failure;
+
+  try {
+    await applyLocalWrite(target, manifest, config, {
+      dryRun: false,
+      approvedPlanHash: preview.planHash,
+      transactionObserver: async (event) => {
+        if (event.phase === "target-replaced") {
+          throw new Error("injected post-install failure");
+        }
+        if (
+          event.phase === "before-displaced-recovery-move" &&
+          event.label === "Write target"
+        ) {
+          displacedPath = event.displacedPath;
+        }
+        if (
+          displacedPath &&
+          event.phase === "before-safety-anchor-cleanup" &&
+          event.label === "Transaction retained recovery"
+        ) {
+          await fs.unlink(displacedPath);
+          await fs.writeFile(displacedPath, "concurrent displaced bytes\n", {
+            encoding: "utf8",
+            flag: "wx"
+          });
+        }
+      }
+    });
+  } catch (error) {
+    failure = error;
+  }
+
+  assert.ok(failure);
+  assert.equal(failure.code, "ERECOVERYRETAINED");
+  assert.ok(failure.recoveryPaths.includes(displacedPath));
+  assert.equal(await fs.readFile(workbookPath, "utf8"), originalBytes);
+  assert.equal(
+    await fs.readFile(displacedPath, "utf8"),
+    "concurrent displaced bytes\n"
+  );
+});
+
+test("writer committed-cleanup retention is explicit and replay remains fail-closed", async (t) => {
+  const {
+    target,
+    config,
+    workbookPath,
+    manifest,
+    preview,
+    receiptPath
+  } = await preparedWriter(t, "writer-committed-cleanup-race");
+  const quarantinePath = `${workbookPath}.${manifest.manifestId}.before.tmp`;
+  let raceInjected = false;
+  let failure;
+
+  try {
+    await applyLocalWrite(target, manifest, config, {
+      dryRun: false,
+      approvedPlanHash: preview.planHash,
+      transactionObserver: async (event) => {
+        if (
+          !raceInjected &&
+          event.phase === "before-safety-anchor-cleanup" &&
+          event.label === "Write receipt install"
+        ) {
+          raceInjected = true;
+          await fs.unlink(quarantinePath);
+          await fs.writeFile(
+            quarantinePath,
+            "concurrent committed quarantine bytes\n",
+            { encoding: "utf8", flag: "wx" }
+          );
+        }
+      }
+    });
+  } catch (error) {
+    failure = error;
+  }
+
+  assert.equal(raceInjected, true);
+  assert.ok(failure);
+  assert.equal(failure.code, "ECOMMITTEDCLEANUP");
+  assert.equal(failure.committed, true);
+  assert.deepEqual(failure.recoveryPaths, [quarantinePath]);
+  assert.equal(
+    await fs.readFile(quarantinePath, "utf8"),
+    "concurrent committed quarantine bytes\n"
+  );
+  const receipt = JSON.parse(await fs.readFile(receiptPath, "utf8"));
+  const current = await fs.readFile(workbookPath);
+  assert.equal(
+    receipt.afterSha256,
+    crypto.createHash("sha256").update(current).digest("hex")
+  );
+  await assert.rejects(
+    applyLocalWrite(target, manifest, config),
+    (error) =>
+      error.code === "ERECOVERYRETAINED" &&
+      error.recoveryPaths.includes(quarantinePath)
+  );
 });
 
 test("write manifests cannot replace canonical keys with arbitrary selectors", async (t) => {

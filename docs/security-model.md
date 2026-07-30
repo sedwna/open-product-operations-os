@@ -54,13 +54,14 @@ The packaged local CSV writer is deliberately limited to configured files inside
 project. It requires the exact hash from a preceding dry run, writes an integrity-checked backup
 and receipt, rejects hard-linked targets, requires each sheet's canonical record key, rejects
 duplicate canonical keys, and atomically moves the current target to a same-directory transaction
-quarantine before verifying the approved bytes. The staged replacement is installed with an atomic
-no-overwrite hard link and the stage link is removed before success, leaving a one-link target.
+quarantine before verifying the approved bytes. The staged replacement is installed with a
+no-overwrite hard link. Source retirement moves the pathname to a private location and verifies its
+captured identity instead of unlinking a stale pathname.
 If another actor recreates the target after quarantine verification, installation fails with
 `EEXIST`, preserves those concurrent bytes, retains the approved original for recovery, and emits
-no success receipt. Handled post-install failures use the same no-overwrite recovery rule; an
-interrupted process leaves bounded transaction-owned backup or quarantine artifacts instead of
-guessing that overwrite is safe. Replay is accepted only with a matching validated receipt and
+no success receipt. Target divergence during receipt commit invalidates the canonical receipt.
+Handled post-install failures and committed cleanup retention report bounded recovery paths instead
+of guessing that deletion or overwrite is safe. Replay is accepted only with a matching validated receipt and
 original preconditions. Rollback is refused if the target changed after the write. The
 implementation does not connect to a provider or production system.
 

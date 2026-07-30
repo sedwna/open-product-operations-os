@@ -104,8 +104,10 @@ The current initializer creates:
   approval, owner authorization, preconditions, complete read-back, zero-write replay, and
   hash-guarded rollback. Existing hard-linked targets are rejected; the current target is atomically
   quarantined and verified before a same-filesystem no-overwrite install. A concurrently recreated
-  target is preserved with no success receipt, failed post-install transactions recover without
-  overwriting concurrent bytes, and replay requires a matching validated receipt and backup;
+  source or target is preserved with no success receipt, target and receipt are revalidated as one
+  final state, failed post-install transactions recover without overwriting concurrent bytes, and
+  retained cleanup artifacts are reported through fail-closed recovery paths. Replay requires a
+  matching validated receipt and backup and refuses retained recovery artifacts;
 - a synthetic example project.
 
 `templates/config/operating-model.yaml` is the single role, tab, record-key, field-authority,
@@ -119,18 +121,25 @@ mandatory RB-12 verification, producer/verifier separation, environments, and pr
 The project is still a foundation release: generated formats and public interfaces may change
 before the first stable release.
 
-The exact public revision used for the current portability evidence was resumed from Git alone on
-Windows with Codex CLI and in an isolated Docker Linux environment. Both runs passed 39 tests,
-generated the canonical 13 roles and 23 tabs, and preserved configuration plus an operational row
-through forced re-initialization. See the
-[two-host proof](docs/verification/2026-07-29-two-host-git-only-proof.md). This is producer evidence,
-not an independent release verdict.
+The latest completed two-host producer proof applies to exact implementation revision `fd5b620`.
+Windows and isolated Docker Linux each passed 56 tests, exercised the command installed from the
+real npm tarball, generated 13 roles and 23 tabs, and preserved configuration plus an operational
+row through forced re-initialization. See the
+[56-test installed-package proof](docs/verification/2026-07-30-final-fd5b620-two-host-proof.md).
+The corrective implementation now on this branch changes that revision, so its
+[producer correction status](docs/verification/2026-07-30-brd-0-141-producer-correction-status.md)
+requires fresh exact-head proof and independent verification. Earlier proofs remain available
+under the documented
+[supersession and redaction policy](docs/verification/evidence-supersession-and-redaction.md);
+none is an independent release verdict.
 
 Portable example evidence uses repository-controlled LF bytes via `.gitattributes`. The
 `npm run portability` check reproduces declared SHA-256 hashes and byte lengths on a normal clone.
-The npm payload includes the portability contract, tests, and a publishable shrinkwrap lock;
-`npm run packed:check` installs the actual tarball and executes its checks without relying on
-repository-only files.
+Before packing, raw tracked bytes must match the Git index, so a clean-filtered CRLF worktree cannot
+silently produce a different payload. Every CI host compares the real npm tarball to the same
+repository-controlled SHA-256. The npm payload includes the portability contract, tests, and a
+publishable shrinkwrap lock; `npm run packed:check` installs the actual tarball, exercises its
+installed command through dry-run/init/validate/force, and executes its checks.
 
 ## Non-goals
 

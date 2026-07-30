@@ -9,9 +9,13 @@ Earlier receipts remain immutable historical evidence. They are superseded for
 release evaluation because the implementation and regression suite changed
 after those receipts were produced.
 
+The public-tip source-identity wording in this file was generalized under the
+[recorded redaction policy](evidence-supersession-and-redaction.md); no revision,
+result, count, or isolation claim changed.
+
 ## Isolation contract
 
-Both runs started from public Git history and received no private LinkUp
+Both runs started from public Git history and received no private source-product
 repository, Workbook, taskboard, local handoff, durable memory, or chat
 transcript.
 

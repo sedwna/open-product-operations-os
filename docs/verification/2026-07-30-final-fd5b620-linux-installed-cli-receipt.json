@@ -25,9 +25,10 @@
   "blockers": [],
   "notes": [
     "Fresh clone from a Git bundle produced from the public pull-request head",
-    "No host repository, private LinkUp files, chat context, or handoff files were mounted",
+    "No host repository, private source-product files, chat context, or handoff files were mounted",
     "Only the public Git bundle and a generic read-only proof script were mounted",
     "All workspace operations used the product-ops binary installed from the real npm tarball",
-    "This receipt supersedes earlier implementation receipts for release evaluation without deleting historical evidence"
+    "This receipt supersedes earlier implementation receipts for release evaluation without deleting historical evidence",
+    "Public-tip source-identity wording was generalized under the recorded redaction policy; no receipt result or count changed"
   ]
 }

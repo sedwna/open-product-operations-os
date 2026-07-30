@@ -1,7 +1,11 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { moveFileNoOverwrite } from "./atomic-move.js";
+import {
+  captureFileSnapshot,
+  moveFileNoOverwrite,
+  removeFileIfUnchanged
+} from "./atomic-move.js";
 import { parseCsv, stringifyCsv } from "./csv.js";
 import {
   assertNoHardLinkedFile,
@@ -165,6 +169,7 @@ async function replaceWithNoOverwrite(
 ) {
   let quarantined = false;
   let installed = false;
+  let quarantineSnapshot;
   try {
     await assertNoLinkTraversal(root, quarantinePath, `${label} quarantine`);
     await assertNoLinkTraversal(root, displacedPath, `${label} displaced recovery`);
@@ -200,9 +205,13 @@ async function replaceWithNoOverwrite(
       quarantined = error.moveCommitted === true;
       throw error;
     }
-    await assertNoLinkTraversal(root, quarantinePath, `${label} quarantine`);
+    quarantineSnapshot = await captureFileSnapshot(
+      root,
+      quarantinePath,
+      `${label} quarantine`
+    );
     await assertNoHardLinkedFile(quarantinePath, `${label} quarantine`);
-    if ((await fs.readFile(quarantinePath, "utf8")) !== expectedCurrent) {
+    if (quarantineSnapshot.bytes.toString("utf8") !== expectedCurrent) {
       throw new Error(
         `${label} changed during atomic quarantine; the moved bytes will be preserved.`
       );
@@ -237,12 +246,6 @@ async function replaceWithNoOverwrite(
       quarantinePath,
       displacedPath
     });
-    await cleanupCommittedQuarantine(
-      root,
-      quarantinePath,
-      expectedCurrent,
-      `${label} quarantine`
-    );
   } catch (error) {
     if (!quarantined) {
       throw error;
@@ -256,10 +259,29 @@ async function replaceWithNoOverwrite(
       transactionObserver,
       relativePath
     });
+    if ((recovery.retainedRecoveryPaths?.length ?? 0) > 0) {
+      throw recoveryError(
+        `${error.message} The original destination was restored, but concurrent recovery bytes were retained at ${formatPaths(
+          recovery.retainedRecoveryPaths
+        )}.`,
+        error,
+        {
+          code: "ERECOVERYRETAINED",
+          recoveryPaths: recovery.retainedRecoveryPaths
+        }
+      );
+    }
     if (recovery.status === "retained") {
-      throw new Error(
+      throw recoveryError(
         `${error.message} Recoverable prior bytes were retained at "${quarantinePath}" without overwriting the current destination.`,
-        { cause: error }
+        error,
+        {
+          code: "ERECOVERYRETAINED",
+          recoveryPaths: uniquePaths([
+            quarantinePath,
+            ...(recovery.recoveryPaths ?? [])
+          ])
+        }
       );
     }
     if (recovery.status === "failed") {
@@ -269,6 +291,25 @@ async function replaceWithNoOverwrite(
       );
     }
     throw error;
+  }
+  const cleanup = await cleanupCommittedQuarantine(
+    root,
+    quarantinePath,
+    quarantineSnapshot,
+    `${label} quarantine`
+  );
+  if (cleanup.status === "retained") {
+    throw recoveryError(
+      `${label} replacement committed, but quarantine cleanup retained recoverable bytes at ${formatPaths(
+        cleanup.recoveryPaths
+      )}.`,
+      cleanup.error,
+      {
+        code: "ECOMMITTEDCLEANUP",
+        recoveryPaths: cleanup.recoveryPaths,
+        committed: true
+      }
+    );
   }
 }
 
@@ -366,9 +407,13 @@ async function recoverReplacement(
     return { status: "failed", error };
   }
 
-  let displaced;
+  let displacedSnapshot;
   try {
-    displaced = await fs.readFile(displacedPath, "utf8");
+    displacedSnapshot = await captureFileSnapshot(
+      root,
+      displacedPath,
+      "Generated-file displaced recovery"
+    );
   } catch (error) {
     const restored = await restoreRetainedPath(
       root,
@@ -376,8 +421,11 @@ async function recoverReplacement(
       destination,
       transactionObserver
     );
-    return restored.status === "restored" ? { status: "retained" } : restored;
+    return restored.status === "restored"
+      ? { status: "retained", recoveryPaths: [destination] }
+      : restored;
   }
+  const displaced = displacedSnapshot.bytes.toString("utf8");
 
   if (displaced === replacement) {
     const restored = await restoreRetainedPath(
@@ -387,8 +435,18 @@ async function recoverReplacement(
       transactionObserver
     );
     if (restored.status === "restored") {
-      await fs.rm(displacedPath, { force: true });
-      return restored;
+      const cleanup = await cleanupCommittedQuarantine(
+        root,
+        displacedPath,
+        displacedSnapshot,
+        "Generated-file displaced recovery"
+      );
+      return cleanup.status === "retained"
+        ? {
+            status: "restored",
+            retainedRecoveryPaths: cleanup.recoveryPaths
+          }
+        : restored;
     }
     return restored;
   }
@@ -399,7 +457,12 @@ async function recoverReplacement(
     destination,
     transactionObserver
   );
-  return concurrent.status === "restored" ? { status: "retained" } : concurrent;
+  return concurrent.status === "restored"
+    ? {
+        status: "retained",
+        recoveryPaths: [destination, quarantinePath]
+      }
+    : concurrent;
 }
 
 async function restoreRetainedPath(
@@ -429,24 +492,46 @@ async function restoreRetainedPath(
     return { status: "restored" };
   } catch (error) {
     if (error.code === "EEXIST") {
-      return { status: "retained" };
+      return {
+        status: "retained",
+        recoveryPaths: uniquePaths([
+          source,
+          destination,
+          ...(error.recoveryPaths ?? [])
+        ])
+      };
     }
     return { status: "failed", error };
   }
 }
 
-async function cleanupCommittedQuarantine(root, file, expected, label) {
-  try {
-    await assertNoLinkTraversal(root, file, label);
-    await assertNoHardLinkedFile(file, label);
-    if ((await fs.readFile(file, "utf8")) !== expected) {
-      return false;
-    }
-    await fs.rm(file);
-    return true;
-  } catch (error) {
-    return error.code === "ENOENT";
+async function cleanupCommittedQuarantine(root, file, expectedSnapshot, label) {
+  return removeFileIfUnchanged(root, file, expectedSnapshot, label);
+}
+
+function recoveryError(
+  message,
+  cause,
+  { code, recoveryPaths = [], committed = false } = {}
+) {
+  const error = new Error(message, cause ? { cause } : undefined);
+  if (code) {
+    error.code = code;
   }
+  error.recoveryPaths = uniquePaths(recoveryPaths);
+  error.committed = committed;
+  return error;
+}
+
+function formatPaths(paths) {
+  const values = uniquePaths(paths);
+  return values.length > 0
+    ? values.map((value) => `"${value}"`).join(", ")
+    : "(path unavailable)";
+}
+
+function uniquePaths(paths) {
+  return [...new Set(paths.filter(Boolean))];
 }
 
 async function assertAbsent(file, label) {

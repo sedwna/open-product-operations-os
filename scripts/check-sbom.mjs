@@ -1,16 +1,11 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import { normalizeSbomRoot } from "./sbom-contract.mjs";
+import { npmInvocation, runProcess } from "./process-runner.mjs";
 
-const npmCli = process.env.npm_execpath;
-const command = npmCli ? process.execPath : process.platform === "win32" ? "npm.cmd" : "npm";
-const args = npmCli
-  ? [npmCli, "sbom", "--sbom-format", "cyclonedx"]
-  : ["sbom", "--sbom-format", "cyclonedx"];
-const result = spawnSync(command, args, {
-  encoding: "utf8",
-  shell: !npmCli && process.platform === "win32"
+const invocation = npmInvocation(["sbom", "--sbom-format", "cyclonedx"]);
+const result = runProcess(invocation.command, invocation.args, {
+  encoding: "utf8"
 });
 if (result.status !== 0) {
   throw new Error(

@@ -50,13 +50,19 @@ proof. Producers may report readiness but may not certify their own output.
 
 ## Current evidence
 
+- BRD-0-141 producer correction status:
+  [current branch](verification/2026-07-30-brd-0-141-producer-correction-status.md)
+- Latest completed two-host installed-package producer proof:
+  [fd5b620 / 56 tests](verification/2026-07-30-final-fd5b620-two-host-proof.md)
 - Corrective producer evidence:
   [2026-07-29](verification/2026-07-29-corrective-producer-evidence.md)
-- Two-host Git-only resume proof:
-  [2026-07-29](verification/2026-07-29-two-host-git-only-proof.md)
+- Evidence supersession and public redaction policy:
+  [current chain](verification/evidence-supersession-and-redaction.md)
 
-These links document completed producer controls. They do not mark Independent QC, Release, or
-Stable gates as passed.
+The 39-test and 46-test proofs remain historical and superseded; the 56-test proof is the latest
+completed producer proof for its exact prior implementation. The current corrective branch
+requires fresh exact-head proof. These links do not mark Independent QC, Release, or Stable gates
+as passed.
 
 Repository CI can generate and validate a CycloneDX SBOM, audit locked dependencies, and enforce a
 dependency-license allowlist without publishing. The SBOM check normalizes the root component from

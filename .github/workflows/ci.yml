@@ -35,7 +35,7 @@ jobs:
       - name: Run CLI smoke test
         run: npm run smoke
 
-      - name: Execute checks from packed artifact
+      - name: Verify cross-host pack hash and installed CLI
         run: npm run packed:check
 
   supply-chain:

@@ -1,7 +1,11 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { moveFileNoOverwrite } from "./atomic-move.js";
+import {
+  captureFileSnapshot,
+  moveFileNoOverwrite,
+  removeFileIfUnchanged
+} from "./atomic-move.js";
 import { parseCsv, stringifyCsv } from "./csv.js";
 import {
   assertNoHardLinkedFile,
@@ -55,6 +59,10 @@ export async function applyLocalWrite(
       receiptFile: paths.receiptRelativePath
     };
   }
+  await assertNoRetainedRecoveryPath(
+    paths.invalidReceiptPath,
+    "Controlled write"
+  );
 
   const sheet = config.workbook.sheets.find(
     (entry) =>
@@ -97,6 +105,7 @@ export async function applyLocalWrite(
     createdAt: new Date().toISOString()
   };
   assertValidReceipt(receipt, "Generated write receipt");
+  const receiptText = `${JSON.stringify(receipt, null, 2)}\n`;
 
   await prepareWritePaths(absoluteRoot, paths);
   try {
@@ -107,7 +116,7 @@ export async function applyLocalWrite(
       "Write backup"
     );
     await stageText(absoluteRoot, paths.targetStagePath, after, "Write target stage");
-    await atomicNoOverwriteReplace(absoluteRoot, {
+    const targetTransaction = await atomicNoOverwriteReplace(absoluteRoot, {
       destination: paths.targetPath,
       stagePath: paths.targetStagePath,
       quarantinePath: paths.targetQuarantinePath,
@@ -138,7 +147,7 @@ export async function applyLocalWrite(
         await stageText(
           absoluteRoot,
           paths.receiptStagePath,
-          `${JSON.stringify(receipt, null, 2)}\n`,
+          receiptText,
           "Write receipt stage"
         );
         await installStageNoOverwrite(
@@ -148,20 +157,109 @@ export async function applyLocalWrite(
           "Write receipt",
           transactionObserver
         );
+        try {
+          await assertCommittedWriteMatchesReceipt(
+            absoluteRoot,
+            paths,
+            receipt,
+            receiptText
+          );
+        } catch (cause) {
+          const invalidation = await retainInvalidReceipt(
+            absoluteRoot,
+            paths,
+            receiptText,
+            transactionObserver
+          );
+          throw recoveryError(
+            `Controlled write target diverged after receipt installation; no success receipt remains at the canonical path. Invalidated receipt recovery: ${formatPaths(
+              invalidation.recoveryPaths
+            )}.`,
+            cause,
+            {
+              code: "ESTALERECEIPT",
+              recoveryPaths: invalidation.recoveryPaths
+            }
+          );
+        }
       }
     });
-    await cleanupCommittedQuarantine(
+    const cleanup = await cleanupCommittedQuarantine(
       absoluteRoot,
       paths.targetQuarantinePath,
-      plan.before,
+      targetTransaction.quarantineSnapshot,
       "Write target quarantine"
     );
+    assertCommittedCleanup(
+      cleanup,
+      "Controlled write committed, but target-quarantine cleanup retained a safety artifact."
+    );
+    try {
+      await assertCommittedWriteMatchesReceipt(
+        absoluteRoot,
+        paths,
+        receipt,
+        receiptText
+      );
+    } catch (cause) {
+      const invalidation = await retainInvalidReceipt(
+        absoluteRoot,
+        paths,
+        receiptText,
+        transactionObserver
+      );
+      throw recoveryError(
+        `Controlled write target diverged before final success return. The canonical receipt was invalidated; recover from ${formatPaths(
+          [
+            paths.backupPath,
+            ...invalidation.recoveryPaths
+          ]
+        )}.`,
+        cause,
+        {
+          code: "ESTALERECEIPT",
+          recoveryPaths: [
+            paths.backupPath,
+            ...invalidation.recoveryPaths
+          ],
+          committed: true
+        }
+      );
+    }
   } catch (error) {
+    if (error.committed === true) {
+      throw error;
+    }
     await cleanupStages(paths);
+    if (
+      (error.transactionRecovery?.retainedRecoveryPaths?.length ?? 0) > 0
+    ) {
+      throw recoveryError(
+        `Controlled write failed after restoring the pre-transaction target; concurrent recovery bytes were retained at ${formatPaths(
+          error.transactionRecovery.retainedRecoveryPaths
+        )}. The approved backup remains at "${paths.backupRelativePath}".`,
+        error,
+        {
+          code: "ERECOVERYRETAINED",
+          recoveryPaths: [
+            ...error.transactionRecovery.retainedRecoveryPaths,
+            paths.backupPath
+          ]
+        }
+      );
+    }
     if (error.transactionRecovery?.status === "retained") {
-      throw new Error(
+      throw recoveryError(
         `Controlled write aborted without overwriting concurrent target bytes; the approved original is retained at "${paths.backupRelativePath}": ${error.message}`,
-        { cause: error }
+        error,
+        {
+          code: "ERECOVERYRETAINED",
+          recoveryPaths: uniquePaths([
+            ...(error.recoveryPaths ?? []),
+            ...(error.transactionRecovery.recoveryPaths ?? []),
+            paths.backupPath
+          ])
+        }
       );
     }
     if (error.transactionRecovery?.status === "failed") {
@@ -201,6 +299,10 @@ export async function rollbackLocalWrite(
   await assertWritableExistingFile(absoluteRoot, targetPath, "Rollback target");
   await assertWritableExistingFile(absoluteRoot, backupPath, "Rollback backup");
   if (receipt.rolledBack) {
+    await assertNoRetainedRecoveryPath(
+      `${targetPath}.${safeManifestId(receipt.manifestId)}.rollback-current.tmp`,
+      "Rollback replay"
+    );
     const [restored, backup] = await Promise.all([
       fs.readFile(targetPath, "utf8"),
       fs.readFile(backupPath, "utf8")
@@ -250,7 +352,7 @@ export async function rollbackLocalWrite(
       await assertAbsent(candidate, label);
     }
     await stageText(absoluteRoot, targetStage, backup, "Rollback target stage");
-    await atomicNoOverwriteReplace(absoluteRoot, {
+    const rollbackTransaction = await atomicNoOverwriteReplace(absoluteRoot, {
       destination: targetPath,
       stagePath: targetStage,
       quarantinePath: targetQuarantine,
@@ -280,19 +382,48 @@ export async function rollbackLocalWrite(
         );
       }
     });
-    await cleanupCommittedQuarantine(
+    const cleanup = await cleanupCommittedQuarantine(
       absoluteRoot,
       targetQuarantine,
-      current,
+      rollbackTransaction.quarantineSnapshot,
       "Rollback target quarantine"
     );
+    assertCommittedCleanup(
+      cleanup,
+      "Rollback committed, but target-quarantine cleanup retained a safety artifact."
+    );
   } catch (error) {
+    if (error.committed === true) {
+      throw error;
+    }
     await fs.rm(receiptStage, { force: true });
     await fs.rm(targetStage, { force: true });
+    if (
+      (error.transactionRecovery?.retainedRecoveryPaths?.length ?? 0) > 0
+    ) {
+      throw recoveryError(
+        `Rollback failed after restoring the pre-rollback target; concurrent recovery bytes were retained at ${formatPaths(
+          error.transactionRecovery.retainedRecoveryPaths
+        )}.`,
+        error,
+        {
+          code: "ERECOVERYRETAINED",
+          recoveryPaths: error.transactionRecovery.retainedRecoveryPaths
+        }
+      );
+    }
     if (error.transactionRecovery?.status === "retained") {
-      throw new Error(
+      throw recoveryError(
         `Rollback aborted without overwriting concurrent target bytes; the pre-rollback target remains at "${targetQuarantine}": ${error.message}`,
-        { cause: error }
+        error,
+        {
+          code: "ERECOVERYRETAINED",
+          recoveryPaths: uniquePaths([
+            ...(error.recoveryPaths ?? []),
+            ...(error.transactionRecovery.recoveryPaths ?? []),
+            targetQuarantine
+          ])
+        }
       );
     }
     if (error.transactionRecovery?.status === "failed") {
@@ -452,11 +583,13 @@ async function validateReplay(root, manifest, manifestSha256, receipt, paths) {
   ) {
     throw new Error("Replay refused because the receipt does not prove the original preconditions and result.");
   }
-  await cleanupCommittedQuarantine(
-    root,
+  await assertNoRetainedRecoveryPath(
     paths.targetQuarantinePath,
-    before,
-    "Replay target quarantine"
+    "Write replay"
+  );
+  await assertNoRetainedRecoveryPath(
+    paths.invalidReceiptPath,
+    "Write replay"
   );
 }
 
@@ -477,7 +610,8 @@ function writePaths(root, manifest) {
     targetStagePath: `${targetPath}.${suffix}.write.tmp`,
     targetQuarantinePath: `${targetPath}.${suffix}.before.tmp`,
     displacedTargetPath: `${targetPath}.${suffix}.displaced.tmp`,
-    receiptStagePath: `${receiptPath}.${suffix}.write.tmp`
+    receiptStagePath: `${receiptPath}.${suffix}.write.tmp`,
+    invalidReceiptPath: `${receiptPath}.${suffix}.invalidated.tmp`
   };
 }
 
@@ -489,7 +623,8 @@ async function prepareWritePaths(root, paths) {
     [paths.targetStagePath, "Write target stage"],
     [paths.targetQuarantinePath, "Write target quarantine"],
     [paths.displacedTargetPath, "Write displaced target"],
-    [paths.receiptStagePath, "Write receipt stage"]
+    [paths.receiptStagePath, "Write receipt stage"],
+    [paths.invalidReceiptPath, "Invalidated write receipt"]
   ]) {
     await assertNoLinkTraversal(root, candidate, label);
   }
@@ -502,6 +637,7 @@ async function prepareWritePaths(root, paths) {
   await assertAbsent(paths.targetQuarantinePath, "Write target quarantine");
   await assertAbsent(paths.displacedTargetPath, "Write displaced target");
   await assertAbsent(paths.receiptStagePath, "Write receipt stage");
+  await assertAbsent(paths.invalidReceiptPath, "Invalidated write receipt");
 }
 
 async function readOptionalReceipt(root, receiptPath) {
@@ -613,9 +749,13 @@ async function atomicNoOverwriteReplace(
       throw error;
     }
 
-    await assertNoLinkTraversal(root, quarantinePath, `${label} quarantine`);
+    const quarantineSnapshot = await captureFileSnapshot(
+      root,
+      quarantinePath,
+      `${label} quarantine`
+    );
     await assertNoHardLinkedFile(quarantinePath, `${label} quarantine`);
-    const movedCurrent = await fs.readFile(quarantinePath, "utf8");
+    const movedCurrent = quarantineSnapshot.bytes.toString("utf8");
     if (
       sha256(movedCurrent) !== sha256(expectedCurrent) ||
       movedCurrent !== expectedCurrent
@@ -652,8 +792,15 @@ async function atomicNoOverwriteReplace(
       displacedPath
     });
     await afterInstall();
-    return;
+    return { quarantineSnapshot };
   } catch (error) {
+    if (error.committed === true) {
+      error.recoveryPaths = uniquePaths([
+        ...(error.recoveryPaths ?? []),
+        ...(quarantined ? [quarantinePath] : [])
+      ]);
+      throw error;
+    }
     error.transactionRecovery = await recoverAtomicReplacement(root, {
       destination,
       quarantinePath,
@@ -755,7 +902,10 @@ async function recoverAtomicReplacement(
     );
   }
   if (!destinationStat.isFile()) {
-    return { status: "retained" };
+    return {
+      status: "retained",
+      recoveryPaths: [quarantinePath, destination]
+    };
   }
 
   try {
@@ -784,9 +934,13 @@ async function recoverAtomicReplacement(
     return { status: "failed", error };
   }
 
-  let displaced;
+  let displacedSnapshot;
   try {
-    displaced = await fs.readFile(displacedPath, "utf8");
+    displacedSnapshot = await captureFileSnapshot(
+      root,
+      displacedPath,
+      "Transaction displaced recovery"
+    );
   } catch (error) {
     const concurrentRecovery = await restoreRetainedPath(
       root,
@@ -795,9 +949,10 @@ async function recoverAtomicReplacement(
       transactionObserver
     );
     return concurrentRecovery.status === "restored"
-      ? { status: "retained" }
+      ? { status: "retained", recoveryPaths: [destination] }
       : concurrentRecovery;
   }
+  const displaced = displacedSnapshot.bytes.toString("utf8");
 
   if (displaced === replacement) {
     await transactionObserver({
@@ -815,8 +970,18 @@ async function recoverAtomicReplacement(
       transactionObserver
     );
     if (originalRecovery.status === "restored") {
-      await fs.rm(displacedPath, { force: true });
-      return { status: "restored" };
+      const cleanup = await cleanupCommittedQuarantine(
+        root,
+        displacedPath,
+        displacedSnapshot,
+        "Transaction displaced recovery"
+      );
+      return cleanup.status === "retained"
+        ? {
+            status: "restored",
+            retainedRecoveryPaths: cleanup.recoveryPaths
+          }
+        : { status: "restored" };
     }
     return originalRecovery;
   }
@@ -828,7 +993,7 @@ async function recoverAtomicReplacement(
     transactionObserver
   );
   return concurrentRecovery.status === "restored"
-    ? { status: "retained" }
+    ? { status: "retained", recoveryPaths: [destination, quarantinePath] }
     : concurrentRecovery;
 }
 
@@ -859,7 +1024,14 @@ async function restoreRetainedPath(
     return { status: "restored" };
   } catch (error) {
     if (error.code === "EEXIST") {
-      return { status: "retained" };
+      return {
+        status: "retained",
+        recoveryPaths: uniquePaths([
+          source,
+          destination,
+          ...(error.recoveryPaths ?? [])
+        ])
+      };
     }
     return { status: "failed", error };
   }
@@ -877,7 +1049,7 @@ async function replaceReceipt(
   const displacedPath = `${receiptPath}.rollback-displaced.tmp`;
   await assertAbsent(quarantinePath, `${label} quarantine`);
   await assertAbsent(displacedPath, `${label} displaced recovery`);
-  await atomicNoOverwriteReplace(root, {
+  const receiptTransaction = await atomicNoOverwriteReplace(root, {
     destination: receiptPath,
     stagePath: receiptStage,
     quarantinePath,
@@ -889,28 +1061,154 @@ async function replaceReceipt(
     manifestId: "receipt-rollback",
     afterInstall: async () => {}
   });
-  await cleanupCommittedQuarantine(
+  const cleanup = await cleanupCommittedQuarantine(
     root,
     quarantinePath,
-    current,
+    receiptTransaction.quarantineSnapshot,
     `${label} quarantine`
+  );
+  assertCommittedCleanup(
+    cleanup,
+    `${label} committed, but receipt-quarantine cleanup retained a safety artifact.`
   );
 }
 
-async function cleanupCommittedQuarantine(root, file, expected, label) {
-  try {
+async function cleanupCommittedQuarantine(root, file, expectedSnapshot, label) {
+  return removeFileIfUnchanged(root, file, expectedSnapshot, label);
+}
+
+async function assertCommittedWriteMatchesReceipt(
+  root,
+  paths,
+  receipt,
+  receiptText
+) {
+  for (const [file, label] of [
+    [paths.targetPath, "Committed write target"],
+    [paths.backupPath, "Committed write backup"],
+    [paths.receiptPath, "Committed write receipt"]
+  ]) {
     await assertNoLinkTraversal(root, file, label);
     await assertNoHardLinkedFile(file, label);
-    if ((await fs.readFile(file, "utf8")) !== expected) {
-      return false;
+  }
+  const [targetFirst, targetSecond, backup, persistedReceipt] =
+    await Promise.all([
+      fs.readFile(paths.targetPath),
+      fs.readFile(paths.targetPath),
+      fs.readFile(paths.backupPath),
+      fs.readFile(paths.receiptPath, "utf8")
+    ]);
+  if (
+    sha256(targetFirst) !== receipt.afterSha256 ||
+    !targetSecond.equals(targetFirst) ||
+    sha256(backup) !== receipt.beforeSha256 ||
+    persistedReceipt !== receiptText
+  ) {
+    throw new Error(
+      "Committed target, backup, and receipt do not identify one validated write state."
+    );
+  }
+}
+
+async function retainInvalidReceipt(
+  root,
+  paths,
+  receiptText,
+  transactionObserver
+) {
+  const recoveryPaths = [];
+  try {
+    await assertAbsent(paths.invalidReceiptPath, "Invalidated write receipt");
+    await moveFileNoOverwrite(
+      root,
+      paths.receiptPath,
+      paths.invalidReceiptPath,
+      "Invalidated write receipt",
+      {
+        expectedContent: receiptText,
+        moveObserver: transactionObserver
+      }
+    );
+    recoveryPaths.push(paths.invalidReceiptPath);
+  } catch (error) {
+    recoveryPaths.push(...(error.recoveryPaths ?? []));
+    for (const candidate of [
+      paths.receiptPath,
+      paths.invalidReceiptPath
+    ]) {
+      if (await pathExists(candidate)) {
+        recoveryPaths.push(candidate);
+      }
     }
-    await fs.rm(file);
+  }
+  return { recoveryPaths: uniquePaths(recoveryPaths) };
+}
+
+function assertCommittedCleanup(cleanup, message) {
+  if (cleanup.status !== "retained") {
+    return;
+  }
+  throw recoveryError(
+    `${message} Recoverable bytes remain at ${formatPaths(
+      cleanup.recoveryPaths
+    )}.`,
+    cleanup.error,
+    {
+      code: "ECOMMITTEDCLEANUP",
+      recoveryPaths: cleanup.recoveryPaths,
+      committed: true
+    }
+  );
+}
+
+async function assertNoRetainedRecoveryPath(file, label) {
+  if (!(await pathExists(file))) {
+    return;
+  }
+  throw recoveryError(
+    `${label} refused because a prior recovery artifact remains at "${file}".`,
+    undefined,
+    {
+      code: "ERECOVERYRETAINED",
+      recoveryPaths: [file]
+    }
+  );
+}
+
+function recoveryError(
+  message,
+  cause,
+  { code, recoveryPaths = [], committed = false } = {}
+) {
+  const error = new Error(message, cause ? { cause } : undefined);
+  if (code) {
+    error.code = code;
+  }
+  error.recoveryPaths = uniquePaths(recoveryPaths);
+  error.committed = committed;
+  return error;
+}
+
+function formatPaths(paths) {
+  const values = uniquePaths(paths);
+  return values.length > 0
+    ? values.map((value) => `"${value}"`).join(", ")
+    : "(path unavailable)";
+}
+
+function uniquePaths(paths) {
+  return [...new Set(paths.filter(Boolean))];
+}
+
+async function pathExists(file) {
+  try {
+    await fs.lstat(file);
     return true;
   } catch (error) {
     if (error.code === "ENOENT") {
-      return true;
+      return false;
     }
-    return false;
+    throw error;
   }
 }
 

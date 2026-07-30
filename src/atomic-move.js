@@ -149,8 +149,39 @@ export async function moveFileNoOverwrite(
       anchorPath
     });
 
-    await fs.unlink(source);
-    sourceUnlinked = true;
+    const sourceRetirement = await removeFileIfUnchanged(
+      root,
+      source,
+      {
+        stat: {
+          dev: sourceBefore.dev,
+          ino: sourceBefore.ino,
+          nlink: 3n,
+          size: sourceBefore.size
+        },
+        bytes: sourceBytes
+      },
+      `${label} source`,
+      {
+        missingIsSuccess: false,
+        allowLinkCountDecrease: true
+      }
+    );
+    sourceUnlinked = sourceRetirement.sourcePathRemoved === true;
+    if (sourceRetirement.status !== "removed") {
+      const sourceChanged = new Error(
+        `${label} source changed after final validation; concurrent source bytes were retained${
+          sourceRetirement.recoveryPaths.length > 0
+            ? ` at ${formatPaths(sourceRetirement.recoveryPaths)}`
+            : ""
+        }.`
+      );
+      sourceChanged.code = "EATOMICSOURCE";
+      sourceChanged.recoveryPaths = sourceRetirement.recoveryPaths;
+      sourceChanged.sourcePathPreserved =
+        sourceRetirement.sourcePathPreserved === true;
+      throw sourceChanged;
+    }
     await moveObserver({
       phase: "after-source-unlink-before-commit-validation",
       source,
@@ -259,6 +290,176 @@ export async function moveFileNoOverwrite(
     throw moveError;
   } finally {
     await sourceHandle?.close();
+  }
+}
+
+export async function captureFileSnapshot(root, file, label) {
+  await assertNoLinkTraversal(root, file, label);
+  let handle;
+  try {
+    handle = await fs.open(file, "r");
+    const before = await handle.stat({ bigint: true });
+    assertReliableRegularFile(before, label);
+    const bytes = await handle.readFile();
+    const after = await handle.stat({ bigint: true });
+    assertReliableRegularFile(after, label);
+    assertSameFile(before, after, `${label} identity changed while read.`);
+    assertLinkCount(
+      after,
+      before.nlink,
+      `${label} link count changed while read.`
+    );
+    assertSize(after, bytes, `${label} size changed while read.`);
+    const pathStat = await fs.lstat(file, { bigint: true });
+    assertReliableRegularFile(pathStat, label);
+    assertSameFile(before, pathStat, `${label} path identity changed while read.`);
+    assertLinkCount(
+      pathStat,
+      before.nlink,
+      `${label} path link count changed while read.`
+    );
+    assertSize(pathStat, bytes, `${label} path size changed while read.`);
+    return {
+      stat: {
+        dev: before.dev,
+        ino: before.ino,
+        nlink: before.nlink,
+        size: before.size
+      },
+      bytes
+    };
+  } finally {
+    await handle?.close();
+  }
+}
+
+export async function removeFileIfUnchanged(
+  root,
+  file,
+  expected,
+  label,
+  {
+    missingIsSuccess = true,
+    allowLinkCountDecrease = false
+  } = {}
+) {
+  let current;
+  try {
+    current = await captureFileSnapshot(root, file, label);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return missingIsSuccess
+        ? {
+            status: "absent",
+            recoveryPaths: [],
+            sourcePathRemoved: true,
+            sourcePathPreserved: false
+          }
+        : {
+            status: "retained",
+            recoveryPaths: [],
+            sourcePathRemoved: true,
+            sourcePathPreserved: false,
+            reason: `${label} disappeared before identity-guarded retirement.`
+          };
+    }
+    throw error;
+  }
+
+  if (!snapshotsMatch(current, expected, { allowLinkCountDecrease })) {
+    return {
+      status: "retained",
+      recoveryPaths: [file],
+      sourcePathRemoved: false,
+      sourcePathPreserved: true,
+      reason: `${label} no longer identifies the expected file.`
+    };
+  }
+
+  const retiredPath = privateRetiredPath(file);
+  await assertNoLinkTraversal(root, retiredPath, `${label} private retirement`);
+  await assertAbsent(retiredPath, `${label} private retirement`);
+  await fs.rename(file, retiredPath);
+
+  let retired;
+  try {
+    retired = await captureFileSnapshot(
+      root,
+      retiredPath,
+      `${label} private retirement`
+    );
+  } catch (error) {
+    return {
+      status: "retained",
+      recoveryPaths: [retiredPath],
+      sourcePathRemoved: true,
+      sourcePathPreserved: false,
+      reason: `${label} retirement could not be verified: ${error.message}`,
+      error
+    };
+  }
+
+  if (!snapshotsMatch(retired, expected, { allowLinkCountDecrease })) {
+    const restoration = await restoreUnexpectedRetirement(root, {
+      retiredPath,
+      file,
+      retired,
+      label
+    });
+    return {
+      status: "retained",
+      recoveryPaths: uniquePaths([
+        retiredPath,
+        ...(restoration.sourcePathPreserved ? [file] : [])
+      ]),
+      sourcePathRemoved: !restoration.sourcePathPreserved,
+      sourcePathPreserved: restoration.sourcePathPreserved,
+      reason: `${label} changed during retirement; the moved bytes were retained.`,
+      error: restoration.error
+    };
+  }
+
+  try {
+    const finalRetired = await captureFileSnapshot(
+      root,
+      retiredPath,
+      `${label} private retirement`
+    );
+    if (
+      !snapshotsMatch(finalRetired, expected, { allowLinkCountDecrease })
+    ) {
+      return {
+        status: "retained",
+        recoveryPaths: [retiredPath],
+        sourcePathRemoved: true,
+        sourcePathPreserved: false,
+        reason: `${label} private retirement changed before cleanup.`
+      };
+    }
+    await fs.unlink(retiredPath);
+    return {
+      status: "removed",
+      recoveryPaths: [],
+      sourcePathRemoved: true,
+      sourcePathPreserved: false
+    };
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return {
+        status: "removed",
+        recoveryPaths: [],
+        sourcePathRemoved: true,
+        sourcePathPreserved: false
+      };
+    }
+    return {
+      status: "retained",
+      recoveryPaths: [retiredPath],
+      sourcePathRemoved: true,
+      sourcePathPreserved: false,
+      reason: `${label} private retirement cleanup failed: ${error.message}`,
+      error
+    };
   }
 }
 
@@ -392,6 +593,10 @@ function retainedAnchorError(
     { cause: error }
   );
   retained.code = "EATOMICANCHOR";
+  retained.recoveryPaths = uniquePaths([
+    ...(error.recoveryPaths ?? []),
+    anchorPath
+  ]);
   annotateMoveError(retained, {
     destinationLinked,
     sourceUnlinked,
@@ -420,6 +625,80 @@ function privateAnchorPath(source) {
     path.dirname(source),
     `.safety-link.${crypto.randomUUID()}.${path.basename(source)}.tmp`
   );
+}
+
+function privateRetiredPath(file) {
+  return path.join(
+    path.dirname(file),
+    `.retired-file.${crypto.randomUUID()}.${path.basename(file)}.tmp`
+  );
+}
+
+async function restoreUnexpectedRetirement(
+  root,
+  { retiredPath, file, retired, label }
+) {
+  try {
+    await assertNoLinkTraversal(
+      root,
+      retiredPath,
+      `${label} retained retirement`
+    );
+    await assertNoLinkTraversal(root, file, `${label} restored path`);
+    await fs.link(retiredPath, file);
+    const restored = await captureFileSnapshot(
+      root,
+      file,
+      `${label} restored path`
+    );
+    if (
+      restored.stat.dev !== retired.stat.dev ||
+      restored.stat.ino !== retired.stat.ino ||
+      !restored.bytes.equals(retired.bytes)
+    ) {
+      throw new Error(`${label} restored path does not match retained bytes.`);
+    }
+    return { sourcePathPreserved: true };
+  } catch (error) {
+    return { sourcePathPreserved: false, error };
+  }
+}
+
+async function assertAbsent(file, label) {
+  try {
+    await fs.lstat(file);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return;
+    }
+    throw error;
+  }
+  throw new Error(`${label} already exists.`);
+}
+
+function snapshotsMatch(
+  actual,
+  expected,
+  { allowLinkCountDecrease = false } = {}
+) {
+  const linkCountMatches = allowLinkCountDecrease
+    ? actual.stat.nlink >= 1n && actual.stat.nlink <= expected.stat.nlink
+    : actual.stat.nlink === expected.stat.nlink;
+  return (
+    actual.stat.dev === expected.stat.dev &&
+    actual.stat.ino === expected.stat.ino &&
+    linkCountMatches &&
+    actual.stat.size === expected.stat.size &&
+    actual.bytes.equals(expected.bytes)
+  );
+}
+
+function formatPaths(paths) {
+  return paths.map((value) => `"${value}"`).join(", ");
+}
+
+function uniquePaths(paths) {
+  return [...new Set(paths.filter(Boolean))];
 }
 
 function assertReliableRegularFile(stat, label) {

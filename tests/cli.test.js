@@ -621,6 +621,138 @@ test("atomic move makes safety-anchor cleanup failure explicit and recoverable",
   assert.equal((await fs.lstat(destination)).nlink, 3);
 });
 
+test("atomic move fails without deleting a source replaced after final validation", async (t) => {
+  const parent = await makeTempDirectory();
+  t.after(() => fs.rm(parent, { recursive: true, force: true }));
+  const source = path.join(parent, "source.tmp");
+  const destination = path.join(parent, "destination.txt");
+  const originalBytes = "approved source bytes\n";
+  const concurrentBytes = "concurrent source replacement\n";
+  await fs.writeFile(source, originalBytes);
+
+  let failure;
+  try {
+    await moveFileNoOverwrite(parent, source, destination, "Source race probe", {
+      expectedContent: originalBytes,
+      moveObserver: async (event) => {
+        if (event.phase === "after-final-pre-unlink-validation") {
+          await fs.unlink(source);
+          await fs.writeFile(source, concurrentBytes, {
+            encoding: "utf8",
+            flag: "wx"
+          });
+        }
+      }
+    });
+  } catch (error) {
+    failure = error;
+  }
+
+  assert.ok(failure);
+  assert.equal(failure.code, "EATOMICSOURCE");
+  assert.equal(failure.moveCommitted, false);
+  assert.deepEqual(failure.recoveryPaths, [source]);
+  assert.equal(await fs.readFile(source, "utf8"), concurrentBytes);
+  assert.equal(await fs.readFile(destination, "utf8"), originalBytes);
+});
+
+test("initializer recovery retains a displaced-path replacement and reports it", async (t) => {
+  const parent = await makeTempDirectory();
+  t.after(() => fs.rm(parent, { recursive: true, force: true }));
+  const target = path.join(parent, "initializer-displaced-cleanup");
+  const destination = path.join(target, "scaffold.txt");
+  await fs.mkdir(target);
+  await fs.writeFile(destination, "old scaffold\n");
+  const operations = await planWrites(
+    target,
+    new Map([["scaffold.txt", "new scaffold\n"]]),
+    { force: true }
+  );
+  let displacedPath;
+  let failure;
+
+  try {
+    await applyWrites(target, operations, {
+      transactionObserver: async (event) => {
+        if (event.phase === "after-target-installed") {
+          throw new Error("injected post-install failure");
+        }
+        if (event.phase === "before-displaced-recovery-move") {
+          displacedPath = event.displacedPath;
+        }
+        if (
+          displacedPath &&
+          event.phase === "before-safety-anchor-cleanup" &&
+          event.label === "Generated-file retained recovery"
+        ) {
+          await fs.unlink(displacedPath);
+          await fs.writeFile(displacedPath, "concurrent displaced bytes\n", {
+            encoding: "utf8",
+            flag: "wx"
+          });
+        }
+      }
+    });
+  } catch (error) {
+    failure = error;
+  }
+
+  assert.ok(failure);
+  assert.equal(failure.code, "ERECOVERYRETAINED");
+  assert.ok(failure.recoveryPaths.includes(displacedPath));
+  assert.match(failure.message, new RegExp(escapeRegExp(displacedPath)));
+  assert.equal(await fs.readFile(destination, "utf8"), "old scaffold\n");
+  assert.equal(
+    await fs.readFile(displacedPath, "utf8"),
+    "concurrent displaced bytes\n"
+  );
+});
+
+test("initializer committed-cleanup retention is fail-closed and reports recovery", async (t) => {
+  const parent = await makeTempDirectory();
+  t.after(() => fs.rm(parent, { recursive: true, force: true }));
+  const target = path.join(parent, "initializer-committed-cleanup");
+  const destination = path.join(target, "scaffold.txt");
+  await fs.mkdir(target);
+  await fs.writeFile(destination, "old scaffold\n");
+  const operations = await planWrites(
+    target,
+    new Map([["scaffold.txt", "new scaffold\n"]]),
+    { force: true }
+  );
+  let quarantinePath;
+  let failure;
+
+  try {
+    await applyWrites(target, operations, {
+      transactionObserver: async (event) => {
+        if (event.phase === "after-target-installed") {
+          quarantinePath = event.quarantinePath;
+          await fs.unlink(quarantinePath);
+          await fs.writeFile(
+            quarantinePath,
+            "concurrent committed quarantine bytes\n",
+            { encoding: "utf8", flag: "wx" }
+          );
+        }
+      }
+    });
+  } catch (error) {
+    failure = error;
+  }
+
+  assert.ok(failure);
+  assert.equal(failure.code, "ECOMMITTEDCLEANUP");
+  assert.equal(failure.committed, true);
+  assert.deepEqual(failure.recoveryPaths, [quarantinePath]);
+  assert.match(failure.message, new RegExp(escapeRegExp(quarantinePath)));
+  assert.equal(await fs.readFile(destination, "utf8"), "new scaffold\n");
+  assert.equal(
+    await fs.readFile(quarantinePath, "utf8"),
+    "concurrent committed quarantine bytes\n"
+  );
+});
+
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }

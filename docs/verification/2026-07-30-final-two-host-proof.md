@@ -8,9 +8,13 @@ The receipts from 2026-07-29 remain immutable historical evidence, but they are
 superseded for release evaluation because later concurrency and installed-command
 regressions changed the implementation and expanded the test suite.
 
+The public-tip source-identity wording in this file was generalized under the
+[recorded redaction policy](evidence-supersession-and-redaction.md); no revision,
+result, count, or isolation claim changed.
+
 ## Isolation contract
 
-Both runs started from public Git history and received no private LinkUp repository,
+Both runs started from public Git history and received no private source-product repository,
 Workbook, taskboard, local handoff, durable memory, or chat transcript.
 
 The Windows run used a fresh public clone. The Linux run used a complete Git bundle

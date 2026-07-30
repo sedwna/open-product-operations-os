@@ -16,18 +16,21 @@ The adapter enforces configured owner and writer actors, protected-field denies,
 environment policy, old-value preconditions, complete file read-back, and a zero-write replay
 check. Each manifest must use the exact canonical key fields for its sheet, row selectors cannot add
 alternate keys, and duplicate canonical IDs are rejected before mutation. Existing hard-linked
-targets are rejected. The replacement and receipt are staged. For the target, the adapter atomically
-renames the current file to a same-directory transaction quarantine, verifies the moved bytes, and
-installs the stage with `fs.link(stage, target)`. That no-overwrite operation atomically fails with
-`EEXIST` if a concurrent actor recreated the target after verification. The concurrent target is
-not changed, no success receipt is written, and the approved original remains in the transaction
-backup and quarantine. On success the stage link and quarantine are removed, leaving a one-link
-target. Handled failures and rollback use the same no-overwrite recovery rule; a process interruption
-retains bounded recovery artifacts and later attempts fail closed rather than deleting them.
-Replay succeeds only when the validated receipt's manifest digest, plan, backup, original
-preconditions, and current target digest all match. `rollbackLocalWrite` restores the backup only
-when both backup and current post-write hashes match the receipt. It refuses rollback after
-unrelated target changes.
+targets are rejected. The replacement and receipt are staged. For the target, the adapter moves the
+current file to a same-directory transaction quarantine, verifies its captured filesystem identity
+and bytes, and installs the stage with a no-overwrite hard link. Source retirement first moves the
+pathname to a private location and rechecks identity; it never blindly unlinks a pathname after a
+concurrent replacement window. A recreated source or destination is preserved and the transaction
+fails.
+
+After receipt installation, the adapter revalidates the target twice, the backup, and the persisted
+receipt as one state. Target divergence moves the receipt to an explicit invalidated recovery path
+and returns no success. Committed quarantine cleanup also uses captured identity. A mismatch or
+cleanup failure is a structured fail-closed error that reports every retained recovery path;
+initializer and writer callers do not emit a success summary. Replay refuses any retained
+quarantine or invalidated receipt. `rollbackLocalWrite` restores the backup only when both backup
+and current post-write hashes match the receipt and applies the same identity and retention rules.
+It refuses rollback after unrelated target changes.
 
 This reference implementation proves local control mechanics only. It is not cross-host evidence,
 an independent QC verdict, a production authorization, or a provider writer.

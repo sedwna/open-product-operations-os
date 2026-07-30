@@ -64,6 +64,11 @@ The completed generalized ledger for this public package is
 public role boundary only; it does not identify private people, repositories, products, or source
 records.
 
+Historical verification files follow the
+[evidence supersession and public redaction policy](../verification/evidence-supersession-and-redaction.md).
+Policy-excluded identity may be replaced at the current public tip only through its recorded,
+meaning-preserving redaction process. Files and Git history are not deleted or rewritten.
+
 ## Publication rule
 
 A public release is blocked until repository-wide text and binary scans confirm that no
