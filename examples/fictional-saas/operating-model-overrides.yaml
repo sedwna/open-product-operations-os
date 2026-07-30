@@ -1,0 +1,32 @@
+catalog_reference: ../../templates/config/operating-model.yaml
+project:
+  key: PINE
+  name: PineDesk
+  timezone: UTC
+  canonical_repository: local-example-repository
+  development_adapter: fictional-development-adapter
+  live_workbook_reference: local-demo-workbook
+
+actor_assignments:
+  RB-01: actor.control
+  RB-02: actor.idea
+  RB-03: actor.discovery
+  RB-04: actor.topology
+  RB-05: actor.issue
+  RB-06: actor.delivery
+  RB-07: actor.validation
+  RB-08: actor.risk
+  RB-09: actor.qa
+  RB-10: actor.writer
+  RB-11: actor.release
+  RB-12: actor.verifier
+  RB-13: actor.development-adapter
+
+environment_aliases:
+  validation: local-demo
+  workbook: local-demo-workbook
+
+security:
+  runtime_secret_aliases: []
+  contains_real_credentials: false
+  contains_personal_data: false

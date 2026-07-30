@@ -1,0 +1,28 @@
+sheet_name,column_name,validation_type,source_or_rule,reject_invalid,notes
+Role Registry,lifecycle,range,'Status Catalog'!$B$2:$B$5,true,role_lifecycle family
+Events,status,range,'Status Catalog'!$B$6:$B$13,true,event family
+Events,priority,range,'Status Catalog'!$B$108:$B$111,true,priority family
+Events,risk,range,'Status Catalog'!$B$112:$B$115,true,risk family
+Taskboard,status,range,'Status Catalog'!$B$14:$B$20,true,task family
+Taskboard,priority,range,'Status Catalog'!$B$108:$B$111,true,priority family
+Idea Inbox,status,range,'Status Catalog'!$B$21:$B$25,true,idea family
+Idea Inbox,priority,range,'Status Catalog'!$B$108:$B$111,true,priority family
+Discovery,status,range,'Status Catalog'!$B$26:$B$30,true,discovery family
+Decision Log,status,range,'Status Catalog'!$B$31:$B$36,true,decision family
+Issues,status,range,'Status Catalog'!$B$37:$B$44,true,issue family
+Issues,priority,range,'Status Catalog'!$B$108:$B$111,true,priority family
+Issues,risk,range,'Status Catalog'!$B$112:$B$115,true,risk family
+Delivery Tickets,status,range,'Status Catalog'!$B$45:$B$53,true,ticket family
+Delivery Tickets,priority,range,'Status Catalog'!$B$108:$B$111,true,priority family
+Delivery Tickets,risk,range,'Status Catalog'!$B$112:$B$115,true,risk family
+Validation Plans,status,range,'Status Catalog'!$B$54:$B$60,true,validation_plan family
+Validation Scenarios,status,range,'Status Catalog'!$B$61:$B$64,true,validation_scenario family
+Validation Runs,status,range,'Status Catalog'!$B$65:$B$69,true,validation_run family
+Validation Results,disposition,range,'Status Catalog'!$B$70:$B$73,true,validation_result family
+Evidence,status,range,'Status Catalog'!$B$104:$B$107,true,evidence_item family
+Human Observations,status,range,'Status Catalog'!$B$79:$B$83,true,human_observation family
+QC Log,disposition,range,'Status Catalog'!$B$74:$B$78,true,qc family
+Readiness,status,range,'Status Catalog'!$B$84:$B$87,true,readiness family
+Releases,status,range,'Status Catalog'!$B$88:$B$93,true,release family
+Writer Manifests,status,range,'Status Catalog'!$B$94:$B$98,true,write_manifest family
+Writer Receipts,status,range,'Status Catalog'!$B$99:$B$103,true,write_receipt family

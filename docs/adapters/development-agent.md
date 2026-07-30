@@ -1,0 +1,54 @@
+# Development-agent adapter
+
+The Product Operations system does not assume a particular engineering team, coding agent, issue
+tracker, or repository layout. Development is connected through a bounded adapter.
+
+## Input contract
+
+The adapter receives:
+
+```text
+approved delivery ID
+problem statement
+affected user and surface
+acceptance criteria
+dependencies
+design and decision references
+validation scenarios
+security and safety constraints
+allowed repositories and paths
+expected completion signal
+```
+
+## Output contract
+
+Development returns:
+
+```text
+implementation status
+commit or pull-request reference
+changed components
+tests executed
+deployment or local-environment revision
+known limitations
+development-owned notes
+ready-for-retest timestamp
+```
+
+## Authority boundary
+
+Product Operations roles may author the problem, acceptance criteria, priority, validation design,
+and QA result. They may not impersonate development completion, edit development-owned notes, or
+declare a deployment available without development evidence.
+
+The development adapter may not silently change product scope, product decisions, QA verdicts, or
+independent-control records.
+
+## Safety defaults
+
+- least-privilege repository and issue access;
+- no production deployment by default;
+- no credential material in task payloads;
+- explicit authorization for destructive changes;
+- exact canonical revision in every completion signal;
+- failed or partial implementation returns to the issue lifecycle with the original history intact.

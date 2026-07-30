@@ -1,0 +1,24 @@
+order,file_name,sheet_name,record_key,purpose,primary_foreign_keys
+1,01-config.csv,Config,config_key,Central project settings and identifier patterns,
+2,02-status-catalog.csv,Status Catalog,status_family|status_value,Central lifecycle and classification values,
+3,03-role-registry.csv,Role Registry,role_key,Configurable 13-role authority boundaries,
+4,04-ownership.csv,Ownership,artifact_type,Semantic owner writer verifier and human boundaries,role_key
+5,05-events.csv,Events,event_id,Cross-cutting event impact and closure,event_id
+6,06-taskboard.csv,Taskboard,task_id,Owned dependency-aware coordination,event_id|handoff_id
+7,07-idea-inbox.csv,Idea Inbox,idea_id,Raw idea intake,event_id|discovery_id|decision_id
+8,08-discovery.csv,Discovery,discovery_id,Research questions findings and limitations,event_id|idea_id|decision_id
+9,09-decision-log.csv,Decision Log,decision_id,Explicit attributed human dispositions,event_id
+10,10-issues.csv,Issues,issue_id,Normalized issue lifecycle,event_id|decision_id
+11,11-delivery-tickets.csv,Delivery Tickets,ticket_id,Approved delivery and acceptance contract,event_id|issue_id|decision_id
+12,12-validation-plans.csv,Validation Plans,plan_id,Validation intent coverage and gates,event_id|ticket_id
+13,13-validation-scenarios.csv,Validation Scenarios,scenario_id,Executable expected outcomes,plan_id|ticket_id
+14,14-validation-runs.csv,Validation Runs,run_id,Factual execution records,plan_id|scenario_id|ticket_id
+15,15-validation-results.csv,Validation Results,result_id,Factual run disposition,run_id|scenario_id|ticket_id
+16,16-evidence.csv,Evidence,evidence_item_id,Evidence inventory and integrity,result_id|run_id|evidence_manifest_id
+17,17-human-observations.csv,Human Observations,observation_id,Attributed user-visible acceptance,result_id|ticket_id
+18,18-qc-log.csv,QC Log,qc_record_id,Independent verification and corrective loop,event_id|task_id
+19,19-readiness.csv,Readiness,readiness_id,Gate-based release readiness,event_id|ticket_id
+20,20-releases.csv,Releases,release_id,Authorized release and rollback record,readiness_id|event_id
+21,21-writer-manifests.csv,Writer Manifests,write_manifest_id,Authorized bounded write intent,event_id
+22,22-writer-receipts.csv,Writer Receipts,write_receipt_id,Complete read-back replay and rollback proof,write_manifest_id|event_id
+23,23-lineage.csv,Lineage,lineage_edge_id,Normalized end-to-end relationship graph,from_id|to_id

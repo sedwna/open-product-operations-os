@@ -1,0 +1,36 @@
+catalog_reference: ../../../templates/config/operating-model.yaml
+evidence_manifest_id: EVD-20260729-001
+event_id: EVT-20260729-001
+run_id: VRN-20260729-001
+producer_role: RB-09
+producer_actor_id: actor.qa
+captured_at: "2026-07-29T10:08:00Z"
+environment_alias: local-demo
+implementation_reference: dev-ref/fictional-42
+contains_sensitive_material: false
+redaction_method: none_required_synthetic_content
+
+items:
+  - evidence_item_id: EVI-001
+    status: captured
+    claim_or_step_ids: [AC-01, AC-02, AC-03]
+    artifact_type: log
+    canonical_path: ../evidence/VRN-20260729-001-observation.txt
+    capture_method: synthetic_local_demo_observation
+    captured_at: "2026-07-29T10:08:00Z"
+    media_type: text/plain
+    byte_length: 275
+    sha256: e9c3043154293d51ef9a18cd0d14d8e995bda43e73af32149cd384a5c92c8b7f
+    decisive: true
+    limitation: fictional_demo_not_product_evidence
+
+integrity:
+  detached_manifest_sha256_path: ../evidence/evidence-manifest.sha256
+  all_paths_relative: true
+  secret_scan_passed: true
+  personal_data_scan_passed: true
+
+verification:
+  verifier_role: RB-12
+  verifier_actor_id: actor.verifier
+  qc_record_id: QCV-20260729-001

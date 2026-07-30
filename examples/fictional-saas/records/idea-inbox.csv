@@ -1,0 +1,2 @@
+idea_id,event_id,submitted_at,submitted_by,problem_or_opportunity,target_user,expected_outcome,source_reference,status,priority,triage_owner_role,duplicate_of,discovery_id,decision_id,notes
+IDEA-20260729-001,EVT-20260729-001,2026-07-29T08:00:00Z,synthetic-feedback-channel,Weekly summaries always appear on Monday,workspace coordinator,Choose Monday or Friday for the weekly summary,synthetic-note-001,decided,P2,RB-02,,DSC-20260729-001,DEC-20260729-001,Fictional local-demo input

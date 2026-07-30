@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "1.0.0",
+  "manifestId": "<WRITE_MANIFEST_ID>",
+  "eventId": "<EVENT_ID>",
+  "status": "authorized",
+  "semanticOwner": {
+    "role": "<OWNER_ROLE>",
+    "actorId": "<OWNER_ACTOR_ID>"
+  },
+  "authorization": {
+    "ownerActorId": "<OWNER_ACTOR_ID>",
+    "authorizedByActorId": "<OWNER_OR_HUMAN_AUTHORITY_ACTOR_ID>",
+    "authorizedAt": "<ISO-8601>",
+    "ownerConfirmed": true,
+    "humanProductionAuthorizationId": "<ID_OR_NOT_APPLICABLE>"
+  },
+  "writer": {
+    "role": "RB-10",
+    "actorId": "<WRITER_ACTOR_ID>"
+  },
+  "target": {
+    "systemAlias": "<NON_SECRET_ALIAS>",
+    "environment": "local",
+    "file": "workbook/<TAB_FILE>.csv"
+  },
+  "scope": {
+    "sheet": "<CATALOG_TAB_NAME>",
+    "keyFields": ["<KEY_FIELD>"],
+    "allowedFields": ["<OWNER_AUTHORIZED_FIELD>"],
+    "prohibitedFields": [
+      "implementation_reference",
+      "development_status",
+      "development_notes",
+      "deployment_reference",
+      "development_deployment_status",
+      "decision_maker_actor_id",
+      "observer_actor_id",
+      "human_risk_acceptance_id",
+      "human_authorization_id",
+      "human_production_authorization_id"
+    ],
+    "rows": [
+      {
+        "key": { "<KEY_FIELD>": "<EXPECTED_VALUE>" },
+        "preconditions": { "<OWNER_AUTHORIZED_FIELD>": "<EXPECTED_OLD_VALUE>" },
+        "changes": { "<OWNER_AUTHORIZED_FIELD>": "<NEW_VALUE>" }
+      }
+    ]
+  },
+  "controls": {
+    "dryRunRequired": true,
+    "smallestBoundedRange": "<EXACT_RECORD_AND_FIELDS>",
+    "fullRecordReadbackRequired": true,
+    "secondReadPath": "<METHOD>",
+    "replayMustWriteZero": true,
+    "rollbackPlan": "<EXACT REVERSAL OR COMPENSATING ACTION>",
+    "refuseIfEnvironmentAmbiguous": true,
+    "refuseIfPreconditionMismatch": true,
+    "secretValuesForbidden": true
+  },
+  "createdAt": "<ISO-8601>"
+}

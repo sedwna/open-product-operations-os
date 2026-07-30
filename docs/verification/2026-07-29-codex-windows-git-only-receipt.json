@@ -1,0 +1,26 @@
+{
+  "host": "Windows x64; Codex CLI; Node.js v25.9.0; npm 11.12.1",
+  "sourceSha": "11e1c0ef7d03d20c06c6e9bbb8ded871475af8a6",
+  "repositoryOnlyContext": true,
+  "npmCi": true,
+  "testsPassed": 39,
+  "testsFailed": 0,
+  "dryRun": true,
+  "init": true,
+  "validateBefore": true,
+  "stableReinit": true,
+  "validateAfter": true,
+  "roles": 13,
+  "tabs": 23,
+  "preservedOperationalRow": true,
+  "preservedConfig": true,
+  "configHashBefore": "bb05b2ef9d77f3c734aff07536c7584b5a9363508616dc611d476a256ca107ad",
+  "configHashAfter": "bb05b2ef9d77f3c734aff07536c7584b5a9363508616dc611d476a256ca107ad",
+  "preservedRowId": "IDEA-20260729-994",
+  "blockers": [],
+  "notes": [
+    "Fresh public Git clone in a dedicated directory",
+    "No private project files or chat transcript were supplied",
+    "The operator prompt contained only generic verification instructions"
+  ]
+}

@@ -1,0 +1,2 @@
+event_id,event_type,title,status,priority,risk,source_id,coordinator_role,coordinator_actor_id,semantic_owner_roles,writer_role,verifier_role,producer_actor_id,verifier_actor_id,human_gates,affected_systems,rollback_boundary,evidence_requirements,opened_at,closed_at,supersedes_id
+<EVENT_ID>,<EVENT_TYPE>,<OUTCOME>,<statuses.event>,<statuses.priority>,<statuses.risk>,<SOURCE_ID>,RB-01,<ACTOR_ID>,<ROLE_KEY_LIST>,RB-10,RB-12,<ACTOR_ID>,<DISTINCT_ACTOR_ID>,<GATE_LIST>,<NON_SECRET_ALIAS_LIST>,<BOUNDARY>,<EVIDENCE_LIST>,<ISO-8601>,,

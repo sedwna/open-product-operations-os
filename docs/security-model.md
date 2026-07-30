@@ -34,6 +34,11 @@ Committed fixtures may contain public test constants only when all of these are 
 
 ## Controlled writes
 
+Initializer and workbook scaffold updates are written to exclusive same-directory stages and
+atomically renamed into place after containment checks. Existing hard-linked destinations are
+rejected. If a destination is swapped to a hard link after the final link-count check, rename
+replaces the directory entry without truncating the linked peer.
+
 A live writer must:
 
 1. accept only an owner-authorized manifest;
@@ -45,8 +50,30 @@ A live writer must:
 7. prove idempotent replay performs zero writes;
 8. produce a receipt and rollback plan.
 
+The packaged local CSV writer is deliberately limited to configured files inside the generated
+project. It requires the exact hash from a preceding dry run, writes an integrity-checked backup
+and receipt, rejects hard-linked targets, requires each sheet's canonical record key, rejects
+duplicate canonical keys, and atomically moves the current target to a same-directory transaction
+quarantine before verifying the approved bytes. The staged replacement is installed with a
+no-overwrite hard link. Source retirement moves the pathname to a private location and verifies its
+captured identity instead of unlinking a stale pathname.
+If another actor recreates the target after quarantine verification, installation fails with
+`EEXIST`, preserves those concurrent bytes, retains the approved original for recovery, and emits
+no success receipt. Target divergence during receipt commit invalidates the canonical receipt.
+Handled post-install failures and committed cleanup retention report bounded recovery paths instead
+of guessing that deletion or overwrite is safe. Replay is accepted only with a matching validated receipt and
+original preconditions. Rollback is refused if the target changed after the write. The
+implementation does not connect to a provider or production system.
+
+## Validation scan boundary
+
+`product-ops validate` inventories the complete bounded target tree, rejects filesystem links,
+scans text and binary bytes (including UTF-16LE and UTF-16BE) for obvious credentials, checks
+non-reserved email canaries and private absolute paths, and reports binary inventory. Only `.git`
+and `node_modules` directories are excluded; both are dependency or version-control stores outside
+the generated operating records.
+
 ## Public-package boundary
 
 This repository must not include source-product credentials, spreadsheet IDs, private URLs,
 customer data, proprietary screenshots, internal evidence, or product-specific decisions.
-
