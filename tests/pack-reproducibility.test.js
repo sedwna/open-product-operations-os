@@ -182,6 +182,140 @@ test("postpack recovery cannot overwrite concurrent bytes", async (t) => {
   await fs.access(path.resolve(root, statePath));
 });
 
+test("worktree normalization preserves bytes injected after final read and retains recovery state", async (t) => {
+  const root = await makeCrlfCheckout(t);
+  const proof = path.join(root, "proof.md");
+  const concurrentBytes = Buffer.from(
+    "concurrent worktree normalization bytes\n",
+    "utf8"
+  );
+  let injections = 0;
+
+  await assert.rejects(
+    prepareCanonicalPackSource(root, {
+      operationObserver: async (event) => {
+        if (
+          event.phase === "after-final-read-before-write" &&
+          event.operation === "normalize" &&
+          event.sourceKind === "git" &&
+          event.entryPath === "proof.md"
+        ) {
+          injections += 1;
+          await replacePathWithConcurrentBytes(event.file, concurrentBytes);
+        }
+      }
+    }),
+    (error) =>
+      error.code === "EPACKATOMIC" &&
+      /recovery state remains/.test(error.message)
+  );
+
+  assert.equal(injections, 1);
+  assert.deepEqual(await fs.readFile(proof), concurrentBytes);
+  await fs.access(await gitPackStatePath(root));
+});
+
+test("archive normalization preserves bytes injected after final read and retains recovery state", async (t) => {
+  const root = await makeArchiveSource(t);
+  const proof = path.join(root, "docs", "proof.md");
+  const concurrentBytes = Buffer.from(
+    "concurrent archive normalization bytes\n",
+    "utf8"
+  );
+  let injections = 0;
+
+  await assert.rejects(
+    prepareCanonicalPackSource(root, {
+      operationObserver: async (event) => {
+        if (
+          event.phase === "after-final-read-before-write" &&
+          event.operation === "normalize" &&
+          event.sourceKind === "archive" &&
+          event.entryPath === "docs/proof.md"
+        ) {
+          injections += 1;
+          await replacePathWithConcurrentBytes(event.file, concurrentBytes);
+        }
+      }
+    }),
+    (error) =>
+      error.code === "EPACKATOMIC" &&
+      /recovery state remains/.test(error.message)
+  );
+
+  assert.equal(injections, 1);
+  assert.deepEqual(await fs.readFile(proof), concurrentBytes);
+  await fs.access(
+    path.join(root, ".product-ops-pack-source-state.json")
+  );
+});
+
+test("worktree postpack restoration preserves bytes injected after final read and retains recovery state", async (t) => {
+  const root = await makeCrlfCheckout(t);
+  const proof = path.join(root, "proof.md");
+  const concurrentBytes = Buffer.from(
+    "concurrent worktree restore bytes\n",
+    "utf8"
+  );
+  let injections = 0;
+  await prepareCanonicalPackSource(root);
+
+  await assert.rejects(
+    restorePackSource(root, {
+      operationObserver: async (event) => {
+        if (
+          event.phase === "after-final-read-before-write" &&
+          event.operation === "restore" &&
+          event.sourceKind === "git" &&
+          event.entryPath === "proof.md"
+        ) {
+          injections += 1;
+          await replacePathWithConcurrentBytes(event.file, concurrentBytes);
+        }
+      }
+    }),
+    (error) => error.code === "EPACKATOMIC"
+  );
+
+  assert.equal(injections, 1);
+  assert.deepEqual(await fs.readFile(proof), concurrentBytes);
+  await fs.access(await gitPackStatePath(root));
+});
+
+test("archive postpack restoration preserves bytes injected after final read and retains recovery state", async (t) => {
+  const root = await makeArchiveSource(t);
+  const proof = path.join(root, "docs", "proof.md");
+  const concurrentBytes = Buffer.from(
+    "concurrent archive restore bytes\n",
+    "utf8"
+  );
+  let injections = 0;
+  await prepareCanonicalPackSource(root);
+
+  await assert.rejects(
+    restorePackSource(root, {
+      operationObserver: async (event) => {
+        if (
+          event.phase === "after-final-read-before-write" &&
+          event.operation === "restore" &&
+          event.sourceKind === "archive" &&
+          event.entryPath === "docs/proof.md"
+        ) {
+          injections += 1;
+          await replacePathWithConcurrentBytes(event.file, concurrentBytes);
+        }
+      }
+    }),
+    (error) => error.code === "EPACKATOMIC"
+  );
+
+  assert.equal(injections, 1);
+  assert.deepEqual(await fs.readFile(proof), concurrentBytes);
+  await fs.access(
+    path.join(root, ".product-ops-pack-source-state.json")
+  );
+});
+
 test("prepack canonicalizes and restores promised CRLF files from a Git archive", async (t) => {
   const root = await makeArchiveSource(t);
   const proof = path.join(root, "docs", "proof.md");
@@ -304,6 +438,20 @@ async function makeArchiveSource(t) {
     "utf8"
   );
   return root;
+}
+
+async function replacePathWithConcurrentBytes(file, bytes) {
+  await fs.unlink(file);
+  await fs.writeFile(file, bytes, { flag: "wx" });
+}
+
+async function gitPackStatePath(root) {
+  const statePath = runGit(root, [
+    "rev-parse",
+    "--git-path",
+    "product-ops-pack-source-state.json"
+  ]).stdout.trim();
+  return path.resolve(root, statePath);
 }
 
 function runGit(cwd, args) {

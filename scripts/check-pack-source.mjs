@@ -3,6 +3,12 @@ import { spawnSync } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import {
+  captureFileSnapshot,
+  moveFileNoOverwrite,
+  removeFileIfUnchanged
+} from "../src/atomic-move.js";
+import { assertNoLinkTraversal } from "../src/paths.js";
 
 const scriptPath = fileURLToPath(import.meta.url);
 const repositoryRoot = path.resolve(path.dirname(scriptPath), "..");
@@ -121,10 +127,14 @@ export async function findNonCanonicalTrackedFiles(root) {
   };
 }
 
-export async function prepareCanonicalPackSource(root) {
+export async function prepareCanonicalPackSource(
+  root,
+  { operationObserver = async () => {} } = {}
+) {
+  assertOperationObserver(operationObserver);
   const result = await findNonCanonicalTrackedFiles(root);
   if (!result.gitWorktree) {
-    return prepareCanonicalArchiveSource(root);
+    return prepareCanonicalArchiveSource(root, { operationObserver });
   }
   assertNoPackDrift(result);
   const statePath = packStatePath(root);
@@ -178,23 +188,35 @@ export async function prepareCanonicalPackSource(root) {
         ["cat-file", "blob", entry.expectedObjectId],
         { encoding: null }
       ).stdout;
-      await fs.writeFile(path.join(root, entry.path), canonicalBytes);
-    }
-  } catch (error) {
-    try {
-      await restorePackSource(root);
-    } catch (restoreError) {
-      throw new AggregateError(
-        [error, restoreError],
-        `Pack normalization failed and recovery remains at ${statePath}`
+      await replacePackSourceFile(
+        root,
+        resolveStateEntry(root, entry.path),
+        Buffer.from(entry.originalBase64, "base64"),
+        canonicalBytes,
+        `Git worktree pack normalization for ${entry.path}`,
+        {
+          operation: "normalize",
+          sourceKind: "git",
+          entryPath: entry.path,
+          operationObserver
+        }
       );
     }
-    throw error;
+  } catch (error) {
+    throw retainedPackStateError(
+      error,
+      statePath,
+      "Pack normalization failed"
+    );
   }
   return result;
 }
 
-export async function restorePackSource(root) {
+export async function restorePackSource(
+  root,
+  { operationObserver = async () => {} } = {}
+) {
+  assertOperationObserver(operationObserver);
   const worktree = runGit(root, ["rev-parse", "--is-inside-work-tree"], {
     allowFailure: true
   });
@@ -212,9 +234,34 @@ export async function restorePackSource(root) {
     );
   }
   const [statePath] = statePaths;
-  const state = JSON.parse(await fs.readFile(statePath, "utf8"));
+  const stateRoot = containmentRootFor(root, statePath);
+  const stateSnapshot = await captureFileSnapshot(
+    stateRoot,
+    statePath,
+    "Pack recovery state"
+  );
+  assertSingleLinkSnapshot(
+    stateSnapshot,
+    "Pack recovery state must not be hard-linked."
+  );
+  const state = JSON.parse(stateSnapshot.bytes.toString("utf8"));
   if (state.sourceKind === "archive") {
-    await restoreCanonicalArchiveSource(root, statePath, state);
+    try {
+      await restoreCanonicalArchiveSource(
+        root,
+        statePath,
+        state,
+        stateRoot,
+        stateSnapshot,
+        { operationObserver }
+      );
+    } catch (error) {
+      throw retainedPackStateError(
+        error,
+        statePath,
+        "Archive pack source restoration failed"
+      );
+    }
     return;
   }
   if (
@@ -227,54 +274,79 @@ export async function restorePackSource(root) {
     throw new Error(`Invalid pack recovery state: ${statePath}`);
   }
 
-  const unsafe = [];
-  for (const entry of state.files) {
-    const file = path.join(root, entry.path);
-    const originalBytes = Buffer.from(entry.originalBase64, "base64");
-    const canonicalBytes = runGit(
-      root,
-      ["cat-file", "blob", entry.expectedObjectId],
-      { encoding: null }
-    ).stdout;
-    const checkout = runGit(
-      root,
-      [
-        "cat-file",
-        "--filters",
-        `--path=${entry.path}`,
-        entry.expectedObjectId
-      ],
-      { allowFailure: true, encoding: null }
-    );
-    const originalIsValid =
-      gitBlobObjectId(originalBytes, state.objectFormat) ===
-        entry.actualObjectId &&
-      checkout.status === 0 &&
-      originalBytes.equals(checkout.stdout) &&
-      isEolOnlyConversion(originalBytes, canonicalBytes);
-    if (!originalIsValid) {
-      unsafe.push(`${entry.path}: saved checkout bytes are no longer valid`);
-      continue;
+  try {
+    const unsafe = [];
+    for (const entry of state.files) {
+      const file = path.join(root, entry.path);
+      const originalBytes = Buffer.from(entry.originalBase64, "base64");
+      const canonicalBytes = runGit(
+        root,
+        ["cat-file", "blob", entry.expectedObjectId],
+        { encoding: null }
+      ).stdout;
+      const checkout = runGit(
+        root,
+        [
+          "cat-file",
+          "--filters",
+          `--path=${entry.path}`,
+          entry.expectedObjectId
+        ],
+        { allowFailure: true, encoding: null }
+      );
+      const originalIsValid =
+        gitBlobObjectId(originalBytes, state.objectFormat) ===
+          entry.actualObjectId &&
+        checkout.status === 0 &&
+        originalBytes.equals(checkout.stdout) &&
+        isEolOnlyConversion(originalBytes, canonicalBytes);
+      if (!originalIsValid) {
+        unsafe.push(`${entry.path}: saved checkout bytes are no longer valid`);
+        continue;
+      }
+
+      const currentBytes = await fs.readFile(file);
+      if (currentBytes.equals(originalBytes)) {
+        continue;
+      }
+      if (!currentBytes.equals(canonicalBytes)) {
+        unsafe.push(`${entry.path}: changed while canonical packing was active`);
+        continue;
+      }
+      await replacePackSourceFile(
+        root,
+        file,
+        canonicalBytes,
+        originalBytes,
+        `Git worktree postpack restoration for ${entry.path}`,
+        {
+          operation: "restore",
+          sourceKind: "git",
+          entryPath: entry.path,
+          operationObserver
+        }
+      );
     }
 
-    const currentBytes = await fs.readFile(file);
-    if (currentBytes.equals(originalBytes)) {
-      continue;
+    if (unsafe.length > 0) {
+      throw new Error(
+        `Pack source recovery is fail-closed; preserved ${statePath}:\n` +
+          unsafe.map((entry) => `- ${entry}`).join("\n")
+      );
     }
-    if (!currentBytes.equals(canonicalBytes)) {
-      unsafe.push(`${entry.path}: changed while canonical packing was active`);
-      continue;
-    }
-    await fs.writeFile(file, originalBytes);
-  }
-
-  if (unsafe.length > 0) {
-    throw new Error(
-      `Pack source recovery is fail-closed; preserved ${statePath}:\n` +
-        unsafe.map((entry) => `- ${entry}`).join("\n")
+    await removeRecoveryState(
+      stateRoot,
+      statePath,
+      stateSnapshot,
+      "Pack recovery state"
+    );
+  } catch (error) {
+    throw retainedPackStateError(
+      error,
+      statePath,
+      "Pack source restoration failed"
     );
   }
-  await fs.unlink(statePath);
 }
 
 if (path.resolve(process.argv[1] ?? "") === scriptPath) {
@@ -322,7 +394,10 @@ function packStatePath(root) {
   return path.isAbsolute(gitPath) ? gitPath : path.resolve(root, gitPath);
 }
 
-async function prepareCanonicalArchiveSource(root) {
+async function prepareCanonicalArchiveSource(
+  root,
+  { operationObserver }
+) {
   const statePath = archivePackStatePath(root);
   if ((await existingPackStatePaths(root, false)).length > 0) {
     throw new Error(
@@ -384,18 +459,26 @@ async function prepareCanonicalArchiveSource(root) {
           `Archive pack canonical hash changed during validation: ${entry.path}`
         );
       }
-      await fs.writeFile(file, canonicalBytes);
-    }
-  } catch (error) {
-    try {
-      await restoreCanonicalArchiveSource(root, statePath, state);
-    } catch (restoreError) {
-      throw new AggregateError(
-        [error, restoreError],
-        `Archive pack normalization failed and recovery remains at ${statePath}`
+      await replacePackSourceFile(
+        root,
+        file,
+        currentBytes,
+        canonicalBytes,
+        `Archive pack normalization for ${entry.path}`,
+        {
+          operation: "normalize",
+          sourceKind: "archive",
+          entryPath: entry.path,
+          operationObserver
+        }
       );
     }
-    throw error;
+  } catch (error) {
+    throw retainedPackStateError(
+      error,
+      statePath,
+      "Archive pack normalization failed"
+    );
   }
   return {
     gitWorktree: false,
@@ -404,7 +487,14 @@ async function prepareCanonicalArchiveSource(root) {
   };
 }
 
-async function restoreCanonicalArchiveSource(root, statePath, state) {
+async function restoreCanonicalArchiveSource(
+  root,
+  statePath,
+  state,
+  stateRoot,
+  stateSnapshot,
+  { operationObserver }
+) {
   if (
     state.version !== 1 ||
     state.sourceKind !== "archive" ||
@@ -452,7 +542,19 @@ async function restoreCanonicalArchiveSource(root, statePath, state) {
       unsafe.push(`${entry.path}: changed while canonical packing was active`);
       continue;
     }
-    await fs.writeFile(file, originalBytes);
+    await replacePackSourceFile(
+      root,
+      file,
+      canonicalBytes,
+      originalBytes,
+      `Archive postpack restoration for ${entry.path}`,
+      {
+        operation: "restore",
+        sourceKind: "archive",
+        entryPath: entry.path,
+        operationObserver
+      }
+    );
   }
   if (unsafe.length > 0) {
     throw new Error(
@@ -460,7 +562,232 @@ async function restoreCanonicalArchiveSource(root, statePath, state) {
         unsafe.map((entry) => `- ${entry}`).join("\n")
     );
   }
-  await fs.unlink(statePath);
+  await removeRecoveryState(
+    stateRoot,
+    statePath,
+    stateSnapshot,
+    "Archive pack recovery state"
+  );
+}
+
+async function replacePackSourceFile(
+  root,
+  file,
+  expectedBytes,
+  replacementBytes,
+  label,
+  {
+    operation,
+    sourceKind,
+    entryPath,
+    operationObserver
+  }
+) {
+  const initial = await captureFileSnapshot(root, file, `${label} source`);
+  assertSingleLinkSnapshot(
+    initial,
+    `${label} source is hard-linked; refusing ambiguous replacement.`
+  );
+  if (!initial.bytes.equals(expectedBytes)) {
+    throw new Error(`${label} source changed before atomic replacement.`);
+  }
+
+  const stagePath = privatePackPath(file, "stage");
+  const retiredPath = privatePackPath(file, "retired");
+  await assertNoLinkTraversal(root, stagePath, `${label} stage`);
+  await assertNoLinkTraversal(root, retiredPath, `${label} retired source`);
+  const stageHandle = await fs.open(stagePath, "wx");
+  try {
+    await stageHandle.writeFile(replacementBytes);
+  } finally {
+    await stageHandle.close();
+  }
+  const stageSnapshot = await captureFileSnapshot(
+    root,
+    stagePath,
+    `${label} stage`
+  );
+  assertSingleLinkSnapshot(
+    stageSnapshot,
+    `${label} stage is hard-linked; refusing ambiguous replacement.`
+  );
+  if (!stageSnapshot.bytes.equals(replacementBytes)) {
+    throw new Error(`${label} stage bytes changed before installation.`);
+  }
+
+  let step = "retire";
+  let retired = false;
+  let installed = false;
+  try {
+    await moveFileNoOverwrite(
+      root,
+      file,
+      retiredPath,
+      `${label} source retirement`,
+      {
+        expectedContent: expectedBytes,
+        moveObserver: async (event) => {
+          if (event.phase === "after-final-pre-unlink-validation") {
+            await operationObserver({
+              phase: "after-final-read-before-write",
+              operation,
+              sourceKind,
+              entryPath,
+              file,
+              stagePath,
+              retiredPath
+            });
+          }
+        }
+      }
+    );
+    retired = true;
+
+    step = "install";
+    await moveFileNoOverwrite(
+      root,
+      stagePath,
+      file,
+      `${label} replacement install`,
+      { expectedContent: replacementBytes }
+    );
+    installed = true;
+
+    const installedSnapshot = await captureFileSnapshot(
+      root,
+      file,
+      `${label} installed replacement`
+    );
+    assertSingleLinkSnapshot(
+      installedSnapshot,
+      `${label} installed replacement has an ambiguous link count.`
+    );
+    if (!installedSnapshot.bytes.equals(replacementBytes)) {
+      throw new Error(`${label} installed replacement failed byte read-back.`);
+    }
+
+    step = "cleanup";
+    const retiredSnapshot = await captureFileSnapshot(
+      root,
+      retiredPath,
+      `${label} retired source`
+    );
+    assertSingleLinkSnapshot(
+      retiredSnapshot,
+      `${label} retired source has an ambiguous link count.`
+    );
+    if (!retiredSnapshot.bytes.equals(expectedBytes)) {
+      throw new Error(`${label} retired source failed byte read-back.`);
+    }
+    const cleanup = await removeFileIfUnchanged(
+      root,
+      retiredPath,
+      retiredSnapshot,
+      `${label} retired source`,
+      { missingIsSuccess: false }
+    );
+    if (cleanup.status !== "removed") {
+      const cleanupError = new Error(
+        `${label} replacement committed, but retired-source cleanup was uncertain.`
+      );
+      cleanupError.code = "EPACKCLEANUP";
+      cleanupError.committed = true;
+      cleanupError.recoveryPaths = cleanup.recoveryPaths;
+      throw cleanupError;
+    }
+  } catch (error) {
+    const recoveryPaths = new Set(error.recoveryPaths ?? []);
+    if (retired || (step === "retire" && error.destinationLinked)) {
+      recoveryPaths.add(retiredPath);
+    }
+    if (!installed) {
+      const stageCleanup = await removeFileIfUnchanged(
+        root,
+        stagePath,
+        stageSnapshot,
+        `${label} stage cleanup`
+      );
+      for (const recoveryPath of stageCleanup.recoveryPaths) {
+        recoveryPaths.add(recoveryPath);
+      }
+    }
+    if (step === "install" && error.destinationLinked) {
+      recoveryPaths.add(file);
+    }
+    const atomicError = new Error(
+      `${label} failed closed; concurrent bytes and atomic recovery artifacts were not overwritten.`,
+      { cause: error }
+    );
+    atomicError.code = "EPACKATOMIC";
+    atomicError.committed = installed || error.committed === true;
+    atomicError.recoveryPaths = [...recoveryPaths];
+    throw atomicError;
+  }
+}
+
+async function removeRecoveryState(
+  stateRoot,
+  statePath,
+  stateSnapshot,
+  label
+) {
+  const removal = await removeFileIfUnchanged(
+    stateRoot,
+    statePath,
+    stateSnapshot,
+    label,
+    { missingIsSuccess: false }
+  );
+  if (removal.status !== "removed") {
+    const error = new Error(
+      `${label} changed before cleanup; success is refused and recovery state was retained.`
+    );
+    error.code = "EPACKSTATE";
+    error.recoveryPaths = removal.recoveryPaths;
+    throw error;
+  }
+}
+
+function retainedPackStateError(error, statePath, message) {
+  const retained = new Error(
+    `${message}; recovery is fail-closed and recovery state remains at ${statePath}.`,
+    { cause: error }
+  );
+  retained.code = error.code ?? "EPACKNORMALIZE";
+  retained.committed = error.committed === true;
+  retained.recoveryPaths = [
+    ...new Set([statePath, ...(error.recoveryPaths ?? [])])
+  ];
+  return retained;
+}
+
+function privatePackPath(file, kind) {
+  return path.join(
+    path.dirname(file),
+    `.product-ops-pack-${kind}.${crypto.randomUUID()}.${path.basename(file)}`
+  );
+}
+
+function containmentRootFor(root, file) {
+  const relative = path.relative(path.resolve(root), path.resolve(file));
+  return relative === "" ||
+    relative === ".." ||
+    relative.startsWith(`..${path.sep}`) ||
+    path.isAbsolute(relative)
+    ? path.dirname(file)
+    : root;
+}
+
+function assertSingleLinkSnapshot(snapshot, message) {
+  if (snapshot.stat.nlink !== 1n) {
+    throw new Error(message);
+  }
+}
+
+function assertOperationObserver(operationObserver) {
+  if (typeof operationObserver !== "function") {
+    throw new Error("operationObserver must be a function when provided.");
+  }
 }
 
 async function collectArchivePayloadFiles(root) {
