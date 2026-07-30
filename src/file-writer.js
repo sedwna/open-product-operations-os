@@ -211,7 +211,7 @@ async function replaceWithNoOverwrite(
       await installStageNoOverwrite(root, stagePath, destination, label);
       installed = true;
     } catch (error) {
-      installed = error.destinationLinked === true;
+      installed = error.sourceUnlinked === true;
       throw error;
     }
     await transactionObserver({

@@ -629,7 +629,7 @@ async function atomicNoOverwriteReplace(
       await installStageNoOverwrite(root, stagePath, destination, label);
       installed = true;
     } catch (error) {
-      installed = error.destinationLinked === true;
+      installed = error.sourceUnlinked === true;
       throw error;
     }
     await transactionObserver({
@@ -768,6 +768,14 @@ async function recoverAtomicReplacement(
   }
 
   if (displaced === replacement) {
+    await transactionObserver({
+      phase: "before-original-recovery-restore",
+      manifestId,
+      label,
+      destination,
+      quarantinePath,
+      displacedPath
+    });
     const originalRecovery = await restoreRetainedPath(
       root,
       quarantinePath,
@@ -777,7 +785,6 @@ async function recoverAtomicReplacement(
       await fs.rm(displacedPath, { force: true });
       return { status: "restored" };
     }
-    await fs.rm(displacedPath, { force: true });
     return originalRecovery;
   }
 

@@ -670,6 +670,69 @@ test("controlled write cannot overwrite a quarantine artifact created after the 
   await assert.rejects(fs.access(receiptPath), { code: "ENOENT" });
 });
 
+test("controlled-write recovery preserves displaced replacement after a later destination race", async (t) => {
+  const { target } = await initializedProject(t, "writer-late-recovery-race");
+  const config = await readJson(path.join(target, CONFIG_FILE));
+  const sheet = config.workbook.sheets.find((entry) => entry.key === "delivery_tickets");
+  const workbookPath = path.join(target, sheet.file);
+  const rows = parseCsv(await fs.readFile(workbookPath, "utf8"));
+  const record = rows[0].map(() => "");
+  record[rows[0].indexOf("ticket_id")] = "TKT-20260729-001";
+  record[rows[0].indexOf("status")] = "implementation_complete";
+  rows.push(record);
+  const originalBytes = stringifyCsv(rows);
+  await fs.writeFile(workbookPath, originalBytes, "utf8");
+  const manifest = buildSafeManifest(config, sheet);
+  const preview = await applyLocalWrite(target, manifest, config);
+  const quarantinePath = `${workbookPath}.${manifest.manifestId}.before.tmp`;
+  const displacedPath = `${workbookPath}.${manifest.manifestId}.displaced.tmp`;
+  const transactionDirectory = path.join(
+    target,
+    ".product-ops",
+    "writes",
+    manifest.manifestId
+  );
+  let replacementBytes;
+
+  await assert.rejects(
+    applyLocalWrite(target, manifest, config, {
+      dryRun: false,
+      approvedPlanHash: preview.planHash,
+      transactionObserver: async (event) => {
+        if (event.phase === "target-replaced") {
+          replacementBytes = await fs.readFile(workbookPath, "utf8");
+          throw new Error("injected post-install failure");
+        }
+        if (
+          event.phase === "before-original-recovery-restore" &&
+          event.label === "Write target"
+        ) {
+          await fs.writeFile(workbookPath, "concurrent later recovery bytes\n", {
+            encoding: "utf8",
+            flag: "wx"
+          });
+        }
+      }
+    }),
+    /aborted without overwriting concurrent target bytes/
+  );
+
+  assert.equal(
+    await fs.readFile(workbookPath, "utf8"),
+    "concurrent later recovery bytes\n"
+  );
+  assert.equal(await fs.readFile(quarantinePath, "utf8"), originalBytes);
+  assert.equal(await fs.readFile(displacedPath, "utf8"), replacementBytes);
+  assert.equal(
+    await fs.readFile(path.join(transactionDirectory, "before.csv"), "utf8"),
+    originalBytes
+  );
+  await assert.rejects(
+    fs.access(path.join(transactionDirectory, "receipt.json")),
+    { code: "ENOENT" }
+  );
+});
+
 test("rollback recovery cannot overwrite a displaced artifact created after the final absence check", async (t) => {
   const { target } = await initializedProject(t, "rollback-displaced-race");
   const config = await readJson(path.join(target, CONFIG_FILE));
@@ -725,6 +788,63 @@ test("rollback recovery cannot overwrite a displaced artifact created after the 
     await fs.readFile(displacedPath, "utf8"),
     "concurrent displaced\n"
   );
+  assert.equal(await fs.readFile(receiptPath, "utf8"), receiptBytes);
+  assert.equal(JSON.parse(receiptBytes).rolledBack, false);
+});
+
+test("rollback recovery preserves displaced bytes and receipt after a later destination race", async (t) => {
+  const { target } = await initializedProject(t, "rollback-late-recovery-race");
+  const config = await readJson(path.join(target, CONFIG_FILE));
+  const sheet = config.workbook.sheets.find((entry) => entry.key === "delivery_tickets");
+  const workbookPath = path.join(target, sheet.file);
+  const rows = parseCsv(await fs.readFile(workbookPath, "utf8"));
+  const record = rows[0].map(() => "");
+  record[rows[0].indexOf("ticket_id")] = "TKT-20260729-001";
+  record[rows[0].indexOf("status")] = "implementation_complete";
+  rows.push(record);
+  const originalBytes = stringifyCsv(rows);
+  await fs.writeFile(workbookPath, originalBytes, "utf8");
+  const manifest = buildSafeManifest(config, sheet);
+  const preview = await applyLocalWrite(target, manifest, config);
+  const receipt = await applyLocalWrite(target, manifest, config, {
+    dryRun: false,
+    approvedPlanHash: preview.planHash
+  });
+  const receiptPath = path.join(target, receipt.receiptFile);
+  const receiptBytes = await fs.readFile(receiptPath, "utf8");
+  const postWriteBytes = await fs.readFile(workbookPath, "utf8");
+  const quarantinePath = `${workbookPath}.${manifest.manifestId}.rollback-current.tmp`;
+  const displacedPath = `${workbookPath}.${manifest.manifestId}.rollback-displaced.tmp`;
+
+  await assert.rejects(
+    rollbackLocalWrite(target, receipt.receiptFile, {
+      transactionObserver: async (event) => {
+        if (
+          event.phase === "after-target-installed" &&
+          event.label === "Rollback target"
+        ) {
+          throw new Error("injected rollback receipt failure");
+        }
+        if (
+          event.phase === "before-original-recovery-restore" &&
+          event.label === "Rollback target"
+        ) {
+          await fs.writeFile(workbookPath, "concurrent rollback recovery bytes\n", {
+            encoding: "utf8",
+            flag: "wx"
+          });
+        }
+      }
+    }),
+    /Rollback aborted without overwriting concurrent target bytes/
+  );
+
+  assert.equal(
+    await fs.readFile(workbookPath, "utf8"),
+    "concurrent rollback recovery bytes\n"
+  );
+  assert.equal(await fs.readFile(quarantinePath, "utf8"), postWriteBytes);
+  assert.equal(await fs.readFile(displacedPath, "utf8"), originalBytes);
   assert.equal(await fs.readFile(receiptPath, "utf8"), receiptBytes);
   assert.equal(JSON.parse(receiptBytes).rolledBack, false);
 });

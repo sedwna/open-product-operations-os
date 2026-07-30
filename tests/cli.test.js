@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
+import { moveFileNoOverwrite } from "../src/atomic-move.js";
 import { CONFIG_FILE } from "../src/constants.js";
 import { run } from "../src/cli.js";
 import {
@@ -444,4 +445,36 @@ test("initializer recovery cannot overwrite a displaced artifact created after t
     "concurrent displaced\n"
   );
   assert.deepEqual(successSummary, []);
+});
+
+test("atomic move retains its source when the destination is replaced before final validation", async (t) => {
+  const parent = await makeTempDirectory();
+  t.after(() => fs.rm(parent, { recursive: true, force: true }));
+  const source = path.join(parent, "source.tmp");
+  const destination = path.join(parent, "destination.txt");
+  await fs.writeFile(source, "original source bytes\n");
+
+  await assert.rejects(
+    moveFileNoOverwrite(parent, source, destination, "Race probe", {
+      expectedContent: "original source bytes\n",
+      moveObserver: async ({ phase }) => {
+        if (phase === "before-source-unlink-validation") {
+          await fs.unlink(destination);
+          await fs.writeFile(destination, "concurrent destination bytes\n", {
+            encoding: "utf8",
+            flag: "wx"
+          });
+        }
+      }
+    }),
+    /before source unlink/
+  );
+
+  assert.equal(await fs.readFile(source, "utf8"), "original source bytes\n");
+  assert.equal(
+    await fs.readFile(destination, "utf8"),
+    "concurrent destination bytes\n"
+  );
+  assert.equal((await fs.lstat(source)).nlink, 1);
+  assert.equal((await fs.lstat(destination)).nlink, 1);
 });

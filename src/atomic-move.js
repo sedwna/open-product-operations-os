@@ -6,8 +6,11 @@ export async function moveFileNoOverwrite(
   source,
   destination,
   label,
-  { expectedContent } = {}
+  { expectedContent, moveObserver = async () => {} } = {}
 ) {
+  if (typeof moveObserver !== "function") {
+    throw new Error("moveObserver must be a function when provided.");
+  }
   let destinationLinked = false;
   let sourceUnlinked = false;
   let sourceHandle;
@@ -93,53 +96,84 @@ export async function moveFileNoOverwrite(
       );
     }
 
-    const sourceImmediatelyBeforeUnlink = await fs.lstat(source, {
-      bigint: true
+    await moveObserver({
+      phase: "before-source-unlink-validation",
+      source,
+      destination,
+      label
     });
-    assertSameFile(
-      sourceBefore,
-      sourceImmediatelyBeforeUnlink,
-      `${label} source path changed before verified unlink.`
-    );
-    assertLinkCount(
-      sourceImmediatelyBeforeUnlink,
-      2n,
-      `${label} source link count changed before verified unlink.`
-    );
-    await fs.unlink(source);
-    sourceUnlinked = true;
 
+    await sourceHandle.close();
+    sourceHandle = undefined;
+    await assertNoLinkTraversal(root, source, `${label} source`);
     await assertNoLinkTraversal(root, destination, `${label} destination`);
-    const [destinationAfter, handleAfter] = await Promise.all([
-      fs.lstat(destination, { bigint: true }),
-      sourceHandle.stat({ bigint: true })
+    const [sourceBeforeUnlink, destinationBeforeUnlink] = await Promise.all([
+      fs.lstat(source, { bigint: true }),
+      fs.lstat(destination, { bigint: true })
     ]);
     for (const [stat, subject] of [
-      [destinationAfter, "destination"],
-      [handleAfter, "moved file"]
+      [sourceBeforeUnlink, "source"],
+      [destinationBeforeUnlink, "destination"]
     ]) {
+      assertReliableRegularFile(stat, `${label} ${subject}`);
       assertSameFile(
         sourceBefore,
         stat,
-        `${label} ${subject} identity changed after source unlink.`
+        `${label} ${subject} identity changed before source unlink.`
       );
       assertLinkCount(
         stat,
-        1n,
-        `${label} ${subject} has an ambiguous link count after source unlink.`
+        2n,
+        `${label} ${subject} has an ambiguous link count before source unlink.`
       );
       assertSize(
         stat,
         sourceBytes,
-        `${label} ${subject} size changed after source unlink.`
-      );
-    }
-    if (!(await fs.readFile(destination)).equals(sourceBytes)) {
-      throw new Error(
-        `${label} destination bytes changed after source unlink; the destination was retained.`
+        `${label} ${subject} size changed before source unlink.`
       );
     }
 
+    const [finalSourceBytes, finalDestinationBytes] = await Promise.all([
+      fs.readFile(source),
+      fs.readFile(destination)
+    ]);
+    if (
+      !finalSourceBytes.equals(sourceBytes) ||
+      !finalDestinationBytes.equals(sourceBytes)
+    ) {
+      throw new Error(
+        `${label} bytes changed before source unlink; the original source was retained.`
+      );
+    }
+
+    const [sourceImmediatelyBeforeUnlink, destinationImmediatelyBeforeUnlink] =
+      await Promise.all([
+        fs.lstat(source, { bigint: true }),
+        fs.lstat(destination, { bigint: true })
+      ]);
+    for (const [stat, subject] of [
+      [sourceImmediatelyBeforeUnlink, "source"],
+      [destinationImmediatelyBeforeUnlink, "destination"]
+    ]) {
+      assertSameFile(
+        sourceBefore,
+        stat,
+        `${label} ${subject} identity changed before verified unlink.`
+      );
+      assertLinkCount(
+        stat,
+        2n,
+        `${label} ${subject} link count changed before verified unlink.`
+      );
+      assertSize(
+        stat,
+        sourceBytes,
+        `${label} ${subject} size changed before verified unlink.`
+      );
+    }
+
+    await fs.unlink(source);
+    sourceUnlinked = true;
     return { bytes: sourceBytes };
   } catch (error) {
     const moveError =
