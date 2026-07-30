@@ -48,6 +48,7 @@ test("npm package inspection is isolated and contains promised public files", as
     "scripts/check-clean-clone-pack.mjs",
     "scripts/check-cross-host-pack.mjs",
     "scripts/check-pack-source.mjs",
+    "scripts/git-fixture.mjs",
     "scripts/process-runner.mjs",
     "scripts/sbom-contract.mjs",
     "src/cli.js",

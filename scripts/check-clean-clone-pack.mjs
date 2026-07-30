@@ -4,6 +4,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { publishExactCanonicalRef } from "./git-fixture.mjs";
 import { npmInvocation, runProcess } from "./process-runner.mjs";
 
 const root = path.resolve(
@@ -40,18 +41,13 @@ const gitEnvironment = {
 
 try {
   run("git", ["init", "--bare", remote], root, gitEnvironment);
-  run(
-    "git",
-    [
-      `--git-dir=${remote}`,
-      "fetch",
-      "--no-tags",
-      root,
-      "HEAD:refs/heads/canonical"
-    ],
-    root,
-    gitEnvironment
-  );
+  publishExactCanonicalRef({
+    source: root,
+    remote,
+    sourceHead,
+    cwd: root,
+    env: gitEnvironment
+  });
   run(
     "git",
     [

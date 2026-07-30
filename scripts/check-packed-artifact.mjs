@@ -47,6 +47,7 @@ try {
     "scripts/check-cross-host-pack.mjs",
     "scripts/check-licenses.mjs",
     "scripts/check-pack-source.mjs",
+    "scripts/git-fixture.mjs",
     "scripts/check-sbom.mjs",
     "scripts/process-runner.mjs",
     "scripts/sbom-contract.mjs",

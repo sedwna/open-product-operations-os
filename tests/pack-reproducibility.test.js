@@ -9,6 +9,7 @@ import {
   prepareCanonicalPackSource,
   restorePackSource
 } from "../scripts/check-pack-source.mjs";
+import { publishExactCanonicalRef } from "../scripts/git-fixture.mjs";
 import { makeTempDirectory } from "./helpers.js";
 
 test("raw Git-byte guard detects CRLF payload divergence before packing", () => {
@@ -21,6 +22,58 @@ test("raw Git-byte guard detects CRLF payload divergence before packing", () => 
 
   assert.equal(gitBlobObjectId(canonical), expectedObjectId);
   assert.notEqual(gitBlobObjectId(windowsTransition), expectedObjectId);
+});
+
+test("clean-clone fixture publishes the exact head from a shallow checkout", async (t) => {
+  const root = await makeTempDirectory();
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const source = path.join(root, "source");
+  const shallow = path.join(root, "shallow");
+  const remote = path.join(root, "remote.git");
+  const clone = path.join(root, "clone");
+  await fs.mkdir(source);
+  runGit(source, ["init", "-q"]);
+  runGit(source, ["config", "user.email", "fixture@example.invalid"]);
+  runGit(source, ["config", "user.name", "Pack Fixture"]);
+  const proof = path.join(source, "proof.md");
+  await fs.writeFile(proof, "first revision\n", "utf8");
+  runGit(source, ["add", "proof.md"]);
+  runGit(source, ["commit", "-qm", "first"]);
+  await fs.writeFile(proof, "second revision\n", "utf8");
+  runGit(source, ["commit", "-qam", "second"]);
+
+  runGit(root, [
+    "clone",
+    "--depth",
+    "1",
+    "--no-local",
+    source,
+    shallow
+  ]);
+  assert.equal(
+    runGit(shallow, ["rev-parse", "--is-shallow-repository"]).stdout.trim(),
+    "true"
+  );
+  const sourceHead = runGit(shallow, ["rev-parse", "HEAD"]).stdout.trim();
+  runGit(root, ["init", "--bare", "-q", remote]);
+  publishExactCanonicalRef({
+    source: shallow,
+    remote,
+    sourceHead,
+    cwd: root
+  });
+  runGit(root, [
+    "clone",
+    "--no-local",
+    "--branch",
+    "canonical",
+    remote,
+    clone
+  ]);
+  assert.equal(
+    runGit(clone, ["rev-parse", "HEAD"]).stdout.trim(),
+    sourceHead
+  );
 });
 
 test("prepack guard rejects a Git-clean CRLF file retained across an attributes transition", async (t) => {
