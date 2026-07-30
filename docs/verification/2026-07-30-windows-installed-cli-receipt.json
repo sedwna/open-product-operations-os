@@ -1,0 +1,30 @@
+{
+  "host": "Windows 11 PowerShell",
+  "sourceSha": "06181988ca12035f3e8d8892af0f88a8143618a8",
+  "repositoryOnlyContext": true,
+  "npmCi": true,
+  "testsPassed": 46,
+  "testsFailed": 0,
+  "packedCheck": true,
+  "supplyChain": true,
+  "installedCli": true,
+  "dryRun": true,
+  "init": true,
+  "validateBefore": true,
+  "stableReinit": true,
+  "validateAfter": true,
+  "roles": 13,
+  "tabs": 23,
+  "preservedOperationalRow": true,
+  "preservedConfig": true,
+  "configHashBefore": "3b710ac653c172cb993366d8f927748ca249de1b94274616c83b5a7edb347646",
+  "configHashAfter": "3b710ac653c172cb993366d8f927748ca249de1b94274616c83b5a7edb347646",
+  "preservedRowId": "IDEA-20260730-618",
+  "blockers": [],
+  "notes": [
+    "Fresh public Git clone on Windows",
+    "All workspace operations used product-ops.cmd installed from the real npm tarball",
+    "The 46-test suite, packed artifact check, portability check, and supply-chain check passed",
+    "A preliminary temporary run with a deliberately noncanonical row ID was rejected by the validator and is not evidence"
+  ]
+}

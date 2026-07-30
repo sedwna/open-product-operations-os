@@ -1,0 +1,32 @@
+{
+  "host": "Docker Linux node:20-bookworm-slim",
+  "sourceSha": "06181988ca12035f3e8d8892af0f88a8143618a8",
+  "repositoryOnlyContext": true,
+  "publicGitBundleTransport": true,
+  "npmCi": true,
+  "testsPassed": 46,
+  "testsFailed": 0,
+  "packedCheck": true,
+  "supplyChain": true,
+  "installedCli": true,
+  "dryRun": true,
+  "init": true,
+  "validateBefore": true,
+  "stableReinit": true,
+  "validateAfter": true,
+  "roles": 13,
+  "tabs": 23,
+  "preservedOperationalRow": true,
+  "preservedConfig": true,
+  "configHashBefore": "bb05b2ef9d77f3c734aff07536c7584b5a9363508616dc611d476a256ca107ad",
+  "configHashAfter": "bb05b2ef9d77f3c734aff07536c7584b5a9363508616dc611d476a256ca107ad",
+  "preservedRowId": "IDEA-20260730-619",
+  "blockers": [],
+  "notes": [
+    "Fresh clone from a Git bundle produced from the public pull-request head",
+    "No host repository, private LinkUp files, chat context, or handoff files were mounted",
+    "Only the public Git bundle and a generic read-only verification script were mounted",
+    "All workspace operations used the product-ops binary installed from the real npm tarball",
+    "Bundle transport replaced GitHub HTTPS because the isolated container TLS handshake failed"
+  ]
+}
