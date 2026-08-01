@@ -142,3 +142,10 @@ guardrails:
   live_write_without_readback_allowed: false
   historical_record_mutation_allowed: false
   secret_reference_format: "store://<approved-store>/<alias>"
+
+runtime:
+  model_version: 2
+  directory: .product-ops/runtime
+  external_writes_default_dry_run: true
+  human_gate_attribution_required: true
+  command_agents_require_independent_sandbox_for_untrusted_code: true

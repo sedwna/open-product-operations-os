@@ -16,6 +16,10 @@ const windowsClone = path.join(temporary, "windows-autocrlf-clone");
 const windowsPack = path.join(temporary, "windows-pack");
 const linuxPack = path.join(temporary, "linux-pack");
 const globalConfig = path.join(temporary, "gitconfig");
+const packageMetadata = JSON.parse(
+  await fs.readFile(path.join(root, "package.json"), "utf8")
+);
+const packageArchiveName = `${packageMetadata.name}-${packageMetadata.version}.tgz`;
 const sourceHead = run("git", ["rev-parse", "HEAD"], root).stdout.trim();
 
 assert.equal(
@@ -120,7 +124,7 @@ try {
     root
   );
   const linuxTarball = await fs.readFile(
-    path.join(linuxPack, "open-product-operations-os-0.1.0.tgz")
+    path.join(linuxPack, packageArchiveName)
   );
   assert.deepEqual(
     windowsTarball,

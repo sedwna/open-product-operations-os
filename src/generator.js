@@ -17,11 +17,17 @@ const GOVERNANCE_TEMPLATES = [
 ];
 
 const SCHEMA_FILES = [
+  "approval-store.schema.json",
   "agent-registry.schema.json",
   "board-task.schema.json",
+  "development-run.schema.json",
   "evidence-receipt.schema.json",
   "handoff.schema.json",
+  "intake-record.schema.json",
+  "provider-catalog.schema.json",
+  "provider-outbox-item.schema.json",
   "project-config.schema.json",
+  "runtime-receipt.schema.json",
   "workbook-write-manifest.schema.json",
   "workbook-write-receipt.schema.json"
 ];
@@ -35,6 +41,10 @@ export function buildProjectFiles(config, { includeConfig = false } = {}) {
   files.set(
     "config/operating-model.yaml",
     readPackagedTemplate("config/operating-model.yaml")
+  );
+  files.set(
+    "adapters/providers.json",
+    readPackagedTemplate("adapters/providers.json")
   );
 
   files.set(REGISTRY_FILE, formatJson(buildRegistry(config)));
@@ -68,8 +78,8 @@ export function buildProjectFiles(config, { includeConfig = false } = {}) {
         name,
         type: adapter.type,
         enabled: adapter.enabled,
-        implementation: "not-configured",
-        settings: {}
+        implementation: adapter.implementation ?? "not-configured",
+        settings: adapter.settings ?? {}
       })
     );
   }
@@ -143,6 +153,10 @@ function buildTaskboard(config) {
 }
 
 function buildRolePackage(agent, config) {
+  const verifierRole =
+    agent.id === config.separation.independentVerifierRole
+      ? config.separation.verificationOfVerifierRole ?? "RB-08"
+      : config.separation.independentVerifierRole;
   return `# ${agent.id} — ${agent.name}
 
 Source catalog: \`${config.catalogAuthority}\`
@@ -163,8 +177,8 @@ ${agent.responsibilities.map((item) => `- ${item}`).join("\n")}
 ${agent.prohibitedActions.map((item) => `- ${item}`).join("\n")}
 
 This role cannot certify its own material claims. The independent verifier is \`${
-    config.separation.independentVerifierRole
-  }\`, assigned to \`${actorFor(config, config.separation.independentVerifierRole)}\`.
+    verifierRole
+  }\`, assigned to \`${actorFor(config, verifierRole)}\`.
 `;
 }
 

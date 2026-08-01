@@ -82,3 +82,8 @@ Agents do not rely on private direct messages. They:
 
 The Control Tower opens the next dependency. This makes the task board a replayable message bus.
 
+The packaged runtime implements a single-cycle scheduler, durable approvals, intake routing,
+RB-13 command dispatch, provider outbox, dashboard, metrics, setup, and migration services. It does
+not run as an unattended daemon and does not make external writes unless the relevant adapter is
+enabled and the caller supplies explicit apply authorization.
+

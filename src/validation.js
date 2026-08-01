@@ -182,6 +182,15 @@ export async function validateProject(target, config) {
     }
   }
 
+  if (contents.has("adapters/providers.json")) {
+    validateJsonSchemaFile(
+      "adapters/providers.json",
+      contents.get("adapters/providers.json"),
+      "provider-catalog.schema.json",
+      errors
+    );
+  }
+
   const inventory = await inventoryTree(root, config.validation.excludedDirectories, errors);
   for (const file of inventory.files) {
     const buffer = await fs.readFile(file.absolutePath);
@@ -194,6 +203,7 @@ export async function validateProject(target, config) {
     );
     if (!file.binary) {
       const text = buffer.toString("utf8");
+      validateRuntimeStateFile(file.relativePath, text, errors);
       if (
         isWriteManifestPath(file.relativePath) ||
         looksLikeWriteManifest(file.relativePath, text)
@@ -387,6 +397,58 @@ function validateGeneratedJson(relativePath, text, expected, errors) {
   }
 }
 
+function validateRuntimeStateFile(relativePath, text, errors) {
+  const normalized = relativePath.replaceAll("\\", "/");
+  let schemaFile = null;
+  if (normalized === ".product-ops/runtime/approvals.json") {
+    schemaFile = "approval-store.schema.json";
+  } else if (/^\.product-ops\/runtime\/development\/[^/]+-result\.json$/.test(normalized)) {
+    schemaFile = "development-run.schema.json";
+  } else if (/^\.product-ops\/runtime\/control-plane\/[^/]+\.json$/.test(normalized)) {
+    schemaFile = "runtime-receipt.schema.json";
+  }
+  if (schemaFile) {
+    validateJsonSchemaFile(relativePath, text, schemaFile, errors);
+    return;
+  }
+  if (![".product-ops/runtime/intake.json", ".product-ops/runtime/provider-outbox.json"].includes(normalized)) {
+    return;
+  }
+  let value;
+  try {
+    value = JSON.parse(text);
+  } catch (error) {
+    errors.push(`Invalid JSON in "${relativePath}": ${error.message}`);
+    return;
+  }
+  const entries = normalized.endsWith("intake.json") ? value.records : value.items;
+  const itemSchema = normalized.endsWith("intake.json")
+    ? "intake-record.schema.json"
+    : "provider-outbox-item.schema.json";
+  if (!Array.isArray(entries)) {
+    errors.push(`Runtime store "${relativePath}" must contain an array of records.`);
+    return;
+  }
+  for (const [index, entry] of entries.entries()) {
+    for (const error of validatePublishedSchema(itemSchema, entry)) {
+      errors.push(`${relativePath} item ${index + 1}: ${error}.`);
+    }
+  }
+}
+
+function validateJsonSchemaFile(relativePath, text, schemaFile, errors) {
+  let value;
+  try {
+    value = JSON.parse(text);
+  } catch (error) {
+    errors.push(`Invalid JSON in "${relativePath}": ${error.message}`);
+    return;
+  }
+  for (const error of validatePublishedSchema(schemaFile, value)) {
+    errors.push(`${relativePath}: ${error}.`);
+  }
+}
+
 function validateTaskboard(text, config, errors) {
   let parsed;
   try {
@@ -433,12 +495,13 @@ function validateTaskboard(text, config, errors) {
     if (!agentIds.has(task.independent_verifier_role)) {
       errors.push(`${label} references unknown verifier role.`);
     }
-    if (
-      task.independent_verifier_role !==
-      config.separation.independentVerifierRole
-    ) {
+    const requiredVerifierRole =
+      task.owner_role === config.separation.independentVerifierRole
+        ? config.separation.verificationOfVerifierRole ?? "RB-08"
+        : config.separation.independentVerifierRole;
+    if (task.independent_verifier_role !== requiredVerifierRole) {
       errors.push(
-        `${label} verifier role must be the active independent verifier "${config.separation.independentVerifierRole}".`
+        `${label} verifier role must be "${requiredVerifierRole}" for this producer role.`
       );
     }
     if (
@@ -795,10 +858,11 @@ function validateAdapter(name, expected, text, errors) {
     actual.schemaVersion !== SCHEMA_VERSION ||
     actual.type !== expected.type ||
     actual.enabled !== expected.enabled ||
-    actual.implementation !== "not-configured" ||
+    actual.implementation !== (expected.implementation ?? "not-configured") ||
     typeof actual.settings !== "object" ||
     actual.settings === null ||
-    Array.isArray(actual.settings)
+    Array.isArray(actual.settings) ||
+    JSON.stringify(actual.settings) !== JSON.stringify(expected.settings ?? {})
   ) {
     errors.push(`Adapter "${expected.file}" does not match its project configuration placeholder.`);
   }

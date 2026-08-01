@@ -50,6 +50,9 @@ proof. Producers may report readiness but may not certify their own output.
 
 ## Current evidence
 
+- Operating-model v2 runtime producer implementation: local regression evidence must be refreshed
+  at the final exact revision and independently verified before any release promotion.
+
 - BRD-0-149 cross-host packed-artifact follow-up:
   [current branch](verification/2026-07-30-brd-0-149-cross-host-follow-up-status.md)
 - BRD-0-149 Windows clean-clone producer correction status:

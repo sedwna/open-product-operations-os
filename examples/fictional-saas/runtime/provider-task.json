@@ -1,0 +1,15 @@
+{
+  "id": "pinedesk-synthetic-task-001",
+  "provider": "github",
+  "operation": "create_task",
+  "method": "POST",
+  "endpoint": "/repos/example/example/issues",
+  "payload": {
+    "title": "Synthetic weekly summary preference",
+    "body": "Local-only fictional delivery example."
+  },
+  "responseFields": [
+    "id",
+    "state"
+  ]
+}

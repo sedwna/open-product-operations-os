@@ -73,7 +73,8 @@
         "requireDistinctActiveActors": { "const": true },
         "writerRole": { "const": "RB-10" },
         "independentVerifierRole": { "const": "RB-12" },
-        "developmentRole": { "const": "RB-13" }
+        "developmentRole": { "const": "RB-13" },
+        "verificationOfVerifierRole": { "const": "RB-08" }
       }
     },
     "ownership": {
@@ -105,7 +106,21 @@
             "uniqueItems": true,
             "items": { "type": "string", "pattern": "^RB-[0-9]{2}$" }
           },
-          "output": { "type": "string", "minLength": 1 }
+          "output": { "type": "string", "minLength": 1 },
+          "steps": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["role", "title", "humanGate"],
+              "properties": {
+                "role": { "type": "string", "pattern": "^RB-[0-9]{2}$" },
+                "title": { "type": "string", "minLength": 1 },
+                "humanGate": { "type": "string" }
+              }
+            }
+          }
         }
       }
     },
@@ -202,6 +217,25 @@
         "allowedSyntheticEmailDomains": { "$ref": "#/$defs/nonEmptyStringArray" }
       }
     },
+    "operations": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "modelVersion",
+        "runtimeDirectory",
+        "externalWritesDefaultDryRun",
+        "requireHumanGateAttribution"
+      ],
+      "properties": {
+        "modelVersion": { "type": "integer", "minimum": 1 },
+        "runtimeDirectory": {
+          "type": "string",
+          "pattern": "^\\.product-ops/runtime$"
+        },
+        "externalWritesDefaultDryRun": { "const": true },
+        "requireHumanGateAttribution": { "const": true }
+      }
+    },
     "adapters": {
       "type": "object",
       "additionalProperties": false,
@@ -252,7 +286,9 @@
         "file": {
           "type": "string",
           "pattern": "^adapters/(?!.*\\.\\.)[^/].*\\.json$"
-        }
+        },
+        "implementation": { "type": "string", "minLength": 1 },
+        "settings": { "type": "object" }
       }
     }
   }

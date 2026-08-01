@@ -6,6 +6,20 @@ import { fileURLToPath } from "node:url";
 import { generateWorkbookCommand } from "./commands/generate-workbook.js";
 import { initCommand } from "./commands/init.js";
 import { validateCommand } from "./commands/validate.js";
+import {
+  approvalsCommand,
+  configureCommand,
+  dashboardCommand,
+  decideCommand,
+  developmentCommand,
+  intakeCommand,
+  metricsCommand,
+  migrateCommand,
+  operateCommand,
+  providerQueueCommand,
+  providerSyncCommand,
+  setupCommand
+} from "./commands/runtime.js";
 
 const HELP = `Product Operations OS CLI
 
@@ -13,15 +27,40 @@ Usage:
   product-ops init <target> [--dry-run] [--force]
   product-ops validate <target>
   product-ops generate-workbook <target> [--dry-run] [--force]
+  product-ops operate <target> [--apply] [--execute-development]
+  product-ops development <target> --task <task-id> [--apply]
+  product-ops intake <target> --file <json-file> [--apply]
+  product-ops approvals <target>
+  product-ops decide <target> --request <id> --decision <approved|rejected> --actor <id> [--apply]
+  product-ops provider-queue <target> --file <json-file> [--apply]
+  product-ops provider-sync <target> --provider <name> [--apply]
+  product-ops dashboard <target> [--output <file>] [--apply]
+  product-ops metrics <target> [--output <file>] [--apply]
+  product-ops setup <target> [--output <file>] [--apply]
+  product-ops configure <target> --answers <json-file> [--apply]
+  product-ops migrate <target> [--apply]
 
 Commands:
   init               Create a project config and generated operating artifacts.
   validate           Check config, ownership, routing, tasks, files, and secrets.
   generate-workbook  Generate CSV workbook templates from the project config.
+  operate            Plan or execute one control-plane scheduling cycle.
+  development        Dispatch one eligible RB-13 task to a configured command agent.
+  intake             Normalize and deduplicate an idea, finding, incident, or request.
+  approvals          List durable human approval requests.
+  decide             Record an attributed human approval or rejection.
+  provider-queue     Queue a bounded external-provider operation.
+  provider-sync      Plan or apply queued provider operations.
+  dashboard          Generate a local right-to-left operations dashboard.
+  metrics            Export operational metrics.
+  setup              Generate the local configuration wizard.
+  configure          Apply a validated wizard answer file.
+  migrate            Plan or apply operating-model migrations.
 
 Options:
   --dry-run  Report planned writes without changing files.
   --force    Refresh replaceable scaffold; preserve operational CSV rows.
+  --apply    Apply a runtime action; runtime commands default to dry-run.
   -h, --help Show this help.
 `;
 
@@ -44,6 +83,30 @@ export async function run(argv, io = console) {
       lines = await validateCommand(target);
     } else if (command === "generate-workbook") {
       lines = await generateWorkbookCommand(target, options);
+    } else if (command === "operate") {
+      lines = await operateCommand(target, options);
+    } else if (command === "development") {
+      lines = await developmentCommand(target, options);
+    } else if (command === "intake") {
+      lines = await intakeCommand(target, options);
+    } else if (command === "approvals") {
+      lines = await approvalsCommand(target, options);
+    } else if (command === "decide") {
+      lines = await decideCommand(target, options);
+    } else if (command === "provider-queue") {
+      lines = await providerQueueCommand(target, options);
+    } else if (command === "provider-sync") {
+      lines = await providerSyncCommand(target, options);
+    } else if (command === "dashboard") {
+      lines = await dashboardCommand(target, options);
+    } else if (command === "metrics") {
+      lines = await metricsCommand(target, options);
+    } else if (command === "setup") {
+      lines = await setupCommand(target, options);
+    } else if (command === "configure") {
+      lines = await configureCommand(target, options);
+    } else if (command === "migrate") {
+      lines = await migrateCommand(target, options);
     } else {
       throw new Error(`Unknown command "${command}".`);
     }
@@ -63,21 +126,39 @@ function parseArguments(argv) {
     return { help: true };
   }
 
-  const options = {
-    dryRun: argv.includes("--dry-run"),
-    force: argv.includes("--force")
-  };
-  const positional = argv.filter(
-    (argument) => !["--dry-run", "--force"].includes(argument)
-  );
-  const unknownOptions = positional.filter((argument) => argument.startsWith("-"));
-
-  if (unknownOptions.length > 0) {
-    throw new Error(`Unknown option "${unknownOptions[0]}".`);
+  const options = {};
+  const providedOptions = new Set();
+  const positional = [];
+  const flags = new Set(["--dry-run", "--force", "--apply", "--execute-development"]);
+  const values = new Set(["--task", "--file", "--request", "--decision", "--actor", "--rationale", "--provider", "--output", "--answers"]);
+  for (let index = 0; index < argv.length; index += 1) {
+    const argument = argv[index];
+    if (flags.has(argument)) {
+      const name = toOptionName(argument);
+      options[name] = true;
+      providedOptions.add(name);
+    } else if (values.has(argument)) {
+      const value = argv[index + 1];
+      if (value === undefined || value.startsWith("--")) throw new Error(`Option "${argument}" requires a value.`);
+      const name = toOptionName(argument);
+      options[name] = value;
+      providedOptions.add(name);
+      index += 1;
+    } else if (argument.startsWith("-")) {
+      throw new Error(`Unknown option "${argument}".`);
+    } else {
+      positional.push(argument);
+    }
   }
+  options.dryRun ??= false;
+  options.force ??= false;
+  options.apply ??= false;
+  options.executeDevelopment ??= false;
+  if (options.apply && options.dryRun) throw new Error("--apply and --dry-run cannot be used together.");
   if (positional.length !== 2) {
     throw new Error("Expected a command and target. Use --help for usage.");
   }
+  validateCommandOptions(positional[0], providedOptions);
 
   return {
     command: positional[0],
@@ -85,6 +166,34 @@ function parseArguments(argv) {
     options,
     help: false
   };
+}
+
+function toOptionName(argument) {
+  return argument.slice(2).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
+}
+
+function validateCommandOptions(command, provided) {
+  const runtime = ["dryRun", "apply"];
+  const allowed = {
+    init: ["dryRun", "force"],
+    validate: [],
+    "generate-workbook": ["dryRun", "force"],
+    operate: [...runtime, "executeDevelopment"],
+    development: [...runtime, "task"],
+    intake: [...runtime, "file"],
+    approvals: [],
+    decide: [...runtime, "request", "decision", "actor", "rationale"],
+    "provider-queue": [...runtime, "file"],
+    "provider-sync": [...runtime, "provider"],
+    dashboard: [...runtime, "output"],
+    metrics: [...runtime, "output"],
+    setup: [...runtime, "output"],
+    configure: [...runtime, "answers"],
+    migrate: runtime
+  }[command];
+  if (!allowed) return;
+  const rejected = [...provided].find((name) => !allowed.includes(name));
+  if (rejected) throw new Error(`Command "${command}" does not accept --${rejected.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}.`);
 }
 
 async function isEntryPoint() {

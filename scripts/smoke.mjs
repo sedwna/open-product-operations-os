@@ -25,12 +25,17 @@ try {
   assert.equal(after, before, "idempotent re-init tree digest");
   await execute(process.execPath, [cli, "validate", target]);
   await execute(process.execPath, [cli, "generate-workbook", target]);
+  await execute(process.execPath, [cli, "operate", target]);
+  await execute(process.execPath, [cli, "setup", target, "--apply"]);
+  await execute(process.execPath, [cli, "metrics", target, "--apply"]);
+  await execute(process.execPath, [cli, "dashboard", target, "--apply"]);
+  await execute(process.execPath, [cli, "validate", target]);
   const config = JSON.parse(
     await fs.readFile(path.join(target, "product-ops.config.json"), "utf8")
   );
   assert.equal(config.agents.length, 13);
   assert.equal(config.workbook.sheets.length, 23);
-  console.log("Smoke verified clean init, validate, stable re-init, 13 roles, and 23 tabs.");
+  console.log("Smoke verified init, validation, stable re-init, runtime planning, local dashboard, metrics, 13 roles, and 23 tabs.");
 } finally {
   await fs.rm(parent, { recursive: true, force: true });
 }

@@ -46,6 +46,7 @@ The included initializer performs this sequence:
 8. Copy the public schemas into the project
 9. Create the first draft discovery event idea and discovery record
 10. Leave validation as an explicit read-only command
+11. Generate disabled runtime adapter contracts and public runtime schemas
 ```
 
 From the repository root, preview and create a project with:
@@ -55,6 +56,17 @@ node ./src/cli.js init ./my-product --dry-run
 node ./src/cli.js init ./my-product
 node ./src/cli.js validate ./my-product
 ```
+
+After bootstrap, generate the local setup interface and inspect one control-plane cycle:
+
+```text
+node ./src/cli.js setup ./my-product --apply
+node ./src/cli.js operate ./my-product
+node ./src/cli.js dashboard ./my-product --apply
+```
+
+No runtime command invokes an external provider by default. Read
+[the runtime guide](docs/runtime/README.md) before enabling an adapter.
 
 Regenerate only the workbook templates with:
 
