@@ -1,8 +1,8 @@
 # One-click onboarding
 
-The graphical onboarding path turns a fresh clone into a ready product workspace without asking a
-new contributor to learn the command line first. It stays local, refuses unsafe destination paths,
-and opens the live product dashboard when setup completes.
+The graphical onboarding path turns a fresh clone into a ready Product Operations and Development
+Operations workspace without asking a new contributor to learn the command line first. It stays
+local, refuses unsafe destination paths, and opens the live product dashboard when setup completes.
 
 ## Start on your platform
 
@@ -35,11 +35,19 @@ The flow has five short screens:
 1. Choose the parent folder and names for the operations and application repositories.
 2. Describe the product, vision, target users, environments, and human product owner.
 3. Optionally record the first idea, its problem statement, source, and initial priority.
-4. Review dependency, Git, initial-commit, and writable-local-dashboard options.
+4. Review Development Operations OS, dependency, Git, initial-commit, and writable-local-dashboard
+   options.
 5. Review the complete plan and start the bounded setup.
 
 Defaults are already selected for the common case. The user can create a new application folder,
 connect an existing application folder, or postpone the code repository entirely.
+
+A new application always receives the namespaced Development Operations OS files and is validated
+before onboarding completes. An existing application remains untouched unless the user explicitly
+selects Development Operations OS initialization. This opt-in adds only the namespaced engineering
+files; it does not stage or commit the existing repository. Specialist executors remain disabled.
+The live dashboard is read-only by default, and writable local mode is shown explicitly in the final
+review when selected.
 
 ## What happens after confirmation
 
@@ -51,6 +59,7 @@ verify or install a local runtime
 → preview and create the operations repository
 → apply product configuration
 → create or connect the application repository
+→ initialize and validate Development Operations OS when selected
 → record the first idea
 → run the first product-operations cycle
 → initialize independent Git histories
@@ -58,8 +67,10 @@ verify or install a local runtime
 → open the live RTL product dashboard
 ```
 
-The development adapter remains disabled. Creating a task board does not silently authorize a
-coding agent, external provider, credential, deployment, or write outside the chosen folders.
+Development Operations OS is initialized for a new application, but every specialist executor and
+the lower-level development adapter remain disabled. Creating a task board does not silently
+authorize a coding agent, external provider, credential, deployment, or write outside the chosen
+folders.
 
 ## Runtime and privacy contract
 

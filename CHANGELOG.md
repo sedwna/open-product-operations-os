@@ -4,6 +4,29 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+## 0.6.0 - 2026-08-02
+
+- Added dry-run-first Codex and custom-command executor setup for all 15 engineering roles, with a
+  read-only doctor, schema-bound output, minimal environment forwarding, disabled defaults, and
+  mandatory external isolation guidance.
+- Made Development OS plans deterministically tamper-evident across roles, gates, workstreams, and
+  dependencies, including bilingual inference for database, security, frontend, backend, network,
+  SEO, reliability, accessibility, and other engineering impacts.
+- Bound completed engineering results to the canonical plan, every attributed workstream run,
+  content-addressed evidence, implementation revision, quality gates, and independent verification.
+- Required canonical human approval before Product-to-Development export and a matching transfer
+  receipt before Development-to-Product import.
+- Hardened command execution with bounded output, deterministic timeout settlement, exact result
+  attribution, and schema-validated dependency results.
+- Hardened graphical onboarding against link traversal, forged resume markers, and destination
+  replacement while preserving existing repositories and initializing Development OS only under
+  the documented rules.
+- Upgraded immutable official GitHub Action pins and added a tag/version/package/changelog release
+  gate before cross-platform launcher publication.
+- Added a repository-wide production-readiness security review and expanded focused regression
+  coverage for executor activation, plan integrity, evidence containment, synchronization, and
+  onboarding safety.
+
 ## 0.5.0 - 2026-08-01
 
 - Added an independently initializable Open Development Operations OS with 15 engineering role

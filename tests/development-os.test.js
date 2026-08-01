@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
@@ -15,6 +16,7 @@ import { runEngineeringWorkstream } from "../src/development/runner.js";
 import { buildDevelopmentDashboard } from "../src/development/dashboard.js";
 import { TASKBOARD_COLUMNS } from "../src/constants.js";
 import { main as developmentMain } from "../src/development-cli.js";
+import { decideApproval, requestApproval } from "../src/runtime/approvals.js";
 import { captureIo, makeTempDirectory, readJson, writeJson } from "./helpers.js";
 
 test("development CLI initializes, validates, and rejects unrelated options", async (t) => {
@@ -89,13 +91,38 @@ test("completed engineering results require every planned gate and a distinct ve
   await writeJson(requestFile, request);
   const { plan, digest } = await planDevelopmentRequest(root, requestFile, { dryRun: false });
   const config = await readJson(path.join(root, "development-os.config.json"));
-  const result = engineeringResult(request, plan, digest, config);
+  const result = await engineeringResult(root, request, plan, digest, config);
   const resultFile = path.join(root, "result.json");
+  const badRunDigest = structuredClone(result);
+  badRunDigest.workstreamRuns[0].runDigest = "0".repeat(64);
+  await writeJson(resultFile, badRunDigest);
+  await assert.rejects(
+    completeDevelopmentResult(root, resultFile, { dryRun: false }),
+    /run WS-01 mismatches runDigest/
+  );
+  const badEvidenceDigest = structuredClone(result);
+  badEvidenceDigest.evidence[0].sha256 = "0".repeat(64);
+  await writeJson(resultFile, badEvidenceDigest);
+  await assert.rejects(
+    completeDevelopmentResult(root, resultFile, { dryRun: false }),
+    /evidence digest mismatch/
+  );
+  const escapedEvidence = structuredClone(result);
+  escapedEvidence.evidence[0].path = ".development-os/evidence/../../package.json";
+  escapedEvidence.gateResults.forEach((gate) => {
+    gate.evidenceReferences = [escapedEvidence.evidence[0].path];
+  });
+  escapedEvidence.verification.evidenceReferences = [escapedEvidence.evidence[0].path];
+  await writeJson(resultFile, escapedEvidence);
+  await assert.rejects(
+    completeDevelopmentResult(root, resultFile, { dryRun: false }),
+    /Engineering result is invalid|outside the managed evidence boundary/
+  );
   await writeJson(resultFile, result);
   await completeDevelopmentResult(root, resultFile, { dryRun: false });
   const validation = await validateDevelopmentOs(root);
   assert.deepEqual(validation.errors, []);
-  assert.deepEqual(validation.contractCounts, { requests: 1, plans: 1, results: 1, receipts: 2, runs: 0 });
+  assert.deepEqual(validation.contractCounts, { requests: 1, plans: 1, results: 1, receipts: 2, runs: plan.workstreams.length });
 
   result.verification.verifierActorId = result.producerActorId;
   const invalidFile = path.join(root, "invalid-result.json");
@@ -155,16 +182,42 @@ test("Product Operations and Development OS synchronize independently through di
   ]));
   const requestFile = path.join(productRoot, "request.json");
   await writeJson(requestFile, request);
+  await assert.rejects(
+    exportDevelopmentRequest(productRoot, productConfig, request.productTaskId, requestFile, { dryRun: false }),
+    /approval reference does not resolve/
+  );
+  const pendingApproval = await requestApproval(productRoot, {
+    taskId: request.productTaskId,
+    gate: "development-export",
+    question: "Authorize this approved product request for engineering export?",
+    context: request.title
+  }, { dryRun: false, now: new Date("2026-08-01T00:00:00.000Z") });
+  const approved = await decideApproval(productRoot, productConfig, {
+    requestId: pendingApproval.request.requestId,
+    decision: "approved",
+    actorId: productConfig.project.humanAuthorityActorId,
+    rationale: "Synthetic approval for the synchronized engineering test."
+  }, { dryRun: false, now: new Date("2026-08-01T00:00:30.000Z") });
+  request.approval.reference = approved.request.requestId;
+  request.approval.actorId = approved.request.decidedByActorId;
+  request.approval.decidedAt = approved.request.decidedAt;
+  await writeJson(requestFile, request);
   await exportDevelopmentRequest(productRoot, productConfig, request.productTaskId, requestFile, { dryRun: false });
 
   const exported = path.join(productRoot, ".product-ops/runtime/development/contracts/outbox", `${request.requestId}.json`);
   const { plan, digest } = await planDevelopmentRequest(developmentRoot, exported, { dryRun: false });
   const developmentConfig = await readJson(path.join(developmentRoot, "development-os.config.json"));
-  const result = engineeringResult(request, plan, digest, developmentConfig);
+  const result = await engineeringResult(developmentRoot, request, plan, digest, developmentConfig);
   const resultFile = path.join(developmentRoot, "result.json");
   await writeJson(resultFile, result);
   const completed = await completeDevelopmentResult(developmentRoot, resultFile, { dryRun: false });
   const outboxResult = path.join(developmentRoot, completed.receipt.storedAt);
+  const unreceiptedTransfer = path.join(productRoot, "unreceipted-result.json");
+  await fs.copyFile(outboxResult, unreceiptedTransfer);
+  await assert.rejects(
+    importEngineeringResult(productRoot, unreceiptedTransfer, { dryRun: false }),
+    /Development source receipt is not valid JSON/
+  );
   await importEngineeringResult(productRoot, outboxResult, { dryRun: false });
   const imported = await readJson(path.join(productRoot, ".product-ops/runtime/development/contracts/inbox", `${result.resultId}.json`));
   assert.equal(imported.productTaskId, request.productTaskId);
@@ -212,20 +265,55 @@ function developmentRequest(suffix = "DATABASE-SEO-001") {
   };
 }
 
-function engineeringResult(request, plan, digest, config) {
+async function engineeringResult(root, request, plan, digest, config) {
+  const implementationRevision = "1234567890abcdef";
+  const evidence = [];
+  for (const gateId of plan.qualityGates) {
+    const relative = `.development-os/evidence/${gateId}.json`;
+    const content = `${JSON.stringify({ gateId, planId: plan.planId, implementationRevision })}\n`;
+    await fs.mkdir(path.dirname(path.join(root, relative)), { recursive: true });
+    await fs.writeFile(path.join(root, relative), content);
+    evidence.push({
+      path: relative,
+      kind: evidenceKind(gateId),
+      sha256: crypto.createHash("sha256").update(content).digest("hex"),
+      sourceRevision: implementationRevision
+    });
+  }
+  const workstreamRuns = [];
+  for (const workstream of plan.workstreams) {
+    const run = {
+      schemaVersion: "1.0.0",
+      planId: plan.planId,
+      workstreamId: workstream.id,
+      ownerRole: workstream.ownerRole,
+      producerActorId: config.roles.find((role) => role.id === workstream.ownerRole).actorId,
+      status: "completed",
+      implementationRevision,
+      changedComponents: ["src/catalog"],
+      commands: ["synthetic verification"],
+      evidence: evidence.map((artifact) => artifact.path),
+      knownRisks: [],
+      completedAt: "2026-08-01T02:00:00.000Z"
+    };
+    await writeJson(path.join(root, ".development-os", "runs", `${plan.planId}-${workstream.id}-result.json`), run);
+    workstreamRuns.push({ workstreamId: workstream.id, runDigest: contractDigest(run) });
+  }
   return {
     schemaVersion: "1.0.0",
     resultId: `ENGRESULT-${request.requestId.replace(/^DEVREQ-/, "")}`,
     requestId: request.requestId,
     productTaskId: request.productTaskId,
     planId: plan.planId,
+    planDigest: contractDigest(plan),
     sourceDigest: digest,
-    implementationRevision: "1234567890abcdef",
+    implementationRevision,
     status: "implementation_complete",
     implementationReferences: ["commit:1234567890abcdef"],
     changedComponents: ["src/catalog", "database/migrations/001"],
-    gateResults: plan.qualityGates.map((gateId) => ({ gateId, status: "passed", evidenceReferences: [`evidence/${gateId}.json`] })),
-    evidence: ["evidence/test-report.json", "evidence/database-restore.json"],
+    workstreamRuns,
+    gateResults: plan.qualityGates.map((gateId) => ({ gateId, status: "passed", evidenceReferences: [`.development-os/evidence/${gateId}.json`] })),
+    evidence,
     deploymentReferences: [],
     knownRisks: ["Production rollout remains separately authorized."],
     producerActorId: config.roles.find((role) => role.id === "ENG-01").actorId,
@@ -233,10 +321,31 @@ function engineeringResult(request, plan, digest, config) {
       verifierActorId: config.roles.find((role) => role.id === "ENG-15").actorId,
       disposition: "verified",
       verifiedAt: "2026-08-01T02:00:00.000Z",
-      evidenceReferences: ["evidence/independent-verification.json"]
+      evidenceReferences: [`.development-os/evidence/GATE-INDEPENDENT-VERIFICATION.json`]
     },
     completedAt: "2026-08-01T02:01:00.000Z"
   };
+}
+
+function evidenceKind(gateId) {
+  const kinds = {
+    "GATE-ARCHITECTURE": "architecture",
+    "GATE-CODE-REVIEW": "review",
+    "GATE-AUTOMATED-TESTS": "test",
+    "GATE-SECURITY": "security",
+    "GATE-SUPPLY-CHAIN": "security",
+    "GATE-DATABASE": "database",
+    "GATE-API-COMPATIBILITY": "api",
+    "GATE-INFRA-NETWORK": "infrastructure",
+    "GATE-PRIVACY-COMPLIANCE": "privacy",
+    "GATE-ACCESSIBILITY": "accessibility",
+    "GATE-PERFORMANCE": "performance",
+    "GATE-RELIABILITY": "reliability",
+    "GATE-SEO": "seo",
+    "GATE-DOCUMENTATION": "documentation",
+    "GATE-INDEPENDENT-VERIFICATION": "verification"
+  };
+  return kinds[gateId] ?? "other";
 }
 
 async function temporaryRoot(t, prefix) {

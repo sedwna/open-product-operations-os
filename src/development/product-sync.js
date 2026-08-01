@@ -3,6 +3,8 @@ import { applyWrites, planWrites } from "../file-writer.js";
 import { loadApprovals } from "../runtime/approvals.js";
 import { dependencyState, loadTaskboard } from "../runtime/taskboard.js";
 import { assertContract, contractDigest, json, readContract, safeContractId } from "./contracts.js";
+import { createDevelopmentConfig } from "./generator.js";
+import { buildPlan } from "./planner.js";
 
 const PRODUCT_CONTRACT_ROOT = ".product-ops/runtime/development/contracts";
 
@@ -17,12 +19,17 @@ export async function exportDevelopmentRequest(root, config, taskId, requestFile
   if (task.owner_role !== config.separation.developmentRole) throw new Error(`Task "${taskId}" is not owned by the development boundary.`);
   if (!['ready', 'in_progress'].includes(task.status)) throw new Error(`Task "${taskId}" is not ready for development export.`);
   if (!dependencyState(task, byId).satisfied) throw new Error(`Task "${taskId}" has unresolved dependencies.`);
-  if (task.human_gate && !approvals.requests.some((approval) => approval.taskId === taskId && approval.gate === task.human_gate && approval.status === "approved")) {
-    throw new Error(`Task "${taskId}" requires an attributed human approval.`);
-  }
   if (request.productTaskId !== taskId) throw new Error("Development request productTaskId does not match the exported task.");
   if (request.approval.actorId !== config.project.humanAuthorityActorId) {
     throw new Error("Development request approval is not attributed to the configured human authority.");
+  }
+  const approval = approvals.requests.find((candidate) => candidate.requestId === request.approval.reference);
+  const expectedGate = task.human_gate || "development-export";
+  if (!approval || approval.taskId !== taskId || approval.gate !== expectedGate || approval.status !== "approved") {
+    throw new Error(`Development request approval reference does not resolve to an approved ${expectedGate} record for task "${taskId}".`);
+  }
+  if (approval.decidedByActorId !== request.approval.actorId || approval.decidedAt !== request.approval.decidedAt) {
+    throw new Error("Development request approval attribution does not match the canonical approval store.");
   }
   const digest = contractDigest(request);
   const suffix = safeContractId(request.requestId.replace(/^DEVREQ-/, ""), "Request ID");
@@ -49,15 +56,39 @@ export async function exportDevelopmentRequest(root, config, taskId, requestFile
 
 export async function importEngineeringResult(root, resultFile, { dryRun = true } = {}) {
   const result = await readContract(resultFile, "engineering-result.schema.json", "Engineering result");
+  const sourceReceiptFile = resultFile.endsWith(".json")
+    ? `${resultFile.slice(0, -5)}.receipt.json`
+    : `${resultFile}.receipt.json`;
+  const sourceReceipt = await readContract(sourceReceiptFile, "development-sync-receipt.schema.json", "Development source receipt");
   const request = await readContract(
     path.join(root, PRODUCT_CONTRACT_ROOT, "outbox", `${result.requestId}.json`),
     "development-request.schema.json",
     "Previously exported development request"
   );
   const errors = [];
+  const requestDigest = contractDigest(request);
+  const expectedPlan = buildPlan(request, createDevelopmentConfig("application"), requestDigest);
+  const expectedPlanDigest = contractDigest(expectedPlan);
   if (result.productTaskId !== request.productTaskId) errors.push("Engineering result productTaskId does not match the exported request.");
-  if (result.sourceDigest !== contractDigest(request)) errors.push("Engineering result source digest does not match the exported request.");
+  if (result.sourceDigest !== requestDigest) errors.push("Engineering result source digest does not match the exported request.");
+  if (result.planId !== expectedPlan.planId || result.planDigest !== expectedPlanDigest) errors.push("Engineering result does not match the deterministic plan for the exported request.");
   if (result.producerActorId === result.verification.verifierActorId) errors.push("Engineering result producer and verifier must be distinct.");
+  const gateIds = result.gateResults.map((gate) => gate.gateId);
+  if (new Set(gateIds).size !== gateIds.length || !sameSet(gateIds, expectedPlan.qualityGates)) {
+    errors.push("Engineering result quality gates do not match the deterministic plan.");
+  }
+  const runIds = result.workstreamRuns.map((run) => run.workstreamId);
+  if (new Set(runIds).size !== runIds.length || !sameSet(runIds, expectedPlan.workstreams.map((workstream) => workstream.id))) {
+    errors.push("Engineering result workstream runs do not match the deterministic plan.");
+  }
+  const resultDigest = contractDigest(result);
+  if (sourceReceipt.direction !== "development_to_product"
+      || sourceReceipt.contractType !== "engineering_result"
+      || sourceReceipt.contractId !== result.resultId
+      || sourceReceipt.contractDigest !== resultDigest
+      || sourceReceipt.sourceRevision !== result.implementationRevision) {
+    errors.push("Engineering result source receipt does not match the transferred result.");
+  }
   const verificationGate = result.gateResults.find((gate) => gate.gateId === "GATE-INDEPENDENT-VERIFICATION");
   if (result.status === "implementation_complete" && (result.verification.disposition !== "verified" || verificationGate?.status !== "passed")) {
     errors.push("Completed engineering work requires a passed independent-verification gate and verified disposition.");
@@ -69,7 +100,7 @@ export async function importEngineeringResult(root, resultFile, { dryRun = true 
     errors.push("Completed engineering work requires evidence references.");
   }
   if (errors.length) throw new Error(`Engineering result cannot be synchronized:\n- ${errors.join("\n- ")}`);
-  const digest = contractDigest(result);
+  const digest = resultDigest;
   const suffix = safeContractId(result.resultId.replace(/^ENGRESULT-/, ""), "Result ID");
   const storedAt = `${PRODUCT_CONTRACT_ROOT}/inbox/${result.resultId}.json`;
   const receipt = {
@@ -89,5 +120,9 @@ export async function importEngineeringResult(root, resultFile, { dryRun = true 
     [`${PRODUCT_CONTRACT_ROOT}/receipts/${receipt.receiptId}.json`, json(receipt)]
   ]), {});
   if (!dryRun) await applyWrites(path.resolve(root), operations);
-  return { dryRun, request, result, digest, receipt, operations };
+  return { dryRun, request, result, sourceReceipt, digest, receipt, operations };
+}
+
+function sameSet(left, right) {
+  return left.length === right.length && new Set(left).size === left.length && left.every((value) => right.includes(value));
 }

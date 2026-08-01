@@ -1,11 +1,12 @@
 import { spawn } from "node:child_process";
-import fs from "node:fs/promises";
 import path from "node:path";
 import { applyWrites, planWrites } from "../file-writer.js";
 import { assertNoLinkTraversal, resolveInside } from "../paths.js";
 import { assertNoCredentialMaterial } from "../runtime/security.js";
 import { assertContract, json, readContract, safeContractId } from "./contracts.js";
 import { loadDevelopmentConfig, validateDevelopmentConfig } from "./config.js";
+
+const MAX_EXECUTOR_OUTPUT_BYTES = 1024 * 1024;
 
 export async function runEngineeringWorkstream(
   root,
@@ -26,7 +27,7 @@ export async function runEngineeringWorkstream(
   const workstream = plan.workstreams.find((candidate) => candidate.id === workstreamId);
   if (!workstream) throw new Error(`Unknown workstream "${workstreamId}" in ${planId}.`);
   if (!['ready', 'in_progress'].includes(workstream.status)) throw new Error(`Workstream "${workstreamId}" is not executable.`);
-  await assertDependenciesComplete(root, planId, workstream.dependencies);
+  await assertDependenciesComplete(root, plan, config, workstream.dependencies);
   const request = await readContract(
     path.join(root, config.sync.inbox, `${plan.requestId}.json`),
     "development-request.schema.json",
@@ -85,16 +86,30 @@ export async function runEngineeringWorkstream(
   return { dryRun: false, runId, inputFile, resultFile, payload, result, stderr: execution.stderr };
 }
 
-async function assertDependenciesComplete(root, planId, dependencies) {
+async function assertDependenciesComplete(root, plan, config, dependencies) {
   for (const dependency of dependencies) {
-    const file = path.join(root, ".development-os", "runs", `${planId}-${dependency}-result.json`);
-    let result;
-    try { result = JSON.parse(await fs.readFile(file, "utf8")); }
-    catch (error) {
-      if (error.code === "ENOENT") throw new Error(`Workstream dependency ${dependency} has no completed run.`);
-      throw error;
+    const dependencyWorkstream = plan.workstreams.find((candidate) => candidate.id === dependency);
+    if (!dependencyWorkstream) {
+      throw new Error(`Workstream dependency ${dependency} is not present in engineering plan ${plan.planId}.`);
     }
-    if (result.status !== "completed") throw new Error(`Workstream dependency ${dependency} is not completed.`);
+    const expectedActor = config.roles.find((role) => role.id === dependencyWorkstream.ownerRole)?.actorId;
+    if (!expectedActor) {
+      throw new Error(`Workstream dependency ${dependency} has no configured producer actor.`);
+    }
+    const result = await readContract(
+      path.join(root, ".development-os", "runs", `${plan.planId}-${dependency}-result.json`),
+      "engineering-workstream-run.schema.json",
+      `Engineering workstream dependency ${dependency}`
+    );
+    const mismatches = [];
+    if (result.planId !== plan.planId) mismatches.push("planId");
+    if (result.workstreamId !== dependency) mismatches.push("workstreamId");
+    if (result.ownerRole !== dependencyWorkstream.ownerRole) mismatches.push("ownerRole");
+    if (result.producerActorId !== expectedActor) mismatches.push("producerActorId");
+    if (result.status !== "completed") mismatches.push("status");
+    if (mismatches.length) {
+      throw new Error(`Workstream dependency ${dependency} mismatches planned ${mismatches.join(", ")}.`);
+    }
   }
 }
 
@@ -116,18 +131,60 @@ function execute(executable, args, { cwd, timeoutMs, environmentAllowlist, spawn
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"]
     });
-    let stdout = "";
-    let stderr = "";
-    child.stdout?.setEncoding("utf8");
-    child.stderr?.setEncoding("utf8");
-    child.stdout?.on("data", (chunk) => { stdout += chunk; });
-    child.stderr?.on("data", (chunk) => { stderr += chunk; });
-    const timer = setTimeout(() => child.kill(), timeoutMs);
-    child.once("error", (error) => { clearTimeout(timer); reject(error); });
-    child.once("close", (code, signal) => {
+    const stdout = [];
+    const stderr = [];
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    let settled = false;
+    let timer;
+
+    const stopChild = () => {
+      try { child.kill(); }
+      catch { /* The process may already have exited. */ }
+    };
+    const settleReject = (error, { terminate = false } = {}) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
-      if (code !== 0) reject(new Error(`Engineering executor exited with code ${code ?? "none"} and signal ${signal ?? "none"}.`));
-      else resolve({ stdout, stderr });
+      if (terminate) stopChild();
+      reject(error);
+    };
+    const settleResolve = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const capture = (channel, chunks, byteCount, chunk) => {
+      if (settled) return byteCount;
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), "utf8");
+      const nextByteCount = byteCount + buffer.length;
+      if (nextByteCount > MAX_EXECUTOR_OUTPUT_BYTES) {
+        settleReject(
+          new Error(`Engineering executor ${channel} exceeded the ${MAX_EXECUTOR_OUTPUT_BYTES}-byte limit.`),
+          { terminate: true }
+        );
+        return nextByteCount;
+      }
+      chunks.push(buffer);
+      return nextByteCount;
+    };
+
+    child.stdout?.on("data", (chunk) => { stdoutBytes = capture("stdout", stdout, stdoutBytes, chunk); });
+    child.stderr?.on("data", (chunk) => { stderrBytes = capture("stderr", stderr, stderrBytes, chunk); });
+    timer = setTimeout(() => {
+      settleReject(new Error(`Engineering executor timed out after ${timeoutMs}ms.`), { terminate: true });
+    }, timeoutMs);
+    child.once("error", (error) => { settleReject(error); });
+    child.once("close", (code, signal) => {
+      if (code !== 0) {
+        settleReject(new Error(`Engineering executor exited with code ${code ?? "none"} and signal ${signal ?? "none"}.`));
+      } else {
+        settleResolve({
+          stdout: Buffer.concat(stdout, stdoutBytes).toString("utf8"),
+          stderr: Buffer.concat(stderr, stderrBytes).toString("utf8")
+        });
+      }
     });
   });
 }
