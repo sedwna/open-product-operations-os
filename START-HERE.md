@@ -25,10 +25,13 @@ After cloning, open one file and let the graphical wizard do the rest:
 
 It asks for the workspace and folder names, product details, and—if you want—the first idea. It then
 installs locked dependencies, creates independent operations and application repositories, records
-the idea, runs the first cycle, validates the result, and opens the local RTL control tower.
+the idea, initializes and validates Development Operations OS in every new application, runs the
+first cycle, validates the result, and opens the local read-only RTL control tower. Adding the
+Development Operations OS namespace to an existing application requires explicit opt-in.
 
-The development agent remains disabled until you explicitly configure and authorize that separate
-boundary. Read the [one-click guide](docs/onboarding/one-click.md) for platform notes and recovery.
+Development Operations OS is ready after onboarding, but its specialist executors remain disabled
+until you explicitly configure, test, and authorize that separate boundary. Read the
+[one-click guide](docs/onboarding/one-click.md) for platform notes and recovery.
 
 ## Before you begin
 
@@ -158,7 +161,8 @@ Everything else should be automated or prepared as an exact, reviewable artifact
 
 ## Development integration
 
-For a complete engineering operating model, initialize the application repository separately:
+The one-click path initializes and validates this engineering operating model automatically for a
+new application. To add it later, or to initialize an existing repository manually, run:
 
 ```text
 development-os init ./my-application --dry-run

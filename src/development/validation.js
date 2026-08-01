@@ -3,9 +3,10 @@ import path from "node:path";
 import { parseCsv } from "../csv.js";
 import { assertNoCredentialMaterial } from "../runtime/security.js";
 import { validatePublishedSchema } from "../schema-validation.js";
-import { contractDigest } from "./contracts.js";
+import { canonicalJson, contractDigest } from "./contracts.js";
 import { loadDevelopmentConfig, validateDevelopmentConfig } from "./config.js";
 import { DEVELOPMENT_REQUIRED_FILES } from "./generator.js";
+import { buildPlan } from "./planner.js";
 import { validateResultRelationships } from "./result.js";
 
 const WORKSTREAM_HEADERS = ["workstream_id", "request_id", "owner_role", "domain", "title", "status", "dependency_ids", "evidence_refs", "updated_at"];
@@ -46,7 +47,14 @@ export async function validateDevelopmentOs(root) {
     for (const plan of plans.values()) {
       const request = requests.get(plan.requestId);
       if (!request) errors.push(`Engineering plan ${plan.planId} has no stored request.`);
-      else if (plan.sourceDigest !== contractDigest(request)) errors.push(`Engineering plan ${plan.planId} has a stale source digest.`);
+      else {
+        const digest = contractDigest(request);
+        if (plan.sourceDigest !== digest) errors.push(`Engineering plan ${plan.planId} has a stale source digest.`);
+        const expectedPlan = buildPlan(request, config, digest);
+        if (canonicalJson(plan) !== canonicalJson(expectedPlan)) {
+          errors.push(`Engineering plan ${plan.planId} does not match the deterministic plan derived from its request and canonical configuration.`);
+        }
+      }
     }
     for (const result of results.values()) {
       const request = requests.get(result.requestId);
@@ -112,6 +120,7 @@ async function readJsonDirectory(root, relative, schema, errors) {
   }
   for (const entry of entries) {
     if (entry.name === "README.md") continue;
+    if (schema === "engineering-result.schema.json" && entry.name.endsWith(".receipt.json")) continue;
     if (!entry.isFile() || !entry.name.endsWith(".json")) {
       errors.push(`Unsupported contract entry in ${relative}: ${entry.name}.`);
       continue;

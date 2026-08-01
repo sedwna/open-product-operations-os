@@ -37,8 +37,9 @@ export async function planDevelopmentRequest(root, requestFile, { dryRun = true 
 }
 
 export function buildPlan(request, config, digest) {
+  const impacts = inferImpactDomains(request);
   const selectedRoles = new Set(ALWAYS_REQUIRED_ROLES);
-  for (const impact of request.impacts) selectedRoles.add(IMPACT_ROLE_MAP[impact]);
+  for (const impact of impacts) selectedRoles.add(IMPACT_ROLE_MAP[impact]);
   selectedRoles.delete(undefined);
   const orderedRoles = config.roles.map((role) => role.id).filter((id) => selectedRoles.has(id));
   const workstreamIdByRole = new Map(orderedRoles.map((roleId, index) => [roleId, `WS-${String(index + 1).padStart(2, "0")}`]));
@@ -66,14 +67,14 @@ export function buildPlan(request, config, digest) {
       status: "ready"
     };
   });
-  const selectedGates = config.qualityGates.filter((gate) => gate.required || gateApplies(gate.id, request.impacts));
+  const selectedGates = config.qualityGates.filter((gate) => gate.required || gateApplies(gate.id, impacts));
   return {
     schemaVersion: "1.0.0",
     planId: `ENGPLAN-${request.requestId.replace(/^DEVREQ-/, "")}`,
     requestId: request.requestId,
     sourceDigest: digest,
     status: "planned",
-    riskClass: classifyRisk(request),
+    riskClass: classifyRisk(request, impacts),
     workstreams,
     qualityGates: selectedGates.map((gate) => gate.id),
     architectureDecisions: ["engineering/architecture/decisions/ADR-000-template.md"],
@@ -81,13 +82,83 @@ export function buildPlan(request, config, digest) {
   };
 }
 
-function classifyRisk(request) {
+export function inferImpactDomains(request) {
+  const impacts = new Set(request.impacts ?? []);
+  const fragments = [];
+  for (const criterion of request.acceptanceCriteria ?? []) {
+    fragments.push(criterion.statement, criterion.verification);
+  }
+  for (const requirement of request.nonFunctionalRequirements ?? []) {
+    const normalizedDomain = normalizeDomain(requirement.domain);
+    if (normalizedDomain) impacts.add(normalizedDomain);
+    fragments.push(requirement.domain, requirement.requirement, requirement.verification);
+  }
+  fragments.push(...(request.constraints ?? []));
+  const text = fragments.filter(Boolean).join("\n").normalize("NFKC").toLowerCase();
+  for (const [impact, patterns] of Object.entries(IMPACT_INFERENCE_PATTERNS)) {
+    if (patterns.some((pattern) => pattern.test(text))) impacts.add(impact);
+  }
+  return [...impacts];
+}
+
+function classifyRisk(request, impacts) {
   const text = JSON.stringify(request).toLowerCase();
   if (/critical|irreversible|safety[- ]critical/.test(text)) return "critical";
-  if (request.impacts.some((impact) => ["database", "storage", "security", "privacy", "identity", "compliance", "infrastructure", "network", "messaging", "resilience"].includes(impact)) || text.includes("production")) return "high";
-  if (request.impacts.some((impact) => ["backend", "api", "integration", "data", "ai", "devops", "performance"].includes(impact))) return "medium";
+  if (impacts.some((impact) => ["database", "storage", "security", "privacy", "identity", "compliance", "infrastructure", "network", "messaging", "resilience"].includes(impact)) || text.includes("production")) return "high";
+  if (impacts.some((impact) => ["backend", "api", "integration", "data", "ai", "devops", "performance"].includes(impact))) return "medium";
   return "low";
 }
+
+function normalizeDomain(value) {
+  const normalized = String(value ?? "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+  const aliases = {
+    db: "database",
+    datastore: "database",
+    data_store: "database",
+    auth: "identity",
+    authentication: "identity",
+    authorization: "identity",
+    infra: "infrastructure",
+    reliability: "resilience",
+    deployment: "devops",
+    ci_cd: "devops"
+  };
+  const domain = aliases[normalized] ?? normalized;
+  return IMPACT_ROLE_MAP[domain] ? domain : null;
+}
+
+const IMPACT_INFERENCE_PATTERNS = {
+  architecture: [/\barchitecture\b/, /system boundary/, /معماری/],
+  frontend: [/\bfront[ -]?end\b/, /user interface/, /رابط کاربری/],
+  accessibility: [/\baccessibility\b/, /screen reader/, /keyboard navigation/, /دسترس[‌ ]?پذیری/],
+  backend: [/\bback[ -]?end\b/, /server[ -]?side/, /سمت سرور/],
+  api: [/\bapi\b/, /application programming interface/, /رابط برنامه[‌ ]?نویسی/],
+  integration: [/\bintegration\b/, /webhook/, /یکپارچه[‌ ]?سازی/],
+  messaging: [/\bmessage queue\b/, /\bevent bus\b/, /\bkafka\b/, /صف پیام/],
+  mobile: [/\bmobile\b/, /\bios\b/, /\bandroid\b/, /موبایل/],
+  desktop: [/\bdesktop\b/, /دسکتاپ/],
+  database: [/\bdatabase\b/, /\bdb\b/, /\bsql\b/, /\bmigration\b/, /\bschema change\b/, /\bquery plan\b/, /\bindex(?:es|ing)?\b/, /\bbackup\b/, /\brestore\b/, /پایگاه داده/, /مهاجرت/, /نسخه پشتیبان/, /بازیابی/],
+  storage: [/\bstorage\b/, /object store/, /blob store/, /ذخیره[‌ ]?سازی/],
+  cache: [/\bcach(?:e|ing)\b/, /حافظه نهان/],
+  search: [/\bsearch(?:able|ing)?\b/, /\bindexable\b/, /جست[‌ ]?وجو/],
+  data: [/\bdata pipeline\b/, /\bdata lineage\b/, /خط لوله داده/, /تبار داده/],
+  ai: [/\bai\b/, /artificial intelligence/, /machine learning/, /هوش مصنوعی/, /یادگیری ماشین/],
+  analytics: [/\banalytics\b/, /تحلیل[‌ ]?گری/],
+  network: [/\bnetwork\b/, /\bdns\b/, /\bcdn\b/, /\btls\b/, /\bfirewall\b/, /شبکه/],
+  infrastructure: [/\binfrastructure\b/, /\bkubernetes\b/, /\bterraform\b/, /\bcloud\b/, /زیرساخت/, /رایانش ابری/],
+  cost: [/\bcost budget\b/, /\bfinops\b/, /بودجه هزینه/],
+  security: [/\bsecurity\b/, /\bvulnerabilit(?:y|ies)\b/, /\bthreat\b/, /\bsecret\b/, /\bcredential\b/, /\bencrypt(?:ion|ed)?\b/, /امنیت/, /آسیب[‌ ]?پذیری/, /رمزنگاری/],
+  privacy: [/\bprivacy\b/, /personal data/, /\bpii\b/, /\bconsent\b/, /حریم خصوصی/, /داده شخصی/],
+  identity: [/\bidentity\b/, /\bauthentication\b/, /\bauthorization\b/, /access control/, /\bpermission\b/, /هویت/, /احراز هویت/, /کنترل دسترسی/],
+  compliance: [/\bcompliance\b/, /\bgdpr\b/, /\bhipaa\b/, /\bpci(?:[ -]?dss)?\b/, /انطباق/],
+  sre: [/\bsre\b/, /site reliability/, /مهندسی قابلیت اطمینان/],
+  observability: [/\bobservability\b/, /\btelemetry\b/, /\btracing\b/, /\bmetrics\b/, /مشاهده[‌ ]?پذیری/],
+  performance: [/\bperformance\b/, /\blatency\b/, /\bthroughput\b/, /\bp\d{2}\b/, /web vitals/, /کارایی/, /تأخیر/],
+  resilience: [/\bresilien(?:ce|t)\b/, /\bavailability\b/, /disaster recovery/, /\bfailover\b/, /\bincident\b/, /تاب[‌ ]?آوری/, /بازیابی بحران/],
+  devops: [/\bdevops\b/, /\bci[\/-]?cd\b/, /\bdeployment\b/, /\brelease pipeline\b/, /استقرار/],
+  seo: [/\bseo\b/, /search engine/, /canonical url/, /structured data/, /بهینه[‌ ]?سازی موتور جست[‌ ]?وجو/],
+  documentation: [/\bdocumentation\b/, /\brunbook\b/, /مستندات/, /راهنمای عملیاتی/]
+};
 
 function gateApplies(gateId, impacts) {
   const map = {

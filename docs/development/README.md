@@ -94,6 +94,46 @@ backup, restore, capacity, and rollback evidence.
 Each role also has a disabled-by-default specialist executor. After configuring an executor to
 launch an externally isolated worker, one dependency-ready workstream can be previewed and run:
 
+Configure the official Codex non-interactive preset for one role or every role. Setup is a dry run
+unless `--apply` is present. Configuration remains disabled unless `--enable` is also present, and
+activation is refused until the read-only doctor succeeds:
+
+```text
+development-os executor-setup ./my-application --provider codex --role ENG-04
+development-os executor-setup ./my-application --provider codex --role all --apply
+development-os executor-doctor ./my-application --role all
+development-os executor-setup ./my-application --provider codex --role all --enable --apply
+```
+
+The preset uses the supported non-interactive command shape:
+
+```text
+codex exec --ephemeral --sandbox workspace-write --output-schema engineering/schemas/engineering-workstream-run.schema.json
+```
+
+Its prompt reads the generated `{inputFile}`, applies only the assigned workstream, and returns the
+`engineering-workstream-run` contract. The setup stores no credential and keeps the environment
+allowlist empty. Codex authentication stays outside `development-os.config.json`.
+
+For a locally installed adapter that already emits the same JSON contract on standard output:
+
+```text
+development-os executor-setup ./my-application --provider command --role ENG-07 --executable ./tools/engineering-adapter --argument {inputFile}
+development-os executor-doctor ./my-application --role ENG-07
+development-os executor-setup ./my-application --provider command --role ENG-07 --executable ./tools/engineering-adapter --argument {inputFile} --enable --apply
+```
+
+Arguments are passed directly with shell execution disabled. The doctor resolves the executable
+without invoking it, checks the contained working directory, validates the output schema and
+placeholder contract, and performs no writes. A successful doctor proves configuration readiness;
+it does not prove process containment.
+
+> **Isolation warning:** `external-required` is a contract, not a host sandbox. Run every executor
+> in a dedicated container, virtual machine, or isolated hosted worker. Never attach production
+> credentials, production data, or authority for destructive database operations.
+
+After configuration, one dependency-ready workstream can be previewed and run:
+
 ```text
 development-os execute ./my-application --plan ENGPLAN-ID --workstream WS-01
 development-os execute ./my-application --plan ENGPLAN-ID --workstream WS-01 --apply

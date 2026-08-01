@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -6,6 +7,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 import { loadConfig } from "../src/config.js";
+import { validateDevelopmentOs } from "../src/development/validation.js";
 import { startOnboardingServer } from "../src/onboarding/server.js";
 import {
   normalizeOnboardingRequest,
@@ -50,6 +52,25 @@ test("onboarding request creates contained sibling workspace paths and rejects u
   assert.equal(normalized.operationsPath, path.join(parent, "sample-product-ops"));
   assert.equal(normalized.applicationPath, path.join(parent, "sample-product-app"));
   assert.deepEqual(normalized.environments, ["local", "test", "staging"]);
+  assert.equal(normalized.initializeDevelopmentOs, true, "new applications always receive Development OS");
+  const safeDefaults = normalizeOnboardingRequest(request(parent, {
+    initializeDevelopmentOs: false,
+    writableDashboard: undefined
+  }), { repoRoot: repositoryRoot });
+  assert.equal(safeDefaults.initializeDevelopmentOs, true);
+  assert.equal(safeDefaults.writableDashboard, false, "the local dashboard is read-only by default");
+  const existingOptOut = normalizeOnboardingRequest(request(parent, {
+    appMode: "existing",
+    existingApplicationPath: path.join(parent, "existing-app"),
+    initializeDevelopmentOs: false
+  }), { repoRoot: repositoryRoot });
+  assert.equal(existingOptOut.initializeDevelopmentOs, false);
+  const existingOptIn = normalizeOnboardingRequest(request(parent, {
+    appMode: "existing",
+    existingApplicationPath: path.join(parent, "existing-app"),
+    initializeDevelopmentOs: true
+  }), { repoRoot: repositoryRoot });
+  assert.equal(existingOptIn.initializeDevelopmentOs, true);
   assert.throws(
     () => normalizeOnboardingRequest(request(parent, { operationsFolder: "../escape" }), { repoRoot: repositoryRoot }),
     /پوشه/
@@ -79,11 +100,19 @@ test("onboarding service creates operations, app, first cycle, and independent G
   });
   assert.equal(result.ideaRecorded, true);
   assert.equal(result.initialCycleApplied, true);
+  assert.deepEqual(result.development, {
+    requested: true,
+    initialized: true,
+    validated: true,
+    status: "ready"
+  });
   assert.equal(result.git.operations, "committed");
   assert.equal(result.git.application, "committed");
   const config = await loadConfig(result.operationsPath);
   assert.equal(config.project.name, "محصول نمونه");
   assert.ok(await fs.readFile(path.join(result.applicationPath, "README.md"), "utf8"));
+  assert.ok(await fs.readFile(path.join(result.applicationPath, "development-os.config.json"), "utf8"));
+  assert.equal((await validateDevelopmentOs(result.applicationPath)).errors.length, 0);
   await assert.rejects(fs.access(path.join(result.applicationPath, ".product-ops-onboarding.json")));
   assert.ok(await fs.readFile(path.join(result.operationsPath, "product-intake", "first-idea.json"), "utf8"));
   assert.equal(await gitHead(result.operationsPath), true);
@@ -119,8 +148,67 @@ test("onboarding never treats an existing Git repository as a new application or
     skipDependencyInstall: true
   });
   assert.equal(result.git.application, "existing-untouched");
+  assert.equal(result.development.status, "skipped-existing-application");
   assert.equal(await fs.readFile(path.join(existing, "user-file.txt"), "utf8"), "owned by user\n");
+  await assert.rejects(fs.access(path.join(existing, "development-os.config.json")));
   await assert.rejects(fs.access(path.join(existing, ".git")));
+});
+
+test("onboarding rejects a forged resume marker instead of adopting an existing directory", async (t) => {
+  const parent = await makeTempDirectory("product-ops-onboarding-forged-resume-");
+  t.after(() => fs.rm(parent, { recursive: true, force: true }));
+  const application = path.join(parent, "sample-product-app");
+  await fs.mkdir(application, { recursive: true });
+  await fs.writeFile(
+    path.join(application, ".product-ops-onboarding.json"),
+    `${JSON.stringify({ schemaVersion: "1.0.0", createdBy: "open-product-operations-os" })}\n`,
+    "utf8"
+  );
+
+  await assert.rejects(
+    runOnboarding(request(parent), {
+      repoRoot: repositoryRoot,
+      skipDependencyInstall: true
+    }),
+    /نشانگر ادامه/
+  );
+  await assert.rejects(fs.access(path.join(application, "README.md")));
+});
+
+test("onboarding initializes Development OS in an existing application only after explicit opt-in", async (t) => {
+  const parent = await makeTempDirectory("product-ops-onboarding-existing-development-");
+  t.after(() => fs.rm(parent, { recursive: true, force: true }));
+  const existing = path.join(parent, "existing-app");
+  await fs.mkdir(existing, { recursive: true });
+  await fs.writeFile(path.join(existing, "user-file.txt"), "owned by user\n", "utf8");
+  runGit(existing, ["init", "-b", "main"]);
+  runGit(existing, ["add", "user-file.txt"]);
+  runGit(existing, [
+    "-c", "user.name=Synthetic Existing Owner",
+    "-c", "user.email=existing@example.invalid",
+    "commit", "-m", "test: preserve existing application"
+  ]);
+  const headBefore = runGit(existing, ["rev-parse", "HEAD"]).stdout.trim();
+
+  const result = await runOnboarding(request(parent, {
+    appMode: "existing",
+    existingApplicationPath: existing,
+    initializeDevelopmentOs: true,
+    ideaEnabled: false,
+    initializeGit: true
+  }), {
+    repoRoot: repositoryRoot,
+    skipDependencyInstall: true
+  });
+
+  assert.equal(result.development.status, "ready");
+  assert.equal(result.development.initialized, true);
+  assert.equal(result.development.validated, true);
+  assert.equal(result.git.application, "existing-git-untouched");
+  assert.equal(await fs.readFile(path.join(existing, "user-file.txt"), "utf8"), "owned by user\n");
+  assert.equal((await validateDevelopmentOs(existing)).errors.length, 0);
+  assert.equal(runGit(existing, ["rev-parse", "HEAD"]).stdout.trim(), headBefore);
+  assert.equal(runGit(existing, ["diff", "--cached", "--name-only"]).stdout.trim(), "");
 });
 
 test("onboarding server is loopback-only, CSRF guarded, and completes a graphical session", async (t) => {
@@ -181,6 +269,8 @@ test("onboarding view escapes embedded values and launcher artifacts are integri
   });
   assert.doesNotMatch(html, /<\/script><script>alert/);
   assert.match(html, /\\u003c\/script\\u003e/);
+  assert.match(html, /name="initializeDevelopmentOs"/);
+  assert.doesNotMatch(html, /name="writableDashboard" checked/);
   const browserScript = html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)?.[1];
   assert.ok(browserScript, "generated browser script is present");
   assert.doesNotThrow(() => new vm.Script(browserScript), "generated browser script parses");
@@ -208,6 +298,11 @@ async function waitForJob(url, csrfToken) {
 }
 
 async function gitHead(cwd) {
-  const { spawnSync } = await import("node:child_process");
   return spawnSync("git", ["rev-parse", "--verify", "HEAD"], { cwd, encoding: "utf8" }).status === 0;
+}
+
+function runGit(cwd, args) {
+  const result = spawnSync("git", args, { cwd, encoding: "utf8" });
+  assert.equal(result.status, 0, result.stderr || result.stdout);
+  return result;
 }

@@ -9,6 +9,7 @@ import { completeDevelopmentResult } from "./development/result.js";
 import { validateDevelopmentOs } from "./development/validation.js";
 import { runEngineeringWorkstream } from "./development/runner.js";
 import { buildDevelopmentDashboard } from "./development/dashboard.js";
+import { configureDevelopmentExecutors, doctorDevelopmentExecutors } from "./development/executor-setup.js";
 
 const HELP = `Open Development Operations OS CLI
 
@@ -18,6 +19,8 @@ Usage:
   development-os plan <target> --request <json-file> [--apply]
   development-os complete <target> --result <json-file> [--apply]
   development-os execute <target> --plan <plan-id> --workstream <workstream-id> [--apply]
+  development-os executor-setup <target> --provider <codex|command> --role <ENG-01|all> [options] [--enable] [--apply]
+  development-os executor-doctor <target> [--role <ENG-01|all>]
   development-os dashboard <target> [--output <html-file>] [--apply]
   development-os status <target>
 
@@ -27,11 +30,15 @@ Commands:
   plan      Import one product-approved request and create a multi-discipline engineering plan.
   complete  Validate an independently verified engineering result and prepare it for Product Operations.
   execute   Dispatch one dependency-ready workstream through its disabled-by-default specialist executor.
+  executor-setup  Safely configure disabled-by-default Codex or command executors; activation requires --enable and a passing doctor.
+  executor-doctor Read-only executor, schema, path, environment, and isolation diagnostics.
   dashboard Generate a local Persian RTL engineering control-tower snapshot.
   status    Report synchronized request, plan, result, and receipt counts.
 
 Safety:
   plan and complete are dry-run by default. Add --apply only after reviewing the exact contract.
+  executor-setup is dry-run by default. --enable never activates an executor unless doctor passes.
+  External isolation is still required: use a dedicated container, VM, or isolated hosted worker.
   Product authority and engineering authority remain separate and synchronize through versioned contracts.
 `;
 
@@ -76,6 +83,33 @@ export async function main(argv = process.argv.slice(2), io = console) {
     io.log(`Input: ${result.inputFile}; result: ${result.resultFile}.`);
     return 0;
   }
+  if (parsed.command === "executor-setup") {
+    if (!parsed.provider) throw new Error("executor-setup requires --provider <codex|command>.");
+    if (!parsed.role) throw new Error("executor-setup requires --role <ENG-01|all>.");
+    const result = await configureDevelopmentExecutors(target, {
+      provider: parsed.provider,
+      role: parsed.role ?? "all",
+      executable: parsed.executable,
+      arguments: parsed.arguments ?? [],
+      workingDirectory: parsed.workingDirectory ?? ".",
+      timeoutMs: parsed.timeoutMs ?? 1800000,
+      enable: parsed.enable,
+      dryRun: parsed.dryRun || !parsed.apply
+    });
+    io.log(`${result.dryRun ? "Planned" : "Stored"} ${result.provider} executor configuration for ${result.selectedRoles.join(", ")}.`);
+    io.log(`Executors will be ${result.enabled ? "enabled after passing doctor" : "configured but disabled"}.`);
+    result.doctor.errors.forEach((error) => io.log(`Doctor error: ${error}`));
+    io.log(`Warning: ${result.warning}`);
+    return 0;
+  }
+  if (parsed.command === "executor-doctor") {
+    const result = await doctorDevelopmentExecutors(target, { role: parsed.role ?? "all" });
+    result.checks.forEach((check) => io.log(`Pass: ${check}`));
+    result.warnings.forEach((warning) => io.log(`Warning: ${warning}`));
+    if (!result.ok) throw new Error(`Executor doctor failed:\n- ${result.errors.join("\n- ")}`);
+    io.log(`Executor doctor passed for ${result.checkedRoles.join(", ")}; no files were changed.`);
+    return 0;
+  }
   if (parsed.command === "dashboard") {
     const result = await buildDevelopmentDashboard(target, { dryRun: !parsed.apply, output: parsed.output });
     io.log(`${result.dryRun ? "Planned" : "Generated"} engineering dashboard at ${result.output} (${result.bytes} bytes).`);
@@ -91,7 +125,7 @@ export async function main(argv = process.argv.slice(2), io = console) {
 }
 
 function parse(argv) {
-  const result = { command: null, target: null, help: false, dryRun: false, force: false, apply: false, provided: new Set() };
+  const result = { command: null, target: null, help: false, dryRun: false, force: false, apply: false, enable: false, arguments: [], provided: new Set() };
   const values = [...argv];
   while (values.length) {
     const value = values.shift();
@@ -99,12 +133,21 @@ function parse(argv) {
     if (value === "--dry-run") { result.dryRun = true; result.provided.add("dryRun"); continue; }
     if (value === "--force") { result.force = true; result.provided.add("force"); continue; }
     if (value === "--apply") { result.apply = true; result.provided.add("apply"); continue; }
-    if (["--request", "--result", "--plan", "--workstream", "--output"].includes(value)) {
-      const key = value.slice(2);
+    if (value === "--enable") { result.enable = true; result.provided.add("enable"); continue; }
+    if (value.startsWith("--argument=")) {
+      const argument = value.slice("--argument=".length);
+      if (!argument) throw new Error("--argument requires a value.");
+      result.arguments.push(argument);
+      result.provided.add("arguments");
+      continue;
+    }
+    if (["--request", "--result", "--plan", "--workstream", "--output", "--provider", "--role", "--executable", "--argument", "--working-directory", "--timeout-ms"].includes(value)) {
+      const key = value.slice(2).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
       const next = values.shift();
       if (!next || next.startsWith("--")) throw new Error(`${value} requires a value.`);
-      result[key] = next;
-      result.provided.add(key);
+      if (key === "argument") result.arguments.push(next);
+      else result[key] = next;
+      result.provided.add(key === "argument" ? "arguments" : key);
       continue;
     }
     if (value.startsWith("--")) throw new Error(`Unknown option "${value}".`);
@@ -123,6 +166,8 @@ function validateOptions(parsed) {
     plan: ["request", "apply"],
     complete: ["result", "apply"],
     execute: ["plan", "workstream", "apply"],
+    "executor-setup": ["provider", "role", "executable", "arguments", "workingDirectory", "timeoutMs", "enable", "apply", "dryRun"],
+    "executor-doctor": ["role"],
     dashboard: ["output", "apply"],
     status: []
   }[parsed.command];

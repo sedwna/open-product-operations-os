@@ -96,8 +96,10 @@ Read the [runtime guide](docs/runtime/README.md) for the complete operating and 
 ## One-click start
 
 Clone the repository, then open the launcher for your platform. The graphical wizard asks for the
-folder names, product definition, and optional first idea; it creates the workspace, validates it,
-and opens the live dashboard.
+folder names, product definition, and optional first idea. For a new application it initializes
+and validates both Product Operations OS and the independent Development Operations OS, creates
+separate Git histories, and opens the read-only live dashboard. Existing application repositories
+receive Development Operations OS files only after explicit opt-in.
 
 | Windows | macOS | Linux |
 | --- | --- | --- |
@@ -179,6 +181,11 @@ development-os init ./my-application --dry-run
 development-os init ./my-application
 development-os validate ./my-application
 ```
+
+The graphical one-click path performs these initialization and validation commands automatically
+for a new application. Use the manual commands above when adding Development Operations OS later
+or when you prefer command-line control. Specialist executors remain disabled until separately
+configured, tested, and authorized.
 
 The original command-runner adapter remains available as a lower-level bounded integration.
 
@@ -262,6 +269,7 @@ links, unsafe replacement races, and ambiguous recovery states.
 | Connect a development agent | [Development runner](docs/runtime/development-runner.md) |
 | Initialize the complete engineering system | [Development OS](docs/development/README.md) |
 | Understand Product/Development synchronization | [Dual OS architecture](docs/architecture/dual-operating-system.md) |
+| Review the latest production-readiness security audit | [Security review](docs/verification/2026-08-02-production-readiness-security-review.md) |
 | Connect external systems | [Provider adapters](docs/runtime/provider-adapters.md) |
 | Work with the workbook | [Workbook operating model](docs/workbook/operating-model.md) |
 | Evaluate publication readiness | [Public release gates](docs/publication-gates.md) |

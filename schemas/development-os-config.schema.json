@@ -26,6 +26,7 @@
       "type": "array",
       "minItems": 15,
       "maxItems": 15,
+      "uniqueItems": true,
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -42,7 +43,9 @@
     },
     "qualityGates": {
       "type": "array",
-      "minItems": 10,
+      "minItems": 15,
+      "maxItems": 15,
+      "uniqueItems": true,
       "items": {
         "type": "object",
         "additionalProperties": false,
@@ -60,6 +63,7 @@
       "type": "array",
       "minItems": 15,
       "maxItems": 15,
+      "uniqueItems": true,
       "items": {
         "type": "object",
         "additionalProperties": false,

@@ -10,6 +10,8 @@ import { dependencyState, loadTaskboard } from "./taskboard.js";
 import { assertNoCredentialMaterial } from "./security.js";
 import { prepareGitWorkspace } from "../adapters/local-git.js";
 
+const MAX_EXECUTOR_OUTPUT_BYTES = 1024 * 1024;
+
 export async function runDevelopmentTask(
   root,
   config,
@@ -140,20 +142,59 @@ function execute(executable, args, { cwd, timeoutMs, environmentAllowlist, spawn
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"]
     });
-    let stdout = "";
-    let stderr = "";
-    child.stdout?.setEncoding("utf8");
-    child.stderr?.setEncoding("utf8");
-    child.stdout?.on("data", (chunk) => { stdout += chunk; });
-    child.stderr?.on("data", (chunk) => { stderr += chunk; });
-    const timer = setTimeout(() => child.kill(), timeoutMs);
-    child.once("error", (error) => { clearTimeout(timer); reject(error); });
-    child.once("close", (code, signal) => {
+    const stdout = [];
+    const stderr = [];
+    let stdoutBytes = 0;
+    let stderrBytes = 0;
+    let settled = false;
+    let timer;
+
+    const stopChild = () => {
+      try { child.kill(); }
+      catch { /* The process may already have exited. */ }
+    };
+    const settleReject = (error, { terminate = false } = {}) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
+      if (terminate) stopChild();
+      reject(error);
+    };
+    const settleResolve = (value) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      resolve(value);
+    };
+    const capture = (channel, chunks, byteCount, chunk) => {
+      if (settled) return byteCount;
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(String(chunk), "utf8");
+      const nextByteCount = byteCount + buffer.length;
+      if (nextByteCount > MAX_EXECUTOR_OUTPUT_BYTES) {
+        settleReject(
+          new Error(`Development agent ${channel} exceeded the ${MAX_EXECUTOR_OUTPUT_BYTES}-byte limit.`),
+          { terminate: true }
+        );
+        return nextByteCount;
+      }
+      chunks.push(buffer);
+      return nextByteCount;
+    };
+
+    child.stdout?.on("data", (chunk) => { stdoutBytes = capture("stdout", stdout, stdoutBytes, chunk); });
+    child.stderr?.on("data", (chunk) => { stderrBytes = capture("stderr", stderr, stderrBytes, chunk); });
+    timer = setTimeout(() => {
+      settleReject(new Error(`Development agent timed out after ${timeoutMs}ms.`), { terminate: true });
+    }, timeoutMs);
+    child.once("error", (error) => { settleReject(error); });
+    child.once("close", (code, signal) => {
       if (code !== 0) {
-        reject(new Error(`Development agent exited with code ${code ?? "none"} and signal ${signal ?? "none"}.`));
+        settleReject(new Error(`Development agent exited with code ${code ?? "none"} and signal ${signal ?? "none"}.`));
       } else {
-        resolve({ stdout, stderr });
+        settleResolve({
+          stdout: Buffer.concat(stdout, stdoutBytes).toString("utf8"),
+          stderr: Buffer.concat(stderr, stderrBytes).toString("utf8")
+        });
       }
     });
   });

@@ -77,6 +77,18 @@ explicitly allowlisted variable names. It rejects obvious credential material in
 returns. It is not an operating-system sandbox; untrusted coding agents require an independently
 constrained worker, container, or virtual machine.
 
+Development OS executors follow the same boundary. Configuration is disabled and dry-run-first;
+activation requires a passing read-only doctor. The Codex preset uses an ephemeral, workspace-write,
+schema-bound non-interactive run. Every returned result is attributed to the dispatched plan,
+workstream, role, and actor, and both output channels are bounded. External isolation remains a
+deployment requirement, not a claim made by this repository.
+
+Completed engineering results must bind the canonical plan digest, every planned workstream run,
+the implementation revision, and content-addressed evidence inside the managed evidence boundary.
+Product-to-development exports require a matching canonical approval, and reverse imports require
+the source synchronization receipt. These receipts prove integrity and lineage; they are not
+cryptographic signatures or proof of an external identity.
+
 ## Validation scan boundary
 
 `product-ops validate` inventories the complete bounded target tree, rejects filesystem links,

@@ -1,20 +1,26 @@
 import { spawn } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { assertNoCredentialMaterial } from "../runtime/security.js";
+import { initializeDevelopmentOs as initializeDevelopmentSystem } from "../development/init.js";
+import { validateDevelopmentOs } from "../development/validation.js";
+import { assertNoLinkTraversal } from "../paths.js";
 
 const FOLDER_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{1,63}$/;
 const WINDOWS_RESERVED = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i;
 const ALLOWED_ENVIRONMENTS = new Set(["local", "test", "staging", "production"]);
 const ALLOWED_PRIORITIES = new Set(["P0", "P1", "P2", "P3"]);
 const APPLICATION_RESUME_MARKER = ".product-ops-onboarding.json";
+const MAX_COMMAND_OUTPUT_BYTES = 1024 * 1024;
 
 export const ONBOARDING_STEPS = Object.freeze([
   { id: "dependencies", label: "آماده‌سازی موتور" },
   { id: "operations", label: "ساخت فضای عملیات محصول" },
   { id: "configuration", label: "ثبت مشخصات محصول" },
   { id: "application", label: "آماده‌سازی مخزن کد" },
+  { id: "development", label: "ساخت سامانهٔ عملیات توسعه" },
   { id: "idea", label: "ثبت ایدهٔ نخست" },
   { id: "cycle", label: "اجرای چرخهٔ نخست" },
   { id: "git", label: "راه‌اندازی تاریخچهٔ گیت" },
@@ -59,6 +65,8 @@ export function normalizeOnboardingRequest(input, { repoRoot } = {}) {
   if (applicationPath && samePath(operationsPath, applicationPath)) {
     throw new Error("پوشهٔ عملیات و پوشهٔ کد محصول باید از هم جدا باشند.");
   }
+  const initializeDevelopmentOs = appMode === "create"
+    || (appMode === "existing" && input.initializeDevelopmentOs === true);
 
   const ideaEnabled = Boolean(input.ideaEnabled && String(input.ideaTitle || "").trim());
   const priority = ALLOWED_PRIORITIES.has(input.ideaPriority) ? input.ideaPriority : "P2";
@@ -84,13 +92,14 @@ export function normalizeOnboardingRequest(input, { repoRoot } = {}) {
     appMode,
     applicationFolder,
     applicationPath,
+    initializeDevelopmentOs,
     idea,
     installDependencies: input.installDependencies !== false,
     initializeGit: input.initializeGit !== false,
     createInitialCommit: input.createInitialCommit !== false,
     gitName: optionalText(input.gitName, 120),
     gitEmail: optionalText(input.gitEmail, 200),
-    writableDashboard: input.writableDashboard !== false
+    writableDashboard: Boolean(input.writableDashboard)
   };
   assertNoCredentialMaterial("Onboarding answers", normalized);
   return normalized;
@@ -122,17 +131,44 @@ export async function runOnboarding(request, {
 } = {}) {
   const answers = normalizeOnboardingRequest(request, { repoRoot });
   await fs.mkdir(answers.workspaceParent, { recursive: true });
+  await assertNoLinkTraversal(
+    answers.workspaceParent,
+    answers.operationsPath,
+    "Product Operations destination"
+  );
   await assertSafeDestination(answers.operationsPath, "فضای عملیات محصول", "product-ops.config.json");
+  let applicationIdentity = null;
   if (answers.appMode === "create") {
-    await assertSafeDestination(answers.applicationPath, "پوشهٔ کد محصول", APPLICATION_RESUME_MARKER);
-    await fs.mkdir(answers.applicationPath, { recursive: true });
-    await writeIfMissing(
-      path.join(answers.applicationPath, APPLICATION_RESUME_MARKER),
-      `${JSON.stringify({ schemaVersion: "1.0.0", createdBy: "open-product-operations-os" }, null, 2)}\n`
+    await assertNoLinkTraversal(
+      answers.workspaceParent,
+      answers.applicationPath,
+      "Application destination"
     );
+    const resumable = await assertSafeDestination(
+      answers.applicationPath,
+      "پوشهٔ کد محصول",
+      APPLICATION_RESUME_MARKER
+    );
+    await fs.mkdir(answers.applicationPath, { recursive: true });
+    if (resumable) {
+      await validateApplicationResumeMarker(answers.applicationPath);
+    } else {
+      await writeIfMissing(
+        path.join(answers.applicationPath, APPLICATION_RESUME_MARKER),
+        `${JSON.stringify({
+          schemaVersion: "1.0.0",
+          createdBy: "open-product-operations-os",
+          sessionId: crypto.randomUUID(),
+          expectedPath: path.resolve(answers.applicationPath)
+        }, null, 2)}\n`
+      );
+    }
+    applicationIdentity = await captureDirectoryIdentity(answers.applicationPath);
   } else if (answers.appMode === "existing") {
-    const stat = await fs.stat(answers.applicationPath).catch(() => null);
+    const stat = await fs.lstat(answers.applicationPath).catch(() => null);
     if (!stat?.isDirectory()) throw new Error("پوشهٔ کد موجود پیدا نشد.");
+    if (stat.isSymbolicLink()) throw new Error("پوشهٔ کد موجود نمی‌تواند پیوند نمادین باشد.");
+    applicationIdentity = await captureDirectoryIdentity(answers.applicationPath);
   }
 
   const report = {
@@ -142,6 +178,12 @@ export async function runOnboarding(request, {
     applicationPath: answers.applicationPath,
     ideaRecorded: false,
     initialCycleApplied: false,
+    development: {
+      requested: answers.initializeDevelopmentOs,
+      initialized: false,
+      validated: false,
+      status: answers.appMode === "skip" ? "skipped-no-application" : "pending"
+    },
     git: { operations: "skipped", application: "skipped" }
   };
 
@@ -187,6 +229,7 @@ export async function runOnboarding(request, {
       log("ساخت مخزن کد برای بعد نگه داشته شد.");
       return;
     }
+    await assertDirectoryIdentity(answers.applicationPath, applicationIdentity);
     if (answers.appMode === "existing") {
       log(`مخزن کد موجود انتخاب شد: ${answers.applicationPath}`);
       return;
@@ -202,6 +245,33 @@ export async function runOnboarding(request, {
         + `${APPLICATION_RESUME_MARKER}\n`
     );
     log("پوشهٔ کد محصول با فایل‌های پایه ساخته شد.");
+  });
+
+  await step(onProgress, "development", async (log) => {
+    if (!answers.applicationPath) {
+      report.development.status = "skipped-no-application";
+      log("راه‌اندازی سامانهٔ توسعه تا زمان معرفی مخزن کد به تعویق افتاد.");
+      return;
+    }
+    if (!answers.initializeDevelopmentOs) {
+      report.development.status = "skipped-existing-application";
+      log("مخزن کد موجود بدون درخواست صریح برای راه‌اندازی سامانهٔ توسعه دست‌نخورده ماند.");
+      return;
+    }
+    await assertDirectoryIdentity(answers.applicationPath, applicationIdentity);
+    const preview = await initializeDevelopmentSystem(answers.applicationPath, { dryRun: true });
+    preview.lines.forEach(log);
+    const initialized = await initializeDevelopmentSystem(answers.applicationPath, { dryRun: false });
+    initialized.lines.forEach(log);
+    report.development.initialized = true;
+    const validation = await validateDevelopmentOs(answers.applicationPath);
+    if (validation.errors.length > 0) {
+      throw new Error(`اعتبارسنجی سامانهٔ توسعه ناموفق بود: ${validation.errors.join("؛ ")}`);
+    }
+    validation.warnings.forEach((warning) => log(`هشدار سامانهٔ توسعه: ${warning}`));
+    report.development.validated = true;
+    report.development.status = "ready";
+    log(`سامانهٔ عملیات توسعه با ${validation.checkedFiles} فایل مدیریت‌شده آماده و معتبر است.`);
   });
 
   await step(onProgress, "idea", async (log) => {
@@ -235,10 +305,13 @@ export async function runOnboarding(request, {
     }
     report.git.operations = await initializeGitRepository(answers.operationsPath, answers, log);
     if (answers.appMode === "create") {
+      await assertDirectoryIdentity(answers.applicationPath, applicationIdentity);
       report.git.application = await initializeGitRepository(answers.applicationPath, answers, log);
     } else if (answers.appMode === "existing") {
-      report.git.application = "existing-untouched";
-      log("مخزن کد موجود بدون تغییر در فایل‌ها یا وضعیت گیت متصل شد.");
+      report.git.application = answers.initializeDevelopmentOs ? "existing-git-untouched" : "existing-untouched";
+      log(answers.initializeDevelopmentOs
+        ? "فایل‌های سامانهٔ توسعه ساخته شدند، اما وضعیت گیت مخزن موجود دست‌کاری نشد."
+        : "مخزن کد موجود بدون تغییر در فایل‌ها یا وضعیت گیت متصل شد.");
     }
   });
 
@@ -250,6 +323,7 @@ export async function runOnboarding(request, {
   report.dashboardWritable = answers.writableDashboard;
   report.productName = answers.productName;
   if (answers.appMode === "create") {
+    await assertDirectoryIdentity(answers.applicationPath, applicationIdentity);
     await fs.rm(path.join(answers.applicationPath, APPLICATION_RESUME_MARKER), { force: true });
   }
   return report;
@@ -333,14 +407,28 @@ export async function runCommand(executable, args, { cwd, onLine = () => {}, tim
     });
     let stdout = "";
     let stderr = "";
+    let settled = false;
+    const finish = (error) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      if (error) reject(error);
+      else resolve();
+    };
     const timer = setTimeout(() => {
       child.kill();
-      reject(new Error(`فرایند پس از ${Math.round(timeoutMs / 1000)} ثانیه متوقف شد.`));
+      finish(new Error(`فرایند پس از ${Math.round(timeoutMs / 1000)} ثانیه متوقف شد.`));
     }, timeoutMs);
     const consume = (chunk, channel) => {
       const text = chunk.toString("utf8");
-      if (channel === "stdout") stdout += text;
-      else stderr += text;
+      const current = channel === "stdout" ? stdout : stderr;
+      if (Buffer.byteLength(current, "utf8") + chunk.length > MAX_COMMAND_OUTPUT_BYTES) {
+        child.kill();
+        finish(new Error(`خروجی ${channel} از سقف ایمن یک مگابایت عبور کرد.`));
+        return;
+      }
+      if (channel === "stdout") stdout = current + text;
+      else stderr = current + text;
       for (const line of text.split(/\r?\n/).map((value) => value.trim()).filter(Boolean)) {
         onLine(line.slice(0, 600));
       }
@@ -348,13 +436,11 @@ export async function runCommand(executable, args, { cwd, onLine = () => {}, tim
     child.stdout.on("data", (chunk) => consume(chunk, "stdout"));
     child.stderr.on("data", (chunk) => consume(chunk, "stderr"));
     child.once("error", (error) => {
-      clearTimeout(timer);
-      reject(error);
+      finish(error);
     });
     child.once("exit", (code, signal) => {
-      clearTimeout(timer);
-      if (code === 0) resolve();
-      else reject(new Error(
+      if (code === 0) finish();
+      else finish(new Error(
         `فرایند با وضعیت ${code ?? signal ?? "unknown"} پایان یافت. ${stderr || stdout}`.trim()
       ));
     });
@@ -380,12 +466,61 @@ async function captureOptional(executable, args, cwd) {
 }
 
 async function assertSafeDestination(target, label, resumableMarker) {
-  const stat = await fs.stat(target).catch(() => null);
-  if (!stat) return;
+  const stat = await fs.lstat(target).catch(() => null);
+  if (!stat) return false;
+  if (stat.isSymbolicLink()) throw new Error(`${label} نمی‌تواند پیوند نمادین باشد.`);
   if (!stat.isDirectory()) throw new Error(`${label} یک پوشه نیست.`);
-  if (await exists(path.join(target, resumableMarker))) return;
+  if (await exists(path.join(target, resumableMarker))) return true;
   const entries = await fs.readdir(target);
   if (entries.length > 0) throw new Error(`${label} از قبل وجود دارد و خالی نیست؛ مسیر دیگری انتخاب کنید.`);
+  return false;
+}
+
+async function validateApplicationResumeMarker(applicationPath) {
+  const markerPath = path.join(applicationPath, APPLICATION_RESUME_MARKER);
+  const stat = await fs.lstat(markerPath);
+  if (!stat.isFile() || stat.isSymbolicLink() || stat.size > 16 * 1024) {
+    throw new Error("نشانگر ادامهٔ راه‌اندازی معتبر نیست.");
+  }
+  let marker;
+  try {
+    marker = JSON.parse(await fs.readFile(markerPath, "utf8"));
+  } catch {
+    throw new Error("نشانگر ادامهٔ راه‌اندازی قابل خواندن نیست.");
+  }
+  if (
+    marker?.schemaVersion !== "1.0.0"
+    || marker?.createdBy !== "open-product-operations-os"
+    || typeof marker?.sessionId !== "string"
+    || !/^[0-9a-f-]{36}$/i.test(marker.sessionId)
+    || !samePath(marker?.expectedPath || "", applicationPath)
+  ) {
+    throw new Error("نشانگر ادامهٔ راه‌اندازی با این مقصد مطابقت ندارد.");
+  }
+}
+
+async function captureDirectoryIdentity(directory) {
+  const stat = await fs.lstat(directory);
+  if (!stat.isDirectory() || stat.isSymbolicLink()) {
+    throw new Error("مقصد برنامه باید یک پوشهٔ واقعی باشد.");
+  }
+  return {
+    device: stat.dev,
+    inode: stat.ino,
+    realPath: await fs.realpath(directory)
+  };
+}
+
+async function assertDirectoryIdentity(directory, expected) {
+  if (!expected) throw new Error("هویت مقصد برنامه ثبت نشده است.");
+  const actual = await captureDirectoryIdentity(directory);
+  if (
+    actual.device !== expected.device
+    || actual.inode !== expected.inode
+    || !samePath(actual.realPath, expected.realPath)
+  ) {
+    throw new Error("مقصد برنامه در طول راه‌اندازی تغییر کرده است؛ عملیات متوقف شد.");
+  }
 }
 
 async function writeIfMissing(file, content) {
