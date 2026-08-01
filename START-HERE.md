@@ -6,12 +6,29 @@
 
 **5 inputs · 13 role boundaries · 23 workbook tabs · 1 reconstructable product trail**
 
-[Create a project](#1-create-the-project) · [Run the first cycle](#3-run-the-first-cycle) ·
+[Launch in one click](#the-easiest-path) · [Create manually](#1-create-the-project) · [Run the first cycle](#3-run-the-first-cycle) ·
 [Open the dashboard](#4-open-the-control-tower) · [Connect development](#development-integration)
 
 </div>
 
 ---
+
+## The easiest path
+
+After cloning, open one file and let the graphical wizard do the rest:
+
+| Your computer | Open |
+| --- | --- |
+| Windows | [`launchers/windows/OpenProductOS.exe`](launchers/windows/OpenProductOS.exe) |
+| macOS | [`launchers/macos/OpenProductOS.command`](launchers/macos/OpenProductOS.command) |
+| Linux | [`launchers/linux/OpenProductOS.desktop`](launchers/linux/OpenProductOS.desktop) |
+
+It asks for the workspace and folder names, product details, and—if you want—the first idea. It then
+installs locked dependencies, creates independent operations and application repositories, records
+the idea, runs the first cycle, validates the result, and opens the local RTL control tower.
+
+The development agent remains disabled until you explicitly configure and authorize that separate
+boundary. Read the [one-click guide](docs/onboarding/one-click.md) for platform notes and recovery.
 
 ## Before you begin
 

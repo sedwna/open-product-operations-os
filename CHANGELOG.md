@@ -4,6 +4,12 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+- Added a five-step Persian RTL graphical onboarding wizard that creates or connects the product
+  repositories, captures the product definition and first idea, runs the initial cycle, validates
+  the workspace, and opens the live dashboard.
+- Added one-click Windows, macOS, and Linux launchers with a no-admin portable Node.js fallback,
+  official SHA-256 verification, safe resume rules, independent Git initialization, and automated
+  cross-platform launcher bundles.
 - Replaced the static dashboard with a responsive interactive RTL product-owner control tower for
   tasks, approvals, intake, risks, evidence, readiness, roles, search, filters, details, theme, and
   local export.

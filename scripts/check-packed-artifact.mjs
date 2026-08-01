@@ -63,7 +63,13 @@ try {
 
   runNpm(["install", "--ignore-scripts", "--no-audit", "--no-fund"], packageRoot);
   for (const script of ["check", "smoke", "licenses:check", "sbom:check"]) {
-    runNpm(["run", script], packageRoot);
+    runNpm(
+      ["run", script],
+      packageRoot,
+      script === "check"
+        ? { env: { ...process.env, PRODUCT_OPS_PACKED_ARTIFACT: "1" } }
+        : undefined
+    );
   }
   await fs.writeFile(
     path.join(consumer, "package.json"),
@@ -105,9 +111,9 @@ try {
   await fs.rm(temporary, { recursive: true, force: true });
 }
 
-function runNpm(args, cwd) {
+function runNpm(args, cwd, options) {
   const invocation = npmInvocation(args);
-  return run(invocation.command, invocation.args, cwd);
+  return run(invocation.command, invocation.args, cwd, options);
 }
 
 function runInstalledCli(args, cwd) {
@@ -117,10 +123,11 @@ function runInstalledCli(args, cwd) {
   );
 }
 
-function run(command, args, cwd) {
+function run(command, args, cwd, { env = process.env } = {}) {
   const result = runProcess(command, args, {
     cwd,
-    encoding: "utf8"
+    encoding: "utf8",
+    env
   });
   assert.equal(
     result.status,

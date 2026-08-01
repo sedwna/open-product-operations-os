@@ -14,6 +14,9 @@ const scriptPath = fileURLToPath(import.meta.url);
 const repositoryRoot = path.resolve(path.dirname(scriptPath), "..");
 const packStateName = "product-ops-pack-source-state.json";
 const archivePackStateName = ".product-ops-pack-source-state.json";
+const declaredBinaryExtensions = new Set([
+  ".exe", ".gif", ".gz", ".jpeg", ".jpg", ".pdf", ".png", ".woff", ".woff2", ".zip"
+]);
 
 export function gitBlobObjectId(bytes, algorithm = "sha1") {
   const content = Buffer.isBuffer(bytes) ? bytes : Buffer.from(bytes);
@@ -411,6 +414,9 @@ async function prepareCanonicalArchiveSource(
   for (const relativePath of payloadFiles) {
     const bytes = await fs.readFile(path.join(root, relativePath));
     if (!bytes.includes(Buffer.from("\r\n"))) {
+      continue;
+    }
+    if (declaredBinaryExtensions.has(path.extname(relativePath).toLowerCase())) {
       continue;
     }
     assertCanonicalizableArchiveText(bytes, relativePath);
