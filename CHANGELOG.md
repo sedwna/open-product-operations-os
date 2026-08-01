@@ -12,6 +12,8 @@ All notable changes to this project will be documented here.
   plane actions.
 - Added a fictional public dashboard demonstration, bespoke social-preview artwork, animated
   workflow graphic, and a complete readability-focused redesign of the primary project guides.
+- Added an isolated site build, render, lint, and dependency-audit CI gate and updated the hosted
+  dashboard toolchain to remove all known npm audit findings.
 - Added an executable control-plane cycle that evaluates dependencies, human gates, intake routes,
   and development dispatches while retaining dry-run defaults.
 - Added the RB-13 command-agent runner with structured inputs, schema-validated returns, optional

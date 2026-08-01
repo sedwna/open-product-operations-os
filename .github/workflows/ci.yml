@@ -63,3 +63,25 @@ jobs:
 
       - name: Audit dependencies, licenses, and generated SBOM
         run: npm run supply-chain
+
+  site:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: site/package-lock.json
+
+      - name: Install locked site dependencies
+        run: npm ci --prefix site
+
+      - name: Audit site dependencies
+        run: npm audit --prefix site --audit-level=high
+
+      - name: Lint, build, and render-test the site
+        run: npm run lint --prefix site && npm test --prefix site
