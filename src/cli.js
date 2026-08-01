@@ -12,6 +12,8 @@ import {
   dashboardCommand,
   decideCommand,
   developmentCommand,
+  developmentExportCommand,
+  developmentImportCommand,
   intakeCommand,
   metricsCommand,
   migrateCommand,
@@ -29,6 +31,8 @@ Usage:
   product-ops generate-workbook <target> [--dry-run] [--force]
   product-ops operate <target> [--apply] [--execute-development]
   product-ops development <target> --task <task-id> [--apply]
+  product-ops development-export <target> --task <task-id> --file <request-json> [--apply]
+  product-ops development-import <target> --file <result-json> [--apply]
   product-ops intake <target> --file <json-file> [--apply]
   product-ops approvals <target>
   product-ops decide <target> --request <id> --decision <approved|rejected> --actor <id> [--apply]
@@ -47,6 +51,8 @@ Commands:
   generate-workbook  Generate CSV workbook templates from the project config.
   operate            Plan or execute one control-plane scheduling cycle.
   development        Dispatch one eligible RB-13 task to a configured command agent.
+  development-export Export an approved, versioned Product-to-Development contract.
+  development-import Import an independently verified Development-to-Product result.
   intake             Normalize and deduplicate an idea, finding, incident, or request.
   approvals          List durable human approval requests.
   decide             Record an attributed human approval or rejection.
@@ -88,6 +94,10 @@ export async function run(argv, io = console) {
       lines = await operateCommand(target, options);
     } else if (command === "development") {
       lines = await developmentCommand(target, options);
+    } else if (command === "development-export") {
+      lines = await developmentExportCommand(target, options);
+    } else if (command === "development-import") {
+      lines = await developmentImportCommand(target, options);
     } else if (command === "intake") {
       lines = await intakeCommand(target, options);
     } else if (command === "approvals") {
@@ -182,6 +192,8 @@ function validateCommandOptions(command, provided) {
     "generate-workbook": ["dryRun", "force"],
     operate: [...runtime, "executeDevelopment"],
     development: [...runtime, "task"],
+    "development-export": [...runtime, "task", "file"],
+    "development-import": [...runtime, "file"],
     intake: [...runtime, "file"],
     approvals: [],
     decide: [...runtime, "request", "decision", "actor", "rationale"],

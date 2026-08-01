@@ -4,6 +4,17 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+- Added an independently initializable Open Development Operations OS with 15 engineering role
+  boundaries spanning architecture, frontend, backend, clients, database and storage, data and AI,
+  platform and network, security and privacy, QA, SRE, delivery, SEO, documentation, and independent
+  verification.
+- Added versioned Product-to-Development and Development-to-Product contracts, SHA-256 source
+  digests, durable synchronization receipts, deterministic multi-discipline planning, explicit
+  write boundaries, risk classification, and fail-closed independent-result validation.
+- Added 15 engineering quality gates covering architecture, review, automated tests, security,
+  supply chain, database, API compatibility, infrastructure/network, privacy/compliance,
+  accessibility, performance, reliability, SEO, documentation, and independent verification.
+
 - Added a five-step Persian RTL graphical onboarding wizard that creates or connects the product
   repositories, captures the product definition and first idea, runs the initial cycle, validates
   the workspace, and opens the live dashboard.

@@ -158,6 +158,19 @@ Everything else should be automated or prepared as an exact, reviewable artifact
 
 ## Development integration
 
+For a complete engineering operating model, initialize the application repository separately:
+
+```text
+development-os init ./my-application --dry-run
+development-os init ./my-application
+development-os validate ./my-application
+```
+
+This creates 15 engineering authority boundaries and quality gates covering architecture,
+frontend, accessibility, backend, APIs, clients, database and migrations, data and AI, cloud and
+network, security and privacy, QA, SRE and performance, delivery, SEO, documentation, and
+independent verification. Read the [Development OS guide](docs/development/README.md).
+
 The development role receives:
 
 ```text

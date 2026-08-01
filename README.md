@@ -62,6 +62,7 @@ If a link is missing, the system does not silently call the work complete.
 | **23-tab product workbook** | Portable CSV records spanning idea, discovery, issues, tickets, evidence, QA, lineage, and readiness |
 | **Executable workflow** | A dry-run-first scheduler that routes intake, resolves dependencies, opens human gates, and dispatches eligible work |
 | **Development adapter** | A bounded handoff to an engineering agent or team through the dedicated development role |
+| **Independent Development OS** | A 15-boundary engineering package for architecture, frontend, backend, database, data, infrastructure, network, security, QA, SRE, delivery, SEO, documentation, and verification |
 | **Controlled writers** | Precondition checks, authorization, complete read-back, replay protection, and guarded rollback |
 | **Provider boundary** | Disabled-by-default adapters for GitHub, GitLab, Jira, Linear, Azure DevOps, Sheets, Graph, and Airtable |
 | **Portable proof** | Cross-host package checks, clean-clone/archive tests, SBOM generation, license checks, and secret scans |
@@ -168,6 +169,19 @@ site/         public read-only dashboard demonstration with fictional data
 
 ## Development integration
 
+For full engineering operation, initialize the independent
+[Open Development Operations OS](docs/development/README.md) inside the application repository.
+It uses versioned request/result contracts and content-addressed receipts to synchronize with this
+Product Operations repository without merging their authority or canonical state.
+
+```text
+development-os init ./my-application --dry-run
+development-os init ./my-application
+development-os validate ./my-application
+```
+
+The original command-runner adapter remains available as a lower-level bounded integration.
+
 Development is a governed adapter, not an implicit side effect. The development role receives an
 approved delivery contract, acceptance criteria, dependencies, evidence, a validation recipe, and
 a write boundary. It returns an implementation reference, test evidence, environment state, known
@@ -246,6 +260,8 @@ links, unsafe replacement races, and ambiguous recovery states.
 | Follow one event end to end | [Event lifecycle](docs/architecture/event-lifecycle.md) |
 | Operate the dashboard and agents | [Runtime guide](docs/runtime/README.md) |
 | Connect a development agent | [Development runner](docs/runtime/development-runner.md) |
+| Initialize the complete engineering system | [Development OS](docs/development/README.md) |
+| Understand Product/Development synchronization | [Dual OS architecture](docs/architecture/dual-operating-system.md) |
 | Connect external systems | [Provider adapters](docs/runtime/provider-adapters.md) |
 | Work with the workbook | [Workbook operating model](docs/workbook/operating-model.md) |
 | Evaluate publication readiness | [Public release gates](docs/publication-gates.md) |
