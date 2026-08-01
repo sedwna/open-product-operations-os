@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="210" viewBox="0 0 1200 210" role="img" aria-labelledby="title desc">
+  <title id="title">Open Product Operations OS product flow</title>
+  <desc id="desc">Six connected stages from signal through evidence-backed release.</desc>
+  <style>
+    .label{font:700 16px system-ui,-apple-system,"Segoe UI",sans-serif;fill:#f4f1e9;text-anchor:middle}.sub{font:500 10px system-ui,-apple-system,"Segoe UI",sans-serif;fill:#98a9b7;text-anchor:middle;letter-spacing:.12em}.line{fill:none;stroke:#50647b;stroke-width:3;stroke-dasharray:7 9;animation:move 8s linear infinite}.node{transform-box:fill-box;transform-origin:center;animation:pulse 6s ease-in-out infinite}.n2{animation-delay:1s}.n3{animation-delay:2s}.n4{animation-delay:3s}.n5{animation-delay:4s}.n6{animation-delay:5s}@keyframes move{to{stroke-dashoffset:-128}}@keyframes pulse{0%,72%,100%{transform:scale(1)}82%{transform:scale(1.12)}}@media(prefers-reduced-motion:reduce){.line,.node{animation:none}}
+  </style>
+  <rect width="1200" height="210" rx="28" fill="#15273f"/>
+  <path class="line" d="M120 92 H1080"/>
+  <g class="node n1"><circle cx="120" cy="92" r="34" fill="#f26b4f"/><circle cx="120" cy="92" r="13" fill="#f4f1e9"/></g>
+  <g class="node n2"><circle cx="312" cy="92" r="34" fill="#67b99a"/><path d="M300 92h24M312 80v24" stroke="#15273f" stroke-width="5" stroke-linecap="round"/></g>
+  <g class="node n3"><circle cx="504" cy="92" r="34" fill="#4c82c3"/><path d="m489 94 10 10 22-25" fill="none" stroke="#f4f1e9" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/></g>
+  <g class="node n4"><circle cx="696" cy="92" r="34" fill="#e1a64a"/><path d="M681 83 671 92l10 9M711 83l10 9-10 9M704 76l-16 32" fill="none" stroke="#15273f" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></g>
+  <g class="node n5"><circle cx="888" cy="92" r="34" fill="#67b99a"/><path d="M888 72 907 80v15c0 13-9 21-19 25-10-4-19-12-19-25V80Z" fill="none" stroke="#15273f" stroke-width="4"/><path d="m879 94 7 7 13-16" fill="none" stroke="#15273f" stroke-width="4" stroke-linecap="round"/></g>
+  <g class="node n6"><circle cx="1080" cy="92" r="34" fill="#f26b4f"/><path d="M1069 103c-7-14 1-30 17-36 6 16 0 31-14 38m0 0-9 9m18-12 9 1 2-9" fill="none" stroke="#f4f1e9" stroke-width="4" stroke-linecap="round" stroke-linejoin="round"/></g>
+  <text class="label" x="120" y="155">Signal</text><text class="sub" x="120" y="175">INTAKE</text>
+  <text class="label" x="312" y="155">Discovery</text><text class="sub" x="312" y="175">CONTEXT</text>
+  <text class="label" x="504" y="155">Decision</text><text class="sub" x="504" y="175">AUTHORITY</text>
+  <text class="label" x="696" y="155">Delivery</text><text class="sub" x="696" y="175">BUILD</text>
+  <text class="label" x="888" y="155">Evidence</text><text class="sub" x="888" y="175">VERIFY</text>
+  <text class="label" x="1080" y="155">Release</text><text class="sub" x="1080" y="175">READINESS</text>
+</svg>

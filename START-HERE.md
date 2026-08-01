@@ -1,110 +1,133 @@
+<div align="center">
+
 # Start here
 
-This document is the entry point for a new product owner or a new LLM host.
+### Launch an evidence-backed product operating model without replaying chat history.
 
-## The operating model
+**5 inputs · 13 role boundaries · 23 workbook tabs · 1 reconstructable product trail**
 
-The system uses three layers:
+[Create a project](#1-create-the-project) · [Run the first cycle](#3-run-the-first-cycle) ·
+[Open the dashboard](#4-open-the-control-tower) · [Connect development](#development-integration)
 
-1. **Product specialists** author meaning: discovery, topology, issues, delivery contracts,
-   validation plans, QA results, and readiness.
-2. **The control plane** converts events into owned tasks, resolves dependencies, and produces one
-   consolidated report.
-3. **Independent controls** verify that claimed outputs, evidence, workbook state, and live state
-   agree.
+</div>
 
-Specialists do not coordinate through private chat messages. The task board and versioned
-artifacts are the coordination bus.
+---
 
-## A product starts with five inputs
+## Before you begin
 
-Prepare:
+Bring five product-level answers. You can refine them later without weakening the operating model.
 
-```text
-Product name
-Product vision
-Target users and roles
-Deployment environments
-Development adapter
-```
+| Input | A useful first answer |
+| --- | --- |
+| **Product name** | The stable name used in project records |
+| **Vision** | The outcome this system should help users achieve |
+| **Target users** | The primary people and roles affected by decisions |
+| **Environments** | Local, test, staging, production, or your bounded equivalents |
+| **Development adapter** | The engineering agent, team, or disabled placeholder receiving approved work |
 
-Optional inputs include an existing application, issue tracker, spreadsheet, design system,
+Optional integrations include an existing application, issue tracker, spreadsheet, design system,
 analytics source, and release process.
 
-## Bootstrap sequence
+> [!IMPORTANT]
+> Do not add credentials, private URLs, customer data, production payloads, or secret values to the
+> project configuration. Adapters reference named runtime aliases instead.
 
-The included initializer performs this sequence:
+## The operating model in one picture
 
-```text
-1. Validate lexical and resolved target paths before each write
-2. Create project placeholders from the canonical catalog
-3. Generate all 13 role packages with distinct default actor assignments
-4. Generate governance ownership routing and communication contracts
-5. Generate the task board and first owned task
-6. Generate all 23 workbook tabs
-7. Generate disabled Git spreadsheet and development adapter placeholders
-8. Copy the public schemas into the project
-9. Create the first draft discovery event idea and discovery record
-10. Leave validation as an explicit read-only command
-11. Generate disabled runtime adapter contracts and public runtime schemas
+```mermaid
+flowchart TD
+    A[Raw idea / finding / incident] --> B[Normalized intake]
+    B --> C[Discovery + decision brief]
+    C --> D{Human product decision}
+    D -- approved --> E[Impact + delivery contract]
+    D -- rejected / deferred --> Z[Durable disposition]
+    E --> F[Validation design]
+    F --> G[Development role RB-13]
+    G --> H[QA execution + evidence]
+    H --> I[Controlled operational write]
+    I --> J[Independent verification]
+    J --> K{Release gates complete?}
+    K -- yes --> L[Readiness + release]
+    K -- no --> M[Corrective owned task]
 ```
 
-From the repository root, preview and create a project with:
+Product specialists author meaning. The control plane routes work. Independent controls verify
+claims. The task board and versioned artifacts—not private chat—are the coordination bus.
+
+## 1. Create the project
+
+Node.js 20 or newer is required. From this repository:
 
 ```text
+# Preview first
 node ./src/cli.js init ./my-product --dry-run
+
+# Create the project
 node ./src/cli.js init ./my-product
+```
+
+The initializer validates lexical and resolved paths, generates canonical role and workbook
+contracts, creates the first owned task, and leaves every external adapter disabled.
+
+## 2. Validate the foundation
+
+```text
 node ./src/cli.js validate ./my-product
 ```
 
-After bootstrap, generate the local setup interface and inspect one control-plane cycle:
+A valid result confirms the bounded project structure, role separation, routing references, task
+identities, protected fields, generated files, and whole-tree secret scan.
+
+## 3. Run the first cycle
+
+Create a small JSON intake file:
+
+```json
+{
+  "type": "new_idea",
+  "title": "Let users choose their weekly summary day",
+  "description": "Workspace coordinators need control over when the summary arrives.",
+  "source": "synthetic discovery note",
+  "priority": "P2"
+}
+```
+
+Then record it and inspect the scheduler plan:
 
 ```text
-node ./src/cli.js setup ./my-product --apply
+node ./src/cli.js intake ./my-product --file ./idea.json --apply
 node ./src/cli.js operate ./my-product
-node ./src/cli.js dashboard ./my-product --apply
 ```
 
-No runtime command invokes an external provider by default. Read
-[the runtime guide](docs/runtime/README.md) before enabling an adapter.
-
-Regenerate only the workbook templates with:
+If the plan is correct, execute one bounded cycle:
 
 ```text
-node ./src/cli.js generate-workbook ./my-product
+node ./src/cli.js operate ./my-product --apply
 ```
 
-The initializer is available now, but the package remains a foundation release. The packaged
-`templates/config/operating-model.yaml` catalog is canonical; generated project configuration may
-assign actors and product context and may add bounded extension tabs, but it cannot remove or
-redefine the canonical 13 roles, 23 tabs, protected fields, or separation controls.
+## 4. Open the control tower
 
-## The first event
-
-A raw idea does not become a development ticket immediately.
+The most useful first view is the local, read-only interactive dashboard:
 
 ```text
-Idea
-→ structured discovery note
-→ decision brief
-→ explicit human decision
-→ impact analysis
-→ product topology and journey updates
-→ issue or delivery contract
-→ validation design
-→ development handoff
-→ QA execution and evidence
-→ controlled operational update
-→ independent verification
-→ human acceptance when required
-→ readiness and release
+node ./src/cli.js dashboard ./my-product --serve
 ```
 
-Steps that are not applicable must be recorded as such; they must not simply disappear.
+It brings tasks, decisions, intake, risks, evidence coverage, release gates, and role activity into
+one RTL workspace. Nothing is mutated in this mode.
+
+When the configured human owner is ready to record intake or an attributed decision:
+
+```text
+node ./src/cli.js dashboard ./my-product --serve --apply
+```
+
+The server binds only to the loopback interface. Mutations require the active local session token;
+the dashboard never enables development execution or external providers implicitly.
 
 ## Human authority
 
-A human decision is required for:
+The product owner keeps authority over:
 
 - product direction and priority;
 - risk acceptance;
@@ -112,19 +135,18 @@ A human decision is required for:
 - credentials and sensitive access;
 - destructive or irreversible actions;
 - governance and role-lifecycle changes;
-- final human acceptance where the product behavior is user-visible.
+- final acceptance of user-visible behavior.
 
 Everything else should be automated or prepared as an exact, reviewable artifact.
 
 ## Development integration
 
-The core system treats development as an adapter. A development agent or engineering team receives:
+The development role receives:
 
 ```text
 approved delivery contract
 acceptance criteria
-dependencies
-evidence
+dependencies and evidence
 validation recipe
 write boundary
 expected completion signal
@@ -135,22 +157,40 @@ It returns:
 ```text
 implementation reference
 verification evidence
-deployment or environment state
+environment or deployment state
 known risks
-updated development-owned fields
+development-owned status
 ```
 
-Product Operations roles do not invent development completion or write development-owned notes.
+```text
+# Plan the handoff
+node ./src/cli.js development ./my-product --task TASK-RB-13-...
 
-## Completion rule
+# Execute only after the adapter and task are explicitly eligible
+node ./src/cli.js development ./my-product --task TASK-RB-13-... --apply
+```
 
-An event closes only when:
+Use a constrained worker, container, or virtual machine for untrusted coding agents. The command
+adapter itself is not an operating-system sandbox.
 
-- all required outputs have owners;
-- canonical artifacts are committed;
-- operational state is updated through an authorized writer;
-- live state is read back completely;
-- evidence is reproducible;
-- an independent role has verified the claims;
-- required human acceptance is recorded;
-- downstream readiness is recalculated.
+## Completion means more than “done”
+
+An event closes only when every required output has an owner, canonical artifacts are committed,
+operational state was updated through an authorized writer, live state was read back, evidence is
+reproducible, an independent role verified the claims, required human acceptance is recorded, and
+downstream readiness is recalculated.
+
+> [!NOTE]
+> A control-plane receipt is an execution signal. It is not a release verdict and cannot replace
+> independent verification.
+
+## Where to go next
+
+| Goal | Guide |
+| --- | --- |
+| Operate approvals, intake, metrics, and dashboard | [Runtime guide](docs/runtime/README.md) |
+| Understand the system boundaries | [Architecture overview](docs/architecture/overview.md) |
+| Study the complete event lifecycle | [Event lifecycle](docs/architecture/event-lifecycle.md) |
+| Connect an engineering agent | [Development runner](docs/runtime/development-runner.md) |
+| Enable a provider safely | [Provider adapters](docs/runtime/provider-adapters.md) |
+| Walk through a finished fictional chain | [PineDesk example](examples/fictional-saas/README.md) |

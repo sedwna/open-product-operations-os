@@ -12,6 +12,7 @@ import { decideApproval, loadApprovals } from "../src/runtime/approvals.js";
 import { configureProject } from "../src/runtime/configure.js";
 import { runControlTower } from "../src/runtime/control-tower.js";
 import { buildDashboard, exportMetrics } from "../src/runtime/dashboard.js";
+import { startDashboardServer } from "../src/runtime/dashboard-server.js";
 import { runDevelopmentTask } from "../src/runtime/development-runner.js";
 import { ingestRecord } from "../src/runtime/intake.js";
 import { migrateProject } from "../src/runtime/migrations.js";
@@ -220,9 +221,59 @@ test("dashboard, metrics, and setup wizard generate local RTL artifacts", async 
   await buildDashboard(target, { dryRun: false });
   await exportMetrics(target, { dryRun: false });
   await buildSetupWizard(target, { dryRun: false });
-  assert.match(await fs.readFile(path.join(target, ".product-ops/runtime/dashboard.html"), "utf8"), /dir="rtl"/);
+  const dashboard = await fs.readFile(path.join(target, ".product-ops/runtime/dashboard.html"), "utf8");
+  assert.match(dashboard, /dir="rtl"/);
+  assert.match(dashboard, /برج کنترل/);
+  assert.match(dashboard, /window\.__PRODUCT_OPS__/);
+  assert.match(dashboard, /prefers-reduced-motion/);
   assert.equal((await readJson(path.join(target, ".product-ops/runtime/metrics.json"))).totals.tasks, 1);
   assert.match(await fs.readFile(path.join(target, ".product-ops/setup.html"), "utf8"), /product-ops-answers\.json/);
+});
+
+test("interactive dashboard server is loopback-only, read-only by default, and CSRF guarded", async (t) => {
+  const { target } = await initializedProject(t, "dashboard-server-product");
+  const readOnly = await startDashboardServer(target, { port: 0 });
+  t.after(() => readOnly.close());
+  assert.match(readOnly.url, /^http:\/\/127\.0\.0\.1:/);
+  assert.deepEqual(await (await fetch(`${readOnly.url}/health`)).json(), { status: "ok", writable: false });
+  const snapshotResponse = await fetch(`${readOnly.url}/api/snapshot`);
+  assert.equal(snapshotResponse.status, 200);
+  assert.equal((await snapshotResponse.json()).project.name, "Dashboard Server Product");
+  const refused = await fetch(`${readOnly.url}/api/intake`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-product-ops-csrf": "wrong" },
+    body: JSON.stringify({ type: "new_idea", title: "No write", description: "Read only", source: "test" })
+  });
+  assert.equal(refused.status, 403);
+  await assert.rejects(
+    startDashboardServer(target, { port: 0, host: "0.0.0.0" }),
+    /loopback/
+  );
+});
+
+test("writable dashboard records bounded intake with its local authorization token", async (t) => {
+  const { target } = await initializedProject(t, "dashboard-write-product");
+  const dashboard = await startDashboardServer(target, { port: 0, writable: true });
+  t.after(() => dashboard.close());
+  const page = await fetch(dashboard.url);
+  assert.match(page.headers.get("content-security-policy"), /script-src 'self' 'nonce-[A-Za-z0-9_-]+'/);
+  assert.doesNotMatch(page.headers.get("content-security-policy"), /script-src[^;]*unsafe-inline/);
+  const html = await page.text();
+  const token = html.match(/name="product-ops-csrf" content="([^"]+)"/)[1];
+  const response = await fetch(`${dashboard.url}/api/intake`, {
+    method: "POST",
+    headers: { "content-type": "application/json", "x-product-ops-csrf": token },
+    body: JSON.stringify({
+      type: "new_idea",
+      title: "Synthetic dashboard idea",
+      description: "A bounded synthetic dashboard write.",
+      source: "local test",
+      priority: "P2"
+    })
+  });
+  assert.equal(response.status, 201);
+  assert.equal((await response.json()).record.status, "proposed");
+  assert.equal((await readJson(path.join(target, ".product-ops/runtime/intake.json"))).records.length, 1);
 });
 
 test("configuration answers refresh scaffold while preserving operational rows", async (t) => {

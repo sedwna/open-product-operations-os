@@ -5,6 +5,7 @@ import { decideApproval, loadApprovals } from "../runtime/approvals.js";
 import { configureProject } from "../runtime/configure.js";
 import { runControlTower } from "../runtime/control-tower.js";
 import { buildDashboard, exportMetrics } from "../runtime/dashboard.js";
+import { startDashboardServer } from "../runtime/dashboard-server.js";
 import { runDevelopmentTask } from "../runtime/development-runner.js";
 import { ingestRecord } from "../runtime/intake.js";
 import { migrateProject } from "../runtime/migrations.js";
@@ -84,6 +85,18 @@ export async function providerSyncCommand(target, options) {
 }
 
 export async function dashboardCommand(target, options) {
+  if (options.serve) {
+    if (options.output) throw new Error("dashboard --serve does not accept --output.");
+    const result = await startDashboardServer(target, {
+      port: options.port ?? 4173,
+      writable: options.apply === true
+    });
+    return [
+      `Dashboard available at ${result.url}.`,
+      `Mode: ${result.writable ? "writable" : "read-only"}. Press Ctrl+C to stop.`
+    ];
+  }
+  if (options.port) throw new Error("dashboard --port requires --serve.");
   const result = await buildDashboard(target, { dryRun: runtimeDryRun(options), output: options.output });
   return [`${result.dryRun ? "Planned" : "Generated"} dashboard at ${result.output} (${result.bytes} bytes).`];
 }

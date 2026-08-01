@@ -1,28 +1,182 @@
-# Open Product Operations OS
+<div align="center">
+  <img src=".github/assets/og.png" alt="Open Product Operations OS — from signal to evidence-backed release" width="100%">
 
-Open Product Operations OS is a vendor-neutral operating system for running product work from an
-unstructured idea to an evidence-backed release.
+  <br>
 
-It combines:
+  <a href="https://github.com/sedwna/open-product-operations-os/actions/workflows/ci.yml"><img alt="CI" src="https://img.shields.io/github/actions/workflow/status/sedwna/open-product-operations-os/ci.yml?branch=main&style=flat-square&label=quality"></a>
+  <img alt="Node 20 or newer" src="https://img.shields.io/badge/node-20%2B-67b99a?style=flat-square">
+  <img alt="Apache 2.0" src="https://img.shields.io/badge/license-Apache--2.0-4c82c3?style=flat-square">
+  <img alt="Dry run first" src="https://img.shields.io/badge/writes-dry--run%20first-f26b4f?style=flat-square">
+  <img alt="RTL dashboard" src="https://img.shields.io/badge/dashboard-interactive%20RTL-e1a64a?style=flat-square">
 
-- role-based AI agents with explicit authority boundaries;
-- a Git-backed task board and durable handoffs;
-- a product workbook that links discovery, decisions, delivery, validation, QA, and readiness;
-- controlled-write contracts and a provider-free local CSV reference adapter;
-- reproducible QA evidence and human acceptance;
-- independent quality control before closure;
-- an adapter boundary for one or more development agents.
-- an executable, dry-run-first control plane, human approval queue, unified intake, metrics, and a
-  local RTL dashboard;
-- disabled-by-default external provider adapters and a command-based development runner.
+  <h3>A vendor-neutral operating system for evidence-backed product work.</h3>
 
-The system is designed so that a human product owner receives one consolidated report instead of
-coordinating every specialist directly.
+  <p>
+    Turn an unstructured signal into an owned decision, governed delivery,<br>
+    reproducible evidence, independent verification, and a release you can explain.
+  </p>
 
-## Status
+  <p>
+    <a href="START-HERE.md"><strong>Start here</strong></a>
+    ·
+    <a href="docs/runtime/README.md">Run the control tower</a>
+    ·
+    <a href="docs/architecture/overview.md">Explore the architecture</a>
+    ·
+    <a href="examples/fictional-saas/README.md">See the PineDesk example</a>
+  </p>
+</div>
 
-This repository is being extracted from a production-tested operating model. The first public
-release is not yet declared stable.
+---
+
+## Product work should leave a trail
+
+Most product systems hold fragments: an idea in chat, a decision in a meeting, a ticket in a
+tracker, test evidence in a folder, and release status somewhere else. Open Product Operations OS
+connects those fragments into one reconstructable chain.
+
+<p align="center">
+  <img src="docs/assets/flow-loop.svg" alt="Animated product workflow from signal to release" width="100%">
+</p>
+
+```text
+source event
+→ owned task
+→ canonical artifact
+→ operational state
+→ read-back proof
+→ independent verification
+→ human disposition when required
+```
+
+If a link is missing, the system does not silently call the work complete.
+
+## What you get
+
+| Surface | What it gives you |
+| --- | --- |
+| **Interactive control tower** | A calm RTL workspace for tasks, decisions, intake, risks, evidence, roles, and release readiness |
+| **13 role boundaries** | Explicit authority for discovery, decisions, delivery, QA, writes, verification, release, and development |
+| **23-tab product workbook** | Portable CSV records spanning idea, discovery, issues, tickets, evidence, QA, lineage, and readiness |
+| **Executable workflow** | A dry-run-first scheduler that routes intake, resolves dependencies, opens human gates, and dispatches eligible work |
+| **Development adapter** | A bounded handoff to an engineering agent or team through the dedicated development role |
+| **Controlled writers** | Precondition checks, authorization, complete read-back, replay protection, and guarded rollback |
+| **Provider boundary** | Disabled-by-default adapters for GitHub, GitLab, Jira, Linear, Azure DevOps, Sheets, Graph, and Airtable |
+| **Portable proof** | Cross-host package checks, clean-clone/archive tests, SBOM generation, license checks, and secret scans |
+
+## The control tower
+
+The dashboard is generated from the same durable records that drive the control plane. It is not a
+second source of truth.
+
+- **Snapshot mode** creates a self-contained RTL report you can open locally.
+- **Live mode** serves the current project on a loopback address with search, filters, detail
+  drawers, intake, human decisions, and control-plane execution.
+- **Read-only is the default.** Live writes require an explicit authorization flag and a
+  per-session local request token.
+- **Hosted demos stay fictional.** Real project data and write authority never leave the local
+  project boundary.
+
+```text
+# Create a safe snapshot
+product-ops dashboard ./my-product --apply
+
+# Open the interactive panel without write authority
+product-ops dashboard ./my-product --serve
+
+# Allow attributed local intake, decisions, and bounded control-plane cycles
+product-ops dashboard ./my-product --serve --apply
+```
+
+Read the [runtime guide](docs/runtime/README.md) for the complete operating and safety contract.
+
+## Five-minute start
+
+**Requirement:** Node.js 20 or newer.
+
+```text
+# Preview every generated file
+node ./src/cli.js init ./my-product --dry-run
+
+# Create and validate the project
+node ./src/cli.js init ./my-product
+node ./src/cli.js validate ./my-product
+
+# Open the product-owner dashboard
+node ./src/cli.js dashboard ./my-product --serve
+```
+
+Then add a safe local intake and inspect the next workflow cycle:
+
+```text
+node ./src/cli.js intake ./my-product --file ./idea.json --apply
+node ./src/cli.js operate ./my-product
+```
+
+> [!TIP]
+> Runtime commands plan by default. Add the explicit apply flag only after reviewing the planned
+> action and confirming the correct project boundary.
+
+## Architecture at a glance
+
+```mermaid
+flowchart LR
+    A[Signal] --> B[Control plane]
+    B --> C[Owned task chain]
+    C --> D{Human gate?}
+    D -- Yes --> E[Attributed decision]
+    D -- No --> F[Role execution]
+    E --> F
+    F --> G[Development / QA / writer]
+    G --> H[Evidence + read-back]
+    H --> I[Independent verification]
+    I --> J[Readiness + release]
+```
+
+The repository is intentionally layered:
+
+```text
+src/          executable initializer, validator, runtime, adapters, and dashboard
+templates/    canonical governance, role, workbook, workflow, and release contracts
+schemas/      published validation contracts
+examples/     fictional end-to-end evidence
+docs/         architecture, security, migration, runtime, and verification guidance
+site/         public read-only dashboard demonstration with fictional data
+```
+
+## Development integration
+
+Development is a governed adapter, not an implicit side effect. The development role receives an
+approved delivery contract, acceptance criteria, dependencies, evidence, a validation recipe, and
+a write boundary. It returns an implementation reference, test evidence, environment state, known
+risks, and development-owned status.
+
+```text
+product-ops development ./my-product --task TASK-RB-13-...        # plan
+product-ops development ./my-product --task TASK-RB-13-... --apply # execute
+```
+
+An arbitrary coding command is **not** an operating-system sandbox. Run untrusted development
+agents inside a separately constrained worker, container, or virtual machine.
+
+## Safety is part of the product
+
+| Invariant | Enforcement |
+| --- | --- |
+| Producers cannot certify their own material claims | Distinct producer and verifier actors are validated |
+| Humans retain product and risk authority | Durable, attributed approval records gate protected transitions |
+| External writes are exceptional | Adapters are disabled by default and runtime actions plan first |
+| A write is not trusted until read back | Controlled writers require complete post-write comparison |
+| Credentials stay outside Git | Whole-tree secret scanning and named environment-variable references |
+| History remains explainable | Operational records preserve lineage; corrections supersede rather than erase |
+
+See the [security model](docs/security-model.md) and
+[public release gates](docs/publication-gates.md) before enabling real providers.
+
+<details>
+<summary><strong>Current maturity and verification evidence</strong></summary>
+
+<br>
 
 ```text
 Current stage: Foundation
@@ -30,167 +184,60 @@ Public API stability: Not guaranteed
 Recommended use: Evaluation and pilot projects
 ```
 
-## License
+The project is not yet declared stable. The latest runtime branch introduced the interactive
+control plane and extended the suite beyond the original foundation proof. Historical producer and
+independent-verifier records remain under [`docs/verification/`](docs/verification/) and follow the
+documented [supersession policy](docs/verification/evidence-supersession-and-redaction.md).
 
-Open Product Operations OS is available under the
-[Apache License 2.0](LICENSE).
+The package path validates syntax, clean-room identity, tests, portable hashes, a real packed
+artifact, clean clone/archive behavior, dependencies, licenses, and an SBOM. Passing automation is
+producer evidence; it is not a substitute for an independent release verdict.
 
-## Start here
+</details>
 
-Read:
+<details>
+<summary><strong>What the initializer generates</strong></summary>
 
-1. [START-HERE.md](START-HERE.md)
-2. [Architecture overview](docs/architecture/overview.md)
-3. [Event lifecycle](docs/architecture/event-lifecycle.md)
-4. [Security model](docs/security-model.md)
-5. [Public release gates](docs/publication-gates.md)
-6. [Clean-room extraction policy](docs/migration/clean-room-extraction.md)
-7. [Safe local CSV writer](docs/adapters/local-csv-writer.md)
+<br>
 
-## Quick start
-
-Node.js 20 or newer is required. From this repository:
-
-```text
-node ./src/cli.js init ./my-product --dry-run
-node ./src/cli.js init ./my-product
-node ./src/cli.js validate ./my-product
-```
-
-To regenerate only the workbook templates:
-
-```text
-node ./src/cli.js generate-workbook ./my-product
-```
-
-To exercise the runtime safely:
-
-```text
-node ./src/cli.js intake ./my-product --file ./intake.json
-node ./src/cli.js operate ./my-product
-node ./src/cli.js dashboard ./my-product --apply
-node ./src/cli.js metrics ./my-product --apply
-```
-
-Runtime commands default to dry-run. An operation mutates local runtime state or calls an enabled
-adapter only when `--apply` is supplied. Development execution additionally requires an eligible
-RB-13 task and an explicitly enabled command adapter:
-
-```text
-node ./src/cli.js development ./my-product --task TASK-RB-13-20260801-001
-node ./src/cli.js development ./my-product --task TASK-RB-13-20260801-001 --apply
-```
-
-See the [runtime guide](docs/runtime/README.md), [development runner](docs/runtime/development-runner.md),
-and [provider adapters](docs/runtime/provider-adapters.md).
-
-The dry run reports the planned writes without changing the target directory. Existing generated
-files are preserved unless the explicit `--force` option is used. `--force` refreshes replaceable
-scaffold, but it never deletes workbook or taskboard rows. Operational CSVs retain their rows;
-newly required columns are appended with blank values. A valid existing
-`product-ops.config.json`, including human authority, actor assignments, environments, and bounded
-workbook extensions, is retained byte-for-byte. If authority assignments change, migrate affected
-operational rows explicitly before expecting validation to pass. Changed scaffold is created in a
-same-directory stage and atomically renamed into place; existing hard-linked destinations are
-rejected, and a hard-link swap cannot cause the initializer to truncate the linked peer.
-
-## Core promise
-
-Every material product claim should be reconstructable as:
-
-```text
-source event
-→ owned task
-→ canonical artifact
-→ live operational state
-→ read-back proof
-→ independent verification
-→ human disposition when required
-```
-
-If one link is missing, the work is not silently treated as complete.
-
-## What this repository generates
-
-The current initializer creates:
-
-- the canonical 13-role registry and 13 complete role packages with distinct default actor IDs;
+- the canonical 13-role registry with distinct default actors;
 - governance, ownership, routing, and communication contracts;
-- a shared task board with its first owned task;
+- a shared task board and first owned discovery task;
 - the canonical 23-tab CSV workbook;
-- a first draft discovery event, idea, and discovery record;
-- status guides and lifecycle definitions;
-- idea, decision, discovery, issue, ticket, validation, QA, and release templates;
-- local copies of the published schemas for manifests, evidence, handoffs, and controlled writes;
-- a project initializer and integrity validator;
-- disabled Git and development-agent adapter contracts;
-- a disabled local-CSV adapter plus an executable safe local writer library requiring dry-run plan
-  approval, owner authorization, preconditions, complete read-back, zero-write replay, and
-  hash-guarded rollback. Existing hard-linked targets are rejected; the current target is atomically
-  quarantined and verified before a same-filesystem no-overwrite install. A concurrently recreated
-  source or target is preserved with no success receipt, target and receipt are revalidated as one
-  final state, failed post-install transactions recover without overwriting concurrent bytes, and
-  retained cleanup artifacts are reported through fail-closed recovery paths. Replay requires a
-  matching validated receipt and backup and refuses retained recovery artifacts;
-- a synthetic example project.
+- local public schemas for handoffs, evidence, approvals, development results, providers, and
+  controlled writes;
+- disabled Git, spreadsheet, development, and external-provider adapters;
+- runtime stores for intake, approvals, receipts, metrics, and dashboard output;
+- a configuration wizard, migration contract, and synthetic example project.
 
-`templates/config/operating-model.yaml` is the single role, tab, record-key, field-authority,
-environment, and scan-policy catalog used by the initializer. Each generated project receives a byte-for-byte
-snapshot at `config/operating-model.yaml`. Validation scans the whole bounded target tree,
-including binary inventory and UTF-8/Latin-1/UTF-16LE/UTF-16BE canaries, except for the explicit
-`.git` and `node_modules` directory exclusions. Workbook validation checks row widths, record-key
-uniqueness, canonical identities and placeholder rows, canonical statuses, actor/role assignments,
-mandatory RB-12 verification, producer/verifier separation, environments, and protected values.
+Forced regeneration preserves valid configuration and operational rows. It rejects path escapes,
+links, unsafe replacement races, and ambiguous recovery states.
 
-The project is still a foundation release: generated formats and public interfaces may change
-before the first stable release.
+</details>
 
-The latest completed two-host producer proof applies to exact implementation revision `fd5b620`.
-Windows and isolated Docker Linux each passed 56 tests, exercised the command installed from the
-real npm tarball, generated 13 roles and 23 tabs, and preserved configuration plus an operational
-row through forced re-initialization. See the
-[56-test installed-package proof](docs/verification/2026-07-30-final-fd5b620-two-host-proof.md).
-The later BRD-0-141
-[producer correction status](docs/verification/2026-07-30-brd-0-141-producer-correction-status.md)
-is historical: independent BRD-0-149 verification found that its Windows clean-clone portability
-claim did not hold at exact head `e224428`. The current
-[BRD-0-149 producer correction status](docs/verification/2026-07-30-brd-0-149-producer-correction-status.md)
-records the first response. A subsequently reproduced cross-host package SHA mismatch is preserved
-and superseded by the
-[BRD-0-149 cross-host follow-up status](docs/verification/2026-07-30-brd-0-149-cross-host-follow-up-status.md),
-which still requires fresh exact-head proof and independent verification.
-Earlier proofs remain available under the documented
-[supersession and redaction policy](docs/verification/evidence-supersession-and-redaction.md);
-none is an independent release verdict.
+## Reading map
 
-Portable example evidence canonicalizes text before reproducing declared SHA-256 hashes and byte
-lengths. A checkout may use the platform EOL selected by Git and `.gitattributes`. Before packing,
-the source guard compares the canonical Git blob, the bytes Git's current checkout filter is
-expected to produce, and the actual worktree bytes. Only an exact, EOL-only Git checkout conversion
-may be normalized temporarily to the canonical blob for packing; postpack restores the original
-checkout bytes. Content tamper, stale attributes-transition drift, concurrent packing, and unsafe
-restore remain fail-closed. Every CI host compares the real npm tarball to the same
-repository-controlled SHA-256. The npm payload includes the portability contract, tests, and a
-publishable shrinkwrap lock; `npm run packed:check` installs the actual tarball, exercises its
-installed command through dry-run/init/validate/force, and executes its checks. A separate
-clean-clone regression performs a plain clone that inherits `core.autocrlf=true`, proves the clone
-is clean and CRLF-backed, compares its package byte-for-byte with a no-Git CRLF archive, then runs
-the actual installed packed-artifact path. A clean-archive regression proves source restoration,
-and an exact Docker regression compares a real Windows autocrlf clone with a clean Linux archive.
+| If you want to… | Read… |
+| --- | --- |
+| Bootstrap a product | [Start here](START-HERE.md) |
+| Understand ownership and separation | [Architecture overview](docs/architecture/overview.md) |
+| Follow one event end to end | [Event lifecycle](docs/architecture/event-lifecycle.md) |
+| Operate the dashboard and agents | [Runtime guide](docs/runtime/README.md) |
+| Connect a development agent | [Development runner](docs/runtime/development-runner.md) |
+| Connect external systems | [Provider adapters](docs/runtime/provider-adapters.md) |
+| Work with the workbook | [Workbook operating model](docs/workbook/operating-model.md) |
+| Evaluate publication readiness | [Public release gates](docs/publication-gates.md) |
 
-## Non-goals
+## Contributing
 
-- It is not an autonomous production deployer.
-- It does not grant agents authority over real money, credentials, destructive actions, or product
-  decisions.
-- It does not replace a development repository or its release governance.
-- It does not allow a producer to certify its own work.
-- It does not sandbox an arbitrary external command at the operating-system boundary. Command
-  adapters must run in an independently constrained worker or container when untrusted code is
-  involved.
+The repository welcomes evidence-backed improvements. Begin with
+[`CONTRIBUTING.md`](CONTRIBUTING.md), keep changes inside an explicit role and write boundary, and
+never represent producer evidence as independent certification.
 
-## Project origin
-
-The public package is generalized from a real multi-agent Product Operations system. Product-
-specific names, IDs, credentials, URLs, screenshots, customer data, and proprietary decisions are
-excluded from this repository.
+<div align="center">
+  <br>
+  <strong>Open Product Operations OS</strong><br>
+  Clear ownership · durable decisions · reproducible evidence
+  <br><br>
+  Apache License 2.0
+</div>
