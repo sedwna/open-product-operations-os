@@ -15,9 +15,6 @@
       },
       "bin": {
         "product-ops": "src/cli.js",
-        "product-ops-bootstrap": "launchers/common/bootstrap-node.sh",
-        "product-ops-launch-linux": "launchers/linux/open-product-os.sh",
-        "product-ops-launch-macos": "launchers/macos/OpenProductOS.command",
         "product-ops-onboard": "scripts/one-click-onboarding.mjs"
       },
       "engines": {
