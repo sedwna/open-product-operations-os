@@ -128,6 +128,19 @@ try {
   );
   const windowsHash = sha256(windowsTarball);
   const linuxHash = sha256(linuxTarball);
+  if (windowsHash !== linuxHash) {
+    const windowsListing = archiveListing(path.join(windowsPack, packageArchiveName));
+    const linuxListing = archiveListing(path.join(linuxPack, packageArchiveName));
+    const listingDifferences = [];
+    const lineCount = Math.max(windowsListing.length, linuxListing.length);
+    for (let index = 0; index < lineCount && listingDifferences.length < 30; index += 1) {
+      if (windowsListing[index] !== linuxListing[index]) {
+        listingDifferences.push(`windows: ${windowsListing[index] ?? "<missing>"}`);
+        listingDifferences.push(`linux:   ${linuxListing[index] ?? "<missing>"}`);
+      }
+    }
+    console.error(`Cross-host tar header differences:\n${listingDifferences.join("\n")}`);
+  }
   assert.equal(
     windowsHash,
     linuxHash,
@@ -190,4 +203,8 @@ function run(command, args, cwd, env = process.env) {
 
 function sha256(value) {
   return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function archiveListing(filename) {
+  return run("tar", ["-tvzf", filename], root).stdout.trim().split(/\r?\n/);
 }
