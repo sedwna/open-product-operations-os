@@ -126,12 +126,14 @@ try {
   const linuxTarball = await fs.readFile(
     path.join(linuxPack, packageArchiveName)
   );
-  assert.deepEqual(
-    windowsTarball,
-    linuxTarball,
+  const windowsHash = sha256(windowsTarball);
+  const linuxHash = sha256(linuxTarball);
+  assert.equal(
+    windowsHash,
+    linuxHash,
     "real Windows autocrlf clone and clean Linux Git archive must produce identical tarball bytes"
   );
-  const actualHash = sha256(windowsTarball);
+  const actualHash = windowsHash;
   const [expectedHash] = (
     await fs.readFile(
       path.join(root, ".github", "pack-artifact.sha256"),
