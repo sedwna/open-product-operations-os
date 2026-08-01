@@ -21,7 +21,9 @@ authority.
 ## Local site development
 
 ```text
-npm install
+npm ci
+npm audit --audit-level=high
+npm run lint
 npm run dev
 npm run build
 npm test
