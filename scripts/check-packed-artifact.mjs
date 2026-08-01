@@ -11,6 +11,7 @@ const temporary = await fs.mkdtemp(path.join(os.tmpdir(), "product-ops-pack-"));
 const extracted = path.join(temporary, "extracted");
 const consumer = path.join(temporary, "consumer");
 const generatedTarget = path.join(temporary, "installed-cli-project");
+const generatedDevelopmentTarget = path.join(temporary, "installed-development-project");
 await fs.mkdir(extracted);
 await fs.mkdir(consumer);
 
@@ -86,6 +87,13 @@ try {
     process.platform === "win32" ? "product-ops.cmd" : "product-ops"
   );
   await fs.access(cliShim);
+  const developmentCliShim = path.join(
+    consumer,
+    "node_modules",
+    ".bin",
+    process.platform === "win32" ? "development-os.cmd" : "development-os"
+  );
+  await fs.access(developmentCliShim);
   const help = runInstalledCli(["--help"], consumer);
   assert.match(help.stdout, /Product Operations OS CLI/);
   assert.match(help.stdout, /product-ops init <target>/);
@@ -104,8 +112,14 @@ try {
   runInstalledCli(["validate", generatedTarget], consumer);
   runInstalledCli(["init", generatedTarget, "--force"], consumer);
   runInstalledCli(["validate", generatedTarget], consumer);
+  const developmentHelp = runInstalledDevelopmentCli(["--help"], consumer);
+  assert.match(developmentHelp.stdout, /Open Development Operations OS CLI/);
+  runInstalledDevelopmentCli(["init", generatedDevelopmentTarget], consumer);
+  runInstalledDevelopmentCli(["validate", generatedDevelopmentTarget], consumer);
+  runInstalledDevelopmentCli(["dashboard", generatedDevelopmentTarget, "--apply"], consumer);
+  runInstalledDevelopmentCli(["status", generatedDevelopmentTarget], consumer);
   console.log(
-    `Packed artifact ${tarballSha256} matched the cross-host hash; its installed CLI completed dry-run/init/validate/runtime-dashboard/metrics/force, and tests, smoke, portability, license, and SBOM checks passed.`
+    `Packed artifact ${tarballSha256} matched the cross-host hash; its installed Product and Development CLIs completed initialization, validation, dashboards, runtime operations, and package checks.`
   );
 } finally {
   await fs.rm(temporary, { recursive: true, force: true });
@@ -119,6 +133,13 @@ function runNpm(args, cwd, options) {
 function runInstalledCli(args, cwd) {
   return runNpm(
     ["exec", "--offline", "--", "product-ops", ...args],
+    cwd
+  );
+}
+
+function runInstalledDevelopmentCli(args, cwd) {
+  return runNpm(
+    ["exec", "--offline", "--", "development-os", ...args],
     cwd
   );
 }

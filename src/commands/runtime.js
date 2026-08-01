@@ -7,6 +7,7 @@ import { runControlTower } from "../runtime/control-tower.js";
 import { buildDashboard, exportMetrics } from "../runtime/dashboard.js";
 import { startDashboardServer } from "../runtime/dashboard-server.js";
 import { runDevelopmentTask } from "../runtime/development-runner.js";
+import { exportDevelopmentRequest, importEngineeringResult } from "../development/product-sync.js";
 import { ingestRecord } from "../runtime/intake.js";
 import { migrateProject } from "../runtime/migrations.js";
 import { buildSetupWizard } from "../runtime/setup-wizard.js";
@@ -32,6 +33,28 @@ export async function developmentCommand(target, options) {
     `${result.dryRun ? "Planned" : "Completed"} development execution for ${options.task}.`,
     `Input: ${result.inputFile}.`,
     `Result: ${result.resultFile}.`
+  ];
+}
+
+export async function developmentExportCommand(target, options) {
+  if (!options.task || !options.file) throw new Error("development-export requires --task <task-id> and --file <request-json>.");
+  const config = await validatedConfig(target);
+  const result = await exportDevelopmentRequest(target, config, options.task, options.file, { dryRun: runtimeDryRun(options) });
+  return [
+    `${result.dryRun ? "Planned" : "Stored"} development request ${result.request.requestId}.`,
+    `Source digest: ${result.digest}.`,
+    `Receipt: ${result.receipt.receiptId}.`
+  ];
+}
+
+export async function developmentImportCommand(target, options) {
+  if (!options.file) throw new Error("development-import requires --file <result-json>.");
+  await validatedConfig(target);
+  const result = await importEngineeringResult(target, options.file, { dryRun: runtimeDryRun(options) });
+  return [
+    `${result.dryRun ? "Validated" : "Stored"} engineering result ${result.result.resultId}.`,
+    `Result digest: ${result.digest}.`,
+    `Receipt: ${result.receipt.receiptId}.`
   ];
 }
 

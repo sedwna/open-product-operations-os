@@ -53,6 +53,8 @@ test("npm package inspection is isolated and contains promised public files", as
     "scripts/one-click-onboarding.mjs",
     "scripts/sbom-contract.mjs",
     "src/cli.js",
+    "src/development-cli.js",
+    "src/development/planner.js",
     "src/local-writer.js",
     "src/runtime/control-tower.js",
     "src/runtime/development-runner.js",
@@ -62,6 +64,12 @@ test("npm package inspection is isolated and contains promised public files", as
     "src/adapters/provider-sync.js",
     "schemas/approval-store.schema.json",
     "schemas/development-run.schema.json",
+    "schemas/development-os-config.schema.json",
+    "schemas/development-request.schema.json",
+    "schemas/development-sync-receipt.schema.json",
+    "schemas/engineering-plan.schema.json",
+    "schemas/engineering-result.schema.json",
+    "schemas/engineering-workstream-run.schema.json",
     "schemas/provider-catalog.schema.json",
     "schemas/provider-outbox-item.schema.json",
     "schemas/workbook-write-manifest.schema.json",
@@ -71,6 +79,7 @@ test("npm package inspection is isolated and contains promised public files", as
     "examples/fictional-saas/lineage.csv",
     "docs/security-model.md",
     "docs/runtime/README.md",
+    "docs/development/README.md",
     "launchers/windows/OpenProductOS.exe",
     "launchers/windows/OpenProductOS.ps1",
     "launchers/macos/OpenProductOS.command",
@@ -89,6 +98,7 @@ test("npm package inspection is isolated and contains promised public files", as
   assert.match(packageJson.homepage, /open-product-operations-os/);
   assert.match(packageJson.bugs.url, /open-product-operations-os/);
   assert.equal(packageJson.publishConfig.provenance, true);
+  assert.equal(packageJson.bin["development-os"], "./src/development-cli.js");
   const shrinkwrap = JSON.parse(
     await fs.readFile(path.join(packageSource, "npm-shrinkwrap.json"), "utf8")
   );

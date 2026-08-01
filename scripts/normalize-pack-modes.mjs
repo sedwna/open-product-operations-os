@@ -9,7 +9,8 @@ const targets = [
   "launchers/common/bootstrap-node.sh",
   "launchers/linux/open-product-os.sh",
   "launchers/macos/OpenProductOS.command",
-  "scripts/one-click-onboarding.mjs"
+  "scripts/one-click-onboarding.mjs",
+  "src/development-cli.js"
 ];
 const operation = process.argv[2];
 

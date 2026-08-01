@@ -1,7 +1,7 @@
 {
   "name": "open-product-operations-os",
-  "version": "0.4.0",
-  "description": "Vendor-neutral Product Operations OS initializer, control plane, adapters, and validator",
+  "version": "0.5.0",
+  "description": "Vendor-neutral Product and Development Operations OS with governed contract synchronization",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",
@@ -19,6 +19,7 @@
   },
   "type": "module",
   "bin": {
+    "development-os": "./src/development-cli.js",
     "product-ops": "./src/cli.js",
     "product-ops-onboard": "./scripts/one-click-onboarding.mjs"
   },
