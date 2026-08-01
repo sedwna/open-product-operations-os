@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const launcherRoot = path.join(root, "launchers");
+const packedArtifact = process.env.PRODUCT_OPS_PACKED_ARTIFACT === "1";
 const required = [
   "common/bootstrap-node.sh",
   "linux/open-product-os.sh",
@@ -57,7 +58,15 @@ if (process.platform === "win32") {
     const result = spawnSync("sh", ["-n", filename], { encoding: "utf8" });
     assert.equal(result.status, 0, result.stderr || `${relative} must parse`);
     const mode = (await fs.stat(filename)).mode & 0o777;
-    assert.ok((mode & 0o111) !== 0, `${relative} must be executable`);
+    if (packedArtifact) {
+      assert.equal(
+        mode & 0o111,
+        0,
+        `${relative} must use the canonical packed-artifact mode`
+      );
+    } else {
+      assert.ok((mode & 0o111) !== 0, `${relative} must be executable`);
+    }
   }
 }
 
