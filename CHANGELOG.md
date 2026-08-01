@@ -4,6 +4,14 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+- Replaced the static dashboard with a responsive interactive RTL product-owner control tower for
+  tasks, approvals, intake, risks, evidence, readiness, roles, search, filters, details, theme, and
+  local export.
+- Added a loopback-only live dashboard server with read-only defaults, explicit write enablement,
+  per-session request authorization, bounded JSON input, and safe intake, decision, and control-
+  plane actions.
+- Added a fictional public dashboard demonstration, bespoke social-preview artwork, animated
+  workflow graphic, and a complete readability-focused redesign of the primary project guides.
 - Added an executable control-plane cycle that evaluates dependencies, human gates, intake routes,
   and development dispatches while retaining dry-run defaults.
 - Added the RB-13 command-agent runner with structured inputs, schema-validated returns, optional

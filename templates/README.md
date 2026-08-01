@@ -1,47 +1,55 @@
+<div align="center">
+
 # Starter kit templates
 
-This directory is a vendor-neutral starter kit for operating product work from idea to release.
-Copy the directory into a new private project, customize the catalog, and keep the resulting
-artifacts in that project's canonical repository.
+### The canonical, vendor-neutral contracts behind every generated project.
 
-## Start here
+</div>
 
-1. Customize `config/operating-model.yaml`. It is the only authority for identifiers, statuses,
-   role keys, and workbook tab names.
-2. Confirm the 13 role boundaries in `governance/role-registry.yaml`. People, teams, or agents may
-   fill them. Generated projects require distinct active actor IDs so producer, writer,
-   development, and independent-verifier boundaries cannot collapse into one actor.
-3. Tailor `governance/ownership-matrix.csv` and `governance/routing-rules.yaml`.
-4. Import the CSV files under `workbook/tabs/` into one Google Sheets workbook by following
-   `workbook/README.md`.
-5. Create the first event with `operations/event-impact-analysis.md`, then open owner-scoped task
-   cards.
+---
 
-## Invariants
+## Build order
 
-- Never put credentials, tokens, cookies, private keys, personal data, private URLs, or
-  production-derived fixtures in a template, commit, handoff, manifest, receipt, or evidence file.
-- Store only an approved secret-store alias when an execution needs runtime access.
-- A producer never certifies its own work. Use an independent verifier from a different role
-  boundary and, for material claims, a different actor.
-- A commit or pull request is not evidence that a live write, deployment, test, or human
-  observation happened.
-- A result exists only for an executed run. Record blocked, aborted, or not-run work honestly.
-- Every cross-system write is bounded by an authorized manifest and a complete read-back receipt.
-- Historical records are append-only. Corrections supersede; they do not erase.
+| Step | Surface | Outcome |
+| ---: | --- | --- |
+| **01** | [`config/operating-model.yaml`](config/operating-model.yaml) | Confirm identifiers, statuses, roles, workbook tabs, and protected fields |
+| **02** | [`governance/`](governance/) | Assign actors without collapsing producer, writer, development, and verifier boundaries |
+| **03** | [`operations/`](operations/) | Create the first event, impact analysis, task chain, and durable handoffs |
+| **04** | [`product/`](product/) | Capture ideas, discovery, decisions, issues, and delivery contracts |
+| **05** | [`validation/`](validation/) | Fix expected behavior before execution and retain reproducible evidence |
+| **06** | [`writers/`](writers/) | Apply bounded operational updates with complete read-back |
+| **07** | [`release/`](release/) | Calculate readiness and coordinate human authorization and release |
+
+Import the portable CSV files under [`workbook/tabs/`](workbook/tabs/) by following the
+[workbook guide](workbook/README.md).
+
+## Non-negotiable invariants
+
+> [!CAUTION]
+> Never place credentials, tokens, cookies, private keys, personal data, private URLs,
+> production-derived fixtures, or raw provider responses in a template or committed record.
+
+- Store only an approved secret-store alias when execution needs runtime access.
+- A producer never certifies its own material claim.
+- A commit or pull request is not evidence that a live write, deployment, test, or observation
+  happened.
+- A result exists only for an executed run; blocked and not-run states remain explicit.
+- Every cross-system write requires an authorized manifest and complete read-back receipt.
+- Historical records are append-only; corrections supersede rather than erase.
 
 ## Directory map
 
-| Directory | Purpose |
-| --- | --- |
-| `config/` | Central identifier, status, role, and tab catalog |
-| `governance/` | Authority, role, routing, ownership, and communication contracts |
-| `operations/` | Event, taskboard, task card, and handoff templates |
-| `product/` | Idea, discovery, decision, issue, and delivery contracts |
-| `validation/` | Plans, scenarios, runs, results, evidence, observation, and independent QC |
-| `release/` | Readiness and release records |
-| `writers/` | Controlled-write authorization and read-back receipts |
-| `workbook/` | Google-Sheets-ready tab templates and setup maps |
+```text
+config/       central operating-model authority
+governance/   roles, ownership, routing, and communication
+operations/   events, task board, task cards, and handoffs
+product/      ideas, discovery, decisions, issues, and delivery
+validation/   plans, scenarios, runs, results, evidence, and QC
+writers/      controlled-write authorization and receipts
+release/      readiness assessment and release records
+workbook/     portable tab templates and setup maps
+adapters/     disabled provider and execution boundaries
+```
 
-Generated projects also receive a disabled provider catalog and runtime schemas. Runtime state is
-kept under `.product-ops/runtime/`; it never replaces the canonical workbook or Git history.
+Generated projects also receive public schemas and runtime stores under `.product-ops/runtime/`.
+Runtime state improves visibility; it never replaces the canonical workbook or Git history.

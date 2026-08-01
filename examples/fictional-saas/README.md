@@ -1,15 +1,35 @@
-# Fictional SaaS example: PineDesk weekly digest
+<div align="center">
 
-PineDesk is a fictional, local-only SaaS used to demonstrate lineage. It has no real customers,
-credentials, providers, URLs, or proprietary content.
+# PineDesk weekly digest
 
-## Change
+### A fictional, local-only story showing one complete evidence-backed product change.
 
-A workspace coordinator wants to choose whether a synthetic weekly summary appears on Monday or
-Friday. Discovery supports the need, a human approves Friday as an option, a bounded delivery
-contract is returned with a fictional implementation reference, a local demo run passes, a human
-accepts the visible behavior, a controlled workbook write is read back and replayed with zero
-writes, independent QC passes, and a local-demo release closes.
+`no customers` · `no credentials` · `no providers` · `no production writes`
+
+</div>
+
+---
+
+## The change
+
+A workspace coordinator wants to choose whether a synthetic weekly summary arrives on Monday or
+Friday. The example follows that request through discovery, an explicit human decision, a bounded
+delivery contract, fictional implementation, local validation, human observation, controlled
+workbook write, independent QC, readiness, and local-demo release.
+
+```mermaid
+flowchart LR
+    A[Idea] --> B[Discovery]
+    B --> C[Decision]
+    C --> D[Issue]
+    D --> E[Delivery ticket]
+    E --> F[Validation]
+    F --> G[Development]
+    G --> H[QA + evidence]
+    H --> I[Controlled write]
+    I --> J[Independent QC]
+    J --> K[Readiness + release]
+```
 
 ## Reconstructable lineage
 
@@ -33,25 +53,29 @@ IDEA-20260729-001
 → RELEASE-001
 ```
 
-`lineage.csv` normalizes each edge for direct import into the workbook's `Lineage` tab. The
-records under `records/` show the same chain as readable contracts.
+[`lineage.csv`](lineage.csv) normalizes every edge for workbook import. The files under
+[`records/`](records/) present the same chain as readable contracts.
 
-## Actors and independence
+## Independence by design
 
-- `actor.idea` prepares the decision.
-- `human.owner` makes product and visible-behavior dispositions.
-- `actor.validation` fixes expected outcomes.
-- `actor.qa` executes and reports the run.
-- `actor.writer` applies the authorized workbook manifest.
-- `actor.verifier` independently reproduces the result and writer receipt.
+| Actor | Responsibility |
+| --- | --- |
+| `actor.idea` | Prepare the product decision |
+| `human.owner` | Decide product direction and visible-behavior acceptance |
+| `actor.validation` | Fix expected outcomes before execution |
+| `actor.qa` | Execute the run and report factual observations |
+| `actor.writer` | Apply the authorized workbook manifest |
+| `actor.verifier` | Reproduce the result and writer receipt independently |
 
-No producer verifies the same claim, and no secret value appears anywhere in the example.
+No producer verifies the same claim. The independent verifier's own task is reviewed through the
+separate risk-and-logic role so verification never becomes self-certification.
 
-## Runtime fixtures
+## Safe runtime fixtures
 
-The `runtime/` directory contains safe local inputs for the normalized intake command,
-configuration wizard import, and provider-outbox dry run. Provider execution remains disabled and
-the repository coordinates only fictional `example/example` data.
+The [`runtime/`](runtime/) directory contains inputs for normalized intake, setup configuration,
+and provider-outbox dry runs. Provider execution remains disabled and references only fictional
+`example/example` data.
 
-The taskboard includes the RB-13 development-adapter task between validation design and QA. The
-RB-12 verification task is reviewed by RB-08 so the verifier does not certify its own output.
+> [!NOTE]
+> This example demonstrates record lineage and control behavior. Its local evidence says nothing
+> about production performance, real users, or a live deployment.

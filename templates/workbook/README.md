@@ -1,51 +1,51 @@
-# Google-Sheets-ready workbook template set
+<div align="center">
 
-The `tabs/` directory is one workbook expressed as portable UTF-8 CSV files. It covers the complete
-idea-to-release lineage and keeps categorical values in the `Config`, `Status Catalog`, and `Role
-Registry` tabs.
+# Product workbook
 
-## Create the workbook
+### A portable, auditable workbook from idea to release—expressed as UTF-8 CSV.
 
-1. Create a blank Google Sheets workbook in an approved workspace.
-2. Import each CSV in `tabs/` as a new sheet, in the order listed in `workbook-map.csv`.
-3. Rename each sheet to the exact `sheet_name` from `workbook-map.csv`.
-4. Freeze row 1, enable filters, wrap long text, and keep identifier columns formatted as plain
-   text.
-5. Apply dropdowns from `data-validation-map.csv`. Do not type alternate lifecycle values directly
-   into operational tabs.
-6. Protect `Config`, `Status Catalog`, `Role Registry`, and ownership columns so changes follow
-   governance.
-7. Keep dates as ISO-8601 values and use UTC unless the central catalog specifies another timezone.
+</div>
 
-## Usability baseline
+---
 
-- Use a dark, high-contrast header fill and one consistent body font.
-- Keep gridlines hidden only if explicit row/section borders preserve readability.
-- Left-align text, center compact status/role fields, and format timestamps as
-  `yyyy-mm-dd hh:mm:ss`.
-- Add conditional formatting for blocked/failed/mismatch states and for high/critical risk.
-- Do not merge cells in data tabs.
-- Keep formulas visible and auditable if you add rollups. Never hardcode status logic in a formula;
-  reference the catalog tabs.
+## Import checklist
+
+- [ ] Create a blank workbook in an approved workspace.
+- [ ] Import every file under [`tabs/`](tabs/) in [`workbook-map.csv`](workbook-map.csv) order.
+- [ ] Rename each sheet to its exact mapped name.
+- [ ] Freeze row 1, enable filters, wrap long text, and format identifiers as plain text.
+- [ ] Apply dropdowns from [`data-validation-map.csv`](data-validation-map.csv).
+- [ ] Protect configuration, status, role, ownership, and other governed columns.
+- [ ] Keep timestamps in ISO-8601 and use UTC unless the central catalog says otherwise.
+
+## Visual baseline
+
+| Area | Recommendation |
+| --- | --- |
+| Header | One dark, high-contrast fill with readable white text |
+| Body | One consistent sans-serif font; wrap long evidence and outcome fields |
+| Status | Conditional formatting for blocked, failed, mismatch, and critical risk |
+| Alignment | Left-align narrative text; center compact status and role values |
+| Timestamps | Display as `yyyy-mm-dd hh:mm:ss` without losing the underlying ISO value |
+| Structure | Avoid merged cells; preserve explicit rows and columns for auditability |
+
+Formulas should remain visible and reference catalog tabs. Never hide lifecycle logic inside
+hard-coded formulas.
 
 ## Data rules
 
-- One row is one immutable logical record. Corrections append a new record and use `supersedes_id`.
-- Multi-value relationships use pipe-separated IDs only for convenience; the `Lineage` tab is the
-  normalized relationship authority.
-- Writer tabs contain aliases and references, never secret values.
-- A validation result row requires an actual run row.
-- Producer and verifier actor IDs must differ for the same material claim.
-- A live-write claim requires a writer receipt with complete read-back.
+1. One row represents one immutable logical record.
+2. Corrections append a new row and use `supersedes_id`.
+3. Multi-value convenience fields use pipe-separated IDs; the Lineage tab remains the normalized
+   relationship authority.
+4. Writer tabs contain aliases and references, never secrets.
+5. A validation result requires an executed run.
+6. Producer and verifier actors differ for the same material claim.
+7. A live-write claim requires a receipt with complete read-back.
 
-## Integrity checks
+## Integrity gates
 
-- Every non-empty identifier matches the pattern in `Config`.
-- Every categorical value exists in `Status Catalog`.
-- Every role key exists in `Role Registry`.
-- Every foreign ID resolves to a record or is explicitly marked external.
-- Every result resolves to a run, scenario, plan, ticket, and evidence manifest.
-- Every material producer row resolves to an independent QC row.
-- Every release resolves to readiness, authorization, validation, and rollback records.
-- No cell contains a credential, token, cookie, key, private URL, personal data, or production
-  payload.
+Every identifier matches the central pattern; every status exists in the catalog; every role key
+resolves; every result links to its run, scenario, plan, ticket, and evidence; material producer
+claims resolve to independent QC; releases resolve to readiness, authorization, validation, and
+rollback; and no cell contains credential or production-secret material.

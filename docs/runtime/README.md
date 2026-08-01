@@ -1,50 +1,120 @@
-# Runtime guide
+<div align="center">
 
-The runtime turns the repository's durable operating contracts into a dry-run-first execution
-cycle. It does not replace Git canonical state, semantic ownership, independent verification, or
-human authority.
+# Runtime & control tower
 
-## Components
+### One bounded cycle at a time—from intake to evidence-backed readiness.
 
-| Component | Responsibility |
-| --- | --- |
-| Control plane | Select ready tasks, check dependencies and human gates, route intake, and prepare dispatches |
-| Approval store | Persist attributed approval requests and dispositions |
-| Intake | Normalize and deduplicate ideas, findings, incidents, feedback, and requests |
-| Development runner | Dispatch an eligible RB-13 task to an explicitly configured command agent |
-| Provider outbox | Plan and apply bounded HTTPS operations through disabled-by-default providers |
-| Dashboard and metrics | Produce local operational visibility without a hosted service |
-| Setup and migration | Configure a generated project and upgrade its operating-model contract safely |
+[Dashboard](#interactive-dashboard) · [Typical cycle](#a-typical-cycle) ·
+[Safety contract](#safety-contract) · [Development](development-runner.md) ·
+[Providers](provider-adapters.md)
 
-Runtime state is written under `.product-ops/runtime/`. Migration backups are written under
-`.product-ops/migrations/`. Both locations remain inside the bounded project tree and are scanned
-by `product-ops validate`.
+</div>
 
-## Safety contract
+---
 
-- Runtime mutation and provider commands default to dry-run.
-- `--apply` is explicit and cannot be combined with `--dry-run`.
-- Human gates require a durable disposition attributed to the configured human authority actor.
-- Provider credentials are read only from the configured environment variable and never written
-  to plans or receipts.
-- Provider receipts retain response hashes and status codes, not response bodies.
-- A receipt is persisted before a completed outbox item is acknowledged, preventing an already
-  evidenced request from being silently replayed after a partial local failure.
-- External destructive HTTP methods are refused.
+The runtime turns durable operating contracts into an executable, dry-run-first cycle. It does not
+replace Git canonical state, semantic ownership, independent verification, or human authority.
 
-## Typical cycle
+## Runtime map
+
+| Component | Responsibility | Default posture |
+| --- | --- | --- |
+| **Control plane** | Select ready work, resolve dependencies, route intake, and prepare dispatches | Plan only |
+| **Approval center** | Persist context, options, recommendation, risks, actor, rationale, and disposition | Human-owned |
+| **Unified intake** | Normalize and deduplicate ideas, findings, incidents, feedback, and requests | Plan only |
+| **Development runner** | Dispatch one eligible development task through a command contract | Disabled |
+| **Provider outbox** | Apply bounded HTTPS operations and retain projected, hash-backed receipts | Disabled |
+| **Control tower** | Show tasks, decisions, intake, risks, roles, evidence, and readiness | Read-only |
+| **Setup and migration** | Configure a generated project and upgrade the operating contract safely | Plan only |
+
+Runtime state is stored under:
 
 ```text
+.product-ops/runtime/
+```
+
+Migration snapshots remain under:
+
+```text
+.product-ops/migrations/
+```
+
+Both locations stay inside the bounded project tree and are scanned by validation.
+
+## Interactive dashboard
+
+### Read-only live mode
+
+```text
+product-ops dashboard ./product --serve
+```
+
+Use search, task filters, detailed task and decision drawers, role activity, risk review, evidence
+coverage, and release gates without changing project state.
+
+### Explicitly writable live mode
+
+```text
+product-ops dashboard ./product --serve --apply
+```
+
+This additionally permits:
+
+- normalized intake creation;
+- attributed approval or rejection by the configured human authority actor;
+- one bounded control-plane scheduling cycle.
+
+It does **not** enable development execution, provider calls, deployment, or destructive actions.
+The server accepts local loopback traffic only, rejects oversized or non-JSON writes, and requires a
+random authorization token from the active dashboard session.
+
+### Portable snapshot
+
+```text
+product-ops dashboard ./product --apply
+```
+
+This writes a self-contained HTML snapshot. Its filters, search, navigation, theme, export, and
+detail views work locally, but mutation controls remain disabled because no runtime server is
+connected.
+
+## A typical cycle
+
+```text
+# 1. Normalize a signal
 product-ops intake ./product --file ./idea.json --apply
+
+# 2. Inspect, then execute one scheduler cycle
 product-ops operate ./product
 product-ops operate ./product --apply
+
+# 3. Review any durable human gate
 product-ops approvals ./product
-product-ops decide ./product --request APR-... --decision approved --actor human-product-owner --apply
+product-ops decide ./product --request APR-... --decision approved \
+  --actor human-product-owner --rationale "Approved for the bounded pilot." --apply
+
+# 4. Dispatch eligible development work
 product-ops development ./product --task TASK-RB-13-... --apply
+
+# 5. Refresh visibility and validate the project
 product-ops metrics ./product --apply
 product-ops dashboard ./product --apply
 product-ops validate ./product
 ```
 
-The control-plane receipt is an execution signal. It is not an independent verification verdict
-and does not change development-owned or human-owned workbook fields.
+## Safety contract
+
+1. Runtime mutation and provider commands plan by default.
+2. Explicit execution cannot be combined with dry-run mode.
+3. Human gates require a durable disposition attributed to the configured authority actor.
+4. Credentials are read only from named environment variables and never written to plans or
+   receipts.
+5. Provider receipts keep response hashes and allowlisted fields—not raw response bodies.
+6. A receipt is persisted before a completed outbox item is acknowledged, preventing silent replay
+   after partial local failure.
+7. External destructive HTTP methods are refused.
+8. A command adapter handling untrusted code must run inside a separately constrained environment.
+
+> [!WARNING]
+> A successful runtime receipt proves only that the bounded operation ran. It does not prove a
+> product claim, a live deployment, or independent acceptance.

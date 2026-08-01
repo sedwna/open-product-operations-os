@@ -35,6 +35,7 @@ Usage:
   product-ops provider-queue <target> --file <json-file> [--apply]
   product-ops provider-sync <target> --provider <name> [--apply]
   product-ops dashboard <target> [--output <file>] [--apply]
+  product-ops dashboard <target> --serve [--port <number>] [--apply]
   product-ops metrics <target> [--output <file>] [--apply]
   product-ops setup <target> [--output <file>] [--apply]
   product-ops configure <target> --answers <json-file> [--apply]
@@ -51,7 +52,7 @@ Commands:
   decide             Record an attributed human approval or rejection.
   provider-queue     Queue a bounded external-provider operation.
   provider-sync      Plan or apply queued provider operations.
-  dashboard          Generate a local right-to-left operations dashboard.
+  dashboard          Generate or serve the local interactive right-to-left dashboard.
   metrics            Export operational metrics.
   setup              Generate the local configuration wizard.
   configure          Apply a validated wizard answer file.
@@ -129,8 +130,8 @@ function parseArguments(argv) {
   const options = {};
   const providedOptions = new Set();
   const positional = [];
-  const flags = new Set(["--dry-run", "--force", "--apply", "--execute-development"]);
-  const values = new Set(["--task", "--file", "--request", "--decision", "--actor", "--rationale", "--provider", "--output", "--answers"]);
+  const flags = new Set(["--dry-run", "--force", "--apply", "--execute-development", "--serve"]);
+  const values = new Set(["--task", "--file", "--request", "--decision", "--actor", "--rationale", "--provider", "--output", "--answers", "--port"]);
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (flags.has(argument)) {
@@ -154,6 +155,7 @@ function parseArguments(argv) {
   options.force ??= false;
   options.apply ??= false;
   options.executeDevelopment ??= false;
+  options.serve ??= false;
   if (options.apply && options.dryRun) throw new Error("--apply and --dry-run cannot be used together.");
   if (positional.length !== 2) {
     throw new Error("Expected a command and target. Use --help for usage.");
@@ -185,7 +187,7 @@ function validateCommandOptions(command, provided) {
     decide: [...runtime, "request", "decision", "actor", "rationale"],
     "provider-queue": [...runtime, "file"],
     "provider-sync": [...runtime, "provider"],
-    dashboard: [...runtime, "output"],
+    dashboard: [...runtime, "output", "serve", "port"],
     metrics: [...runtime, "output"],
     setup: [...runtime, "output"],
     configure: [...runtime, "answers"],
