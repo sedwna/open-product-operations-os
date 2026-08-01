@@ -60,3 +60,18 @@ live propagation failure
 The Control Tower assigns the blocker to the role that can remove it. It does not relabel a missing
 precondition as a product defect, and it does not accept a generic "blocked" verdict without a
 reproduction path and next owner.
+
+## Executable cycle
+
+`product-ops operate` implements one bounded scheduling cycle. It can materialize a configured
+event workflow from a normalized intake record, append owner-scoped tasks, promote a backlog task
+only after all declared dependencies are `done`, create durable human approval requests, and
+dispatch eligible work. The operation defaults to dry-run.
+
+RB-13 execution remains separately gated by `--execute-development`, an enabled development
+adapter, complete dependencies, and any required human disposition. A successful development
+return moves the task to `in_review`; it does not mark the implementation independently verified or
+release-ready.
+
+An RB-12 task is reviewed by the configured `verificationOfVerifierRole` so the independent-control
+role never certifies its own control output.

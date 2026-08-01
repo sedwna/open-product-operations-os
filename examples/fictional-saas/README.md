@@ -46,3 +46,12 @@ records under `records/` show the same chain as readable contracts.
 - `actor.verifier` independently reproduces the result and writer receipt.
 
 No producer verifies the same claim, and no secret value appears anywhere in the example.
+
+## Runtime fixtures
+
+The `runtime/` directory contains safe local inputs for the normalized intake command,
+configuration wizard import, and provider-outbox dry run. Provider execution remains disabled and
+the repository coordinates only fictional `example/example` data.
+
+The taskboard includes the RB-13 development-adapter task between validation design and QA. The
+RB-12 verification task is reviewed by RB-08 so the verifier does not certify its own output.

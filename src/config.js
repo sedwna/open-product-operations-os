@@ -163,6 +163,28 @@ export function validateConfigRelationships(config) {
         `Route "${route.event}" output "${route.output}" has no ownership assignment.`
       );
     }
+    for (const [index, step] of (route.steps ?? []).entries()) {
+      if (!agentIds.has(step.role)) {
+        errors.push(`Route "${route.event}" step ${index + 1} references unknown role "${step.role}".`);
+      }
+      if (
+        step.humanGate &&
+        !(canonicalCatalog.human_gates ?? []).includes(step.humanGate)
+      ) {
+        errors.push(`Route "${route.event}" step ${index + 1} references unknown human gate "${step.humanGate}".`);
+      }
+    }
+  }
+
+  const verifierOfVerifier = config.separation.verificationOfVerifierRole ?? "RB-08";
+  if (!agentIds.has(verifierOfVerifier)) {
+    errors.push(`verificationOfVerifierRole references unknown role "${verifierOfVerifier}".`);
+  }
+  if (
+    actorByRole.get(verifierOfVerifier) ===
+    actorByRole.get(config.separation.independentVerifierRole)
+  ) {
+    errors.push("verificationOfVerifierRole must use a different actor from the independent verifier.");
   }
 
   const sheetsByKey = new Map(config.workbook.sheets.map((sheet) => [sheet.key, sheet]));

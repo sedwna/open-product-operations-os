@@ -51,7 +51,12 @@ try {
     "scripts/check-sbom.mjs",
     "scripts/process-runner.mjs",
     "scripts/sbom-contract.mjs",
-    "templates/config/operating-model.yaml"
+    "templates/config/operating-model.yaml",
+    "src/runtime/control-tower.js",
+    "src/runtime/development-runner.js",
+    "src/adapters/provider-sync.js",
+    "schemas/provider-outbox-item.schema.json",
+    "docs/runtime/README.md"
   ]) {
     await fs.access(path.join(packageRoot, required));
   }
@@ -86,10 +91,15 @@ try {
   assert.equal(await exists(generatedTarget), false);
   runInstalledCli(["init", generatedTarget], consumer);
   runInstalledCli(["validate", generatedTarget], consumer);
+  runInstalledCli(["operate", generatedTarget], consumer);
+  runInstalledCli(["setup", generatedTarget, "--apply"], consumer);
+  runInstalledCli(["metrics", generatedTarget, "--apply"], consumer);
+  runInstalledCli(["dashboard", generatedTarget, "--apply"], consumer);
+  runInstalledCli(["validate", generatedTarget], consumer);
   runInstalledCli(["init", generatedTarget, "--force"], consumer);
   runInstalledCli(["validate", generatedTarget], consumer);
   console.log(
-    `Packed artifact ${tarballSha256} matched the cross-host hash; its installed CLI completed dry-run/init/validate/force, and tests, smoke, portability, license, and SBOM checks passed.`
+    `Packed artifact ${tarballSha256} matched the cross-host hash; its installed CLI completed dry-run/init/validate/runtime-dashboard/metrics/force, and tests, smoke, portability, license, and SBOM checks passed.`
   );
 } finally {
   await fs.rm(temporary, { recursive: true, force: true });

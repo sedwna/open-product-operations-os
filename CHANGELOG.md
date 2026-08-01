@@ -4,6 +4,18 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+- Added an executable control-plane cycle that evaluates dependencies, human gates, intake routes,
+  and development dispatches while retaining dry-run defaults.
+- Added the RB-13 command-agent runner with structured inputs, schema-validated returns, optional
+  clean Git branch preparation, bounded environment forwarding, and durable local receipts.
+- Added durable human approvals, normalized deduplicating intake, operational metrics, a local RTL
+  dashboard, and a browser-based configuration-answer wizard.
+- Added disabled-by-default provider catalogs and a generic HTTPS outbox for GitHub, GitLab, Jira,
+  Linear, Azure DevOps, Google Sheets, Microsoft Graph workbooks, and Airtable.
+- Added model-version migrations with pre-migration snapshots and forced-scaffold refresh that
+  preserves operational CSV rows.
+- Added five runtime schemas and end-to-end runtime regression coverage.
+
 - Made npm packing deterministic from ordinary `core.autocrlf=true` clean clones while preserving
   fail-closed content-tamper and attributes-transition detection.
 - Canonicalized promised text payloads from no-Git source archives with fail-closed concurrent

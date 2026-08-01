@@ -1,0 +1,8 @@
+{
+  "type": "new_idea",
+  "title": "Choose a synthetic weekly summary day",
+  "description": "A fictional workspace coordinator wants to select Monday or Friday in the local demo.",
+  "source": "synthetic local product-owner observation",
+  "targetUser": "fictional workspace coordinator",
+  "priority": "P2"
+}

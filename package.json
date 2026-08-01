@@ -1,7 +1,7 @@
 {
   "name": "open-product-operations-os",
-  "version": "0.1.0",
-  "description": "Vendor-neutral Product Operations OS project initializer and validator",
+  "version": "0.2.0",
+  "description": "Vendor-neutral Product Operations OS initializer, control plane, adapters, and validator",
   "license": "Apache-2.0",
   "repository": {
     "type": "git",

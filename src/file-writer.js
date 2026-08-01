@@ -14,7 +14,11 @@ import {
   toPosixPath
 } from "./paths.js";
 
-export async function planWrites(root, files, { force = false } = {}) {
+export async function planWrites(
+  root,
+  files,
+  { force = false, replaceOperational = false } = {}
+) {
   const operations = [];
   const conflicts = [];
 
@@ -35,6 +39,27 @@ export async function planWrites(root, files, { force = false } = {}) {
       operations.push({ action: "unchanged", relativePath, destination, content });
     } else if (existing !== undefined && !force) {
       conflicts.push(relativePath);
+    } else if (
+      existing !== undefined &&
+      isOperationalCsv(relativePath) &&
+      replaceOperational
+    ) {
+      operations.push({
+        action: "replace",
+        relativePath,
+        destination,
+        content,
+        expectedCurrent: existing
+      });
+    } else if (existing !== undefined && relativePath === "adapters/providers.json") {
+      const merged = mergeProviderCatalog(existing, content, relativePath);
+      operations.push({
+        action: merged === existing ? "preserved" : "merge",
+        relativePath,
+        destination,
+        content: merged,
+        expectedCurrent: existing
+      });
     } else if (existing !== undefined && isOperationalCsv(relativePath)) {
       const merged = mergeCsvScaffold(existing, content, relativePath);
       operations.push({
@@ -621,4 +646,32 @@ function mergeCsvScaffold(existing, desired, relativePath) {
     )
   ];
   return stringifyCsv(mergedRows);
+}
+
+function mergeProviderCatalog(existing, desired, relativePath) {
+  let current;
+  let scaffold;
+  try {
+    current = JSON.parse(existing);
+    scaffold = JSON.parse(desired);
+  } catch (error) {
+    throw new Error(`Cannot safely preserve provider configuration in "${relativePath}": ${error.message}`);
+  }
+  if (!current?.providers || typeof current.providers !== "object" || Array.isArray(current.providers)) {
+    throw new Error(`Cannot safely preserve provider configuration in "${relativePath}" without a providers object.`);
+  }
+  const merged = {
+    ...scaffold,
+    ...current,
+    schemaVersion: scaffold.schemaVersion,
+    defaultDryRun: true,
+    providers: Object.fromEntries(
+      Object.entries({ ...scaffold.providers, ...current.providers }).map(([name, provider]) => [
+        name,
+        { ...(scaffold.providers[name] ?? {}), ...provider }
+      ])
+    )
+  };
+  const content = `${JSON.stringify(merged, null, 2)}\n`;
+  return content === existing ? existing : content;
 }

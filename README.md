@@ -12,6 +12,9 @@ It combines:
 - reproducible QA evidence and human acceptance;
 - independent quality control before closure;
 - an adapter boundary for one or more development agents.
+- an executable, dry-run-first control plane, human approval queue, unified intake, metrics, and a
+  local RTL dashboard;
+- disabled-by-default external provider adapters and a command-based development runner.
 
 The system is designed so that a human product owner receives one consolidated report instead of
 coordinating every specialist directly.
@@ -59,6 +62,27 @@ To regenerate only the workbook templates:
 ```text
 node ./src/cli.js generate-workbook ./my-product
 ```
+
+To exercise the runtime safely:
+
+```text
+node ./src/cli.js intake ./my-product --file ./intake.json
+node ./src/cli.js operate ./my-product
+node ./src/cli.js dashboard ./my-product --apply
+node ./src/cli.js metrics ./my-product --apply
+```
+
+Runtime commands default to dry-run. An operation mutates local runtime state or calls an enabled
+adapter only when `--apply` is supplied. Development execution additionally requires an eligible
+RB-13 task and an explicitly enabled command adapter:
+
+```text
+node ./src/cli.js development ./my-product --task TASK-RB-13-20260801-001
+node ./src/cli.js development ./my-product --task TASK-RB-13-20260801-001 --apply
+```
+
+See the [runtime guide](docs/runtime/README.md), [development runner](docs/runtime/development-runner.md),
+and [provider adapters](docs/runtime/provider-adapters.md).
 
 The dry run reports the planned writes without changing the target directory. Existing generated
 files are preserved unless the explicit `--force` option is used. `--force` refreshes replaceable
@@ -161,6 +185,9 @@ and an exact Docker regression compares a real Windows autocrlf clone with a cle
   decisions.
 - It does not replace a development repository or its release governance.
 - It does not allow a producer to certify its own work.
+- It does not sandbox an arbitrary external command at the operating-system boundary. Command
+  adapters must run in an independently constrained worker or container when untrusted code is
+  involved.
 
 ## Project origin
 

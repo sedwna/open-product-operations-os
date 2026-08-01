@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Product Operations Runtime Receipt",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "runId", "kind", "dryRun", "actions", "createdAt"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "runId": { "type": "string", "minLength": 3 },
+    "kind": { "enum": ["control_plane", "provider_sync", "migration", "configuration"] },
+    "dryRun": { "type": "boolean" },
+    "actions": { "type": "array", "items": { "type": "object" } },
+    "createdAt": { "type": "string", "format": "date-time" }
+  }
+}

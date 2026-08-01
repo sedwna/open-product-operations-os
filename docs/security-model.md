@@ -65,6 +65,18 @@ of guessing that deletion or overwrite is safe. Replay is accepted only with a m
 original preconditions. Rollback is refused if the target changed after the write. The
 implementation does not connect to a provider or production system.
 
+## Runtime adapters
+
+Runtime commands default to dry-run. Provider configurations are disabled by default, accept only
+HTTPS, refuse redirects and destructive HTTP methods, resolve credentials from named environment
+variables, and persist response hashes instead of bodies. Workbook-provider writes additionally
+require an approved plan hash and attributed human authorization.
+
+The RB-13 command runner never invokes a command shell and forwards only a minimal environment plus
+explicitly allowlisted variable names. It rejects obvious credential material in inputs and
+returns. It is not an operating-system sandbox; untrusted coding agents require an independently
+constrained worker, container, or virtual machine.
+
 ## Validation scan boundary
 
 `product-ops validate` inventories the complete bounded target tree, rejects filesystem links,

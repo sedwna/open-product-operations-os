@@ -1,0 +1,12 @@
+{
+  "name": "PineDesk Local Demo",
+  "vision": "Demonstrate an evidence-backed product lifecycle without real providers or customer data.",
+  "targetUsers": [
+    "fictional workspace coordinators"
+  ],
+  "environments": [
+    "local",
+    "test"
+  ],
+  "humanAuthorityActorId": "human-owner"
+}

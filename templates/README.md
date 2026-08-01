@@ -42,3 +42,6 @@ artifacts in that project's canonical repository.
 | `release/` | Readiness and release records |
 | `writers/` | Controlled-write authorization and read-back receipts |
 | `workbook/` | Google-Sheets-ready tab templates and setup maps |
+
+Generated projects also receive a disabled provider catalog and runtime schemas. Runtime state is
+kept under `.product-ops/runtime/`; it never replaces the canonical workbook or Git history.

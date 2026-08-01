@@ -1,5 +1,6 @@
 export const CONFIG_FILE = "product-ops.config.json";
 export const SCHEMA_VERSION = "1.0.0";
+export const OPERATING_MODEL_VERSION = 2;
 
 export const REGISTRY_FILE = "agents/registry.json";
 export const GOVERNANCE_FILE = "governance/governance.json";
@@ -28,3 +29,10 @@ export const TASKBOARD_COLUMNS = [
 ];
 
 export const REQUIRED_ADAPTERS = ["development", "git", "spreadsheet"];
+
+export const RUNTIME_DIRECTORY = ".product-ops/runtime";
+export const APPROVAL_STORE_FILE = `${RUNTIME_DIRECTORY}/approvals.json`;
+export const INTAKE_STORE_FILE = `${RUNTIME_DIRECTORY}/intake.json`;
+export const PROVIDER_OUTBOX_FILE = `${RUNTIME_DIRECTORY}/provider-outbox.json`;
+export const PROVIDER_INBOX_FILE = `${RUNTIME_DIRECTORY}/provider-inbox.json`;
+export const PROVIDER_RECEIPTS_FILE = `${RUNTIME_DIRECTORY}/provider-receipts.json`;
