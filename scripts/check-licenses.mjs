@@ -24,7 +24,7 @@ async function visitNodeModules(directory) {
   }
 
   for (const entry of entries) {
-    if (!entry.isDirectory() || entry.name === ".bin") {
+    if (!entry.isDirectory() || entry.name.startsWith(".")) {
       continue;
     }
     if (entry.name.startsWith("@")) {

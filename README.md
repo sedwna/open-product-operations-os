@@ -17,7 +17,9 @@
   </p>
 
   <p>
-    <a href="START-HERE.md"><strong>Start here</strong></a>
+    <a href="docs/onboarding/one-click.md"><strong>Launch in one click</strong></a>
+    ·
+    <a href="START-HERE.md">Start here</a>
     ·
     <a href="docs/runtime/README.md">Run the control tower</a>
     ·
@@ -90,7 +92,27 @@ product-ops dashboard ./my-product --serve --apply
 
 Read the [runtime guide](docs/runtime/README.md) for the complete operating and safety contract.
 
-## Five-minute start
+## One-click start
+
+Clone the repository, then open the launcher for your platform. The graphical wizard asks for the
+folder names, product definition, and optional first idea; it creates the workspace, validates it,
+and opens the live dashboard.
+
+| Windows | macOS | Linux |
+| --- | --- | --- |
+| Double-click [`OpenProductOS.exe`](launchers/windows/OpenProductOS.exe) | Open [`OpenProductOS.command`](launchers/macos/OpenProductOS.command) | Open [`OpenProductOS.desktop`](launchers/linux/OpenProductOS.desktop) |
+
+No administrator access is required. If Node.js is missing, the launcher downloads a portable
+Node.js 22 runtime from the official distribution and verifies its SHA-256 checksum before use.
+See the [one-click onboarding guide](docs/onboarding/one-click.md) for first-open notes, the safety
+contract, recovery, and distributable bundles.
+
+```text
+# Universal command-line fallback
+npm run onboard
+```
+
+## Five-minute manual start
 
 **Requirement:** Node.js 20 or newer.
 

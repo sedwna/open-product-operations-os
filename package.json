@@ -1,6 +1,6 @@
 {
   "name": "open-product-operations-os",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Vendor-neutral Product Operations OS initializer, control plane, adapters, and validator",
   "license": "Apache-2.0",
   "repository": {
@@ -28,6 +28,7 @@
     "examples",
     "docs",
     "scripts",
+    "launchers",
     "tests",
     ".gitattributes",
     "npm-shrinkwrap.json",
@@ -40,9 +41,11 @@
   "scripts": {
     "prepack": "node scripts/check-pack-source.mjs prepare",
     "postpack": "node scripts/check-pack-source.mjs restore",
+    "onboard": "node scripts/one-click-onboarding.mjs",
+    "launchers:check": "node scripts/check-launchers.mjs",
     "test": "node --test",
     "test:coverage": "node --test --experimental-test-coverage",
-    "check": "node --check src/cli.js && npm run clean-room:check && npm test && npm run portability",
+    "check": "node --check src/cli.js && npm run launchers:check && npm run clean-room:check && npm test && npm run portability",
     "smoke": "node scripts/smoke.mjs",
     "portability": "node scripts/verify-portability.mjs",
     "clean-room:check": "node scripts/check-clean-room.mjs",

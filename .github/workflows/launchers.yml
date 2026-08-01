@@ -1,0 +1,81 @@
+name: One-click launcher bundles
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  bundle:
+    name: Build ${{ matrix.name }} bundle
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Windows
+            os: windows-latest
+            artifact: open-product-operations-os-windows
+          - name: macOS
+            os: macos-latest
+            artifact: open-product-operations-os-macos
+          - name: Linux
+            os: ubuntu-latest
+            artifact: open-product-operations-os-linux
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Verify launcher contracts
+        run: npm run launchers:check
+
+      - name: Build Windows bundle
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path dist, dist/stage -Force | Out-Null
+          git archive --format=zip --output dist/source.zip HEAD
+          Expand-Archive -LiteralPath dist/source.zip -DestinationPath dist/stage
+          & dist/stage/launchers/windows/build.ps1 -Output dist/stage/launchers/windows/OpenProductOS.exe
+          $hash = (Get-FileHash -LiteralPath dist/stage/launchers/windows/OpenProductOS.exe -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  OpenProductOS.exe" | Set-Content -LiteralPath dist/stage/launchers/windows/OpenProductOS.exe.sha256 -Encoding ascii
+          Compress-Archive -Path dist/stage/* -DestinationPath dist/${{ matrix.artifact }}.zip -CompressionLevel Optimal
+          $bundleHash = (Get-FileHash -LiteralPath dist/${{ matrix.artifact }}.zip -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$bundleHash  ${{ matrix.artifact }}.zip" | Set-Content -LiteralPath dist/${{ matrix.artifact }}.zip.sha256 -Encoding ascii
+
+      - name: Build macOS or Linux bundle
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/stage
+          git archive HEAD | tar -xf - -C dist/stage
+          tar -czf "dist/${{ matrix.artifact }}.tar.gz" -C dist/stage .
+          if command -v sha256sum >/dev/null 2>&1; then
+            (cd dist && sha256sum "${{ matrix.artifact }}.tar.gz" > "${{ matrix.artifact }}.tar.gz.sha256")
+          else
+            (cd dist && shasum -a 256 "${{ matrix.artifact }}.tar.gz" > "${{ matrix.artifact }}.tar.gz.sha256")
+          fi
+
+      - name: Upload verified bundle
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ matrix.artifact }}
+          path: |
+            dist/${{ matrix.artifact }}.*
+          if-no-files-found: error
+          retention-days: 30
