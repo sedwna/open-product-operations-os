@@ -4,6 +4,8 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+## 0.5.0 - 2026-08-01
+
 - Added an independently initializable Open Development Operations OS with 15 engineering role
   boundaries spanning architecture, frontend, backend, clients, database and storage, data and AI,
   platform and network, security and privacy, QA, SRE, delivery, SEO, documentation, and independent
