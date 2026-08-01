@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import path from "node:path";
+import fs from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { initializeDevelopmentOs } from "./development/init.js";
 import { planDevelopmentRequest } from "./development/planner.js";
@@ -130,7 +131,21 @@ function validateOptions(parsed) {
   if (rejected) throw new Error(`Command "${parsed.command}" does not accept --${rejected.replace(/[A-Z]/g, (letter) => `-${letter.toLowerCase()}`)}.`);
 }
 
-const executed = path.resolve(process.argv[1] ?? "") === path.resolve(fileURLToPath(import.meta.url));
-if (executed) {
+async function isEntryPoint() {
+  if (!process.argv[1]) return false;
+  const invokedPath = path.resolve(process.argv[1]);
+  const modulePath = path.resolve(fileURLToPath(import.meta.url));
+  try {
+    const [invokedRealPath, moduleRealPath] = await Promise.all([
+      fs.realpath(invokedPath),
+      fs.realpath(modulePath)
+    ]);
+    return invokedRealPath === moduleRealPath;
+  } catch {
+    return invokedPath === modulePath;
+  }
+}
+
+if (await isEntryPoint()) {
   main().catch((error) => { console.error(error.message); process.exitCode = 1; });
 }
