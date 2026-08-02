@@ -54,9 +54,13 @@ export function selectRunnableTasks(tasks, approvals = []) {
 
 export async function replaceTaskboard(root, headers, records, { dryRun = true } = {}) {
   const rows = [headers, ...records.map((record) => headers.map((header) => record[header] ?? ""))];
+  const serialized = stringifyCsv(rows);
   const operations = await planWrites(
     root,
-    new Map([[TASKBOARD_FILE, stringifyCsv(rows)]]),
+    new Map([
+      [TASKBOARD_FILE, serialized],
+      ["workbook/06-taskboard.csv", serialized]
+    ]),
     { force: true, replaceOperational: true }
   );
   if (!dryRun) await applyWrites(root, operations);

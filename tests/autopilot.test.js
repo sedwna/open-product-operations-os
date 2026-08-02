@@ -4,9 +4,10 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { run } from "../src/cli.js";
-import { boundedUnique, runPendingAutopilotCycle } from "../src/autopilot/orchestrator.js";
+import { parseCsv } from "../src/csv.js";
+import { boundedUnique, classifyAutopilotError, runPendingAutopilotCycle, transientRetryDelay } from "../src/autopilot/orchestrator.js";
 import { executeClaudeProductAgent, runProductAgent } from "../src/autopilot/product-agent.js";
-import { dependencyOrderedWorkstreams } from "../src/autopilot/engineering.js";
+import { buildEngineeringResult, createGateEvidence, dependencyOrderedWorkstreams } from "../src/autopilot/engineering.js";
 import { emptyAutopilotState, readAutopilotState, writeAutomationLink, writeAutopilotState } from "../src/autopilot/state.js";
 import { loadConfig } from "../src/config.js";
 import { initializeDevelopmentOs } from "../src/development/init.js";
@@ -93,7 +94,11 @@ test("autopilot completes the product-development-product loop and records a dur
   const report = JSON.parse(await fs.readFile(path.join(productRoot, result.report.json), "utf8"));
   assert.equal(report.status, "completed");
   assert.deepEqual(report.implementation.changedComponents, ["src/feature.js"]);
-  assert.equal(report.workbook.receipts.length, 13);
+  assert.equal(report.workbook.receipts.length, 15);
+  const manifestAudit = parseCsv(await fs.readFile(path.join(productRoot, "workbook", "21-writer-manifests.csv"), "utf8"));
+  const receiptAudit = parseCsv(await fs.readFile(path.join(productRoot, "workbook", "22-writer-receipts.csv"), "utf8"));
+  assert.equal(manifestAudit.length - 2, report.workbook.manifests.length);
+  assert.equal(receiptAudit.length - 2, report.workbook.receipts.length);
   const dashboard = await loadDashboardSnapshot(productRoot, { now: new Date("2026-08-02T02:00:00.000Z") });
   assert.equal(dashboard.autopilot.latestReport.cycleId, result.cycleId);
   assert.deepEqual(dashboard.autopilot.latestReport.implementation.changedComponents, ["src/feature.js"]);
@@ -147,6 +152,44 @@ test("engineering execution follows dependencies instead of display order", () =
     { id: "WS-01", dependencies: ["WS-02"] },
     { id: "WS-02", dependencies: ["WS-01"] }
   ]), /contains a cycle/);
+});
+
+test("quality-gate evidence is scoped and independent verification is fail-closed", async (t) => {
+  const root = await makeTempDirectory("gate-evidence-");
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const plan = {
+    planId: "ENGPLAN-TEST-001",
+    qualityGates: ["GATE-SECURITY", "GATE-SEO", "GATE-INDEPENDENT-VERIFICATION"],
+    workstreams: []
+  };
+  const run = (workstreamId, ownerRole, verificationDisposition = "not_applicable") => ({
+    workstreamId, ownerRole, status: "completed", verificationDisposition,
+    commands: ["synthetic-check"], evidence: [`evidence/${workstreamId}.json`], knownRisks: []
+  });
+  const runs = new Map([
+    ["WS-09", run("WS-09", "ENG-09")],
+    ["WS-13", run("WS-13", "ENG-13")],
+    ["WS-15", run("WS-15", "ENG-15", "passed")]
+  ]);
+  const evidence = await createGateEvidence(root, plan, runs, "abcdef1234567890", new Date("2026-08-02T00:00:00Z"));
+  const security = JSON.parse(await fs.readFile(path.join(root, ".development-os/evidence/GATE-SECURITY.json"), "utf8"));
+  const seo = JSON.parse(await fs.readFile(path.join(root, ".development-os/evidence/GATE-SEO.json"), "utf8"));
+  assert.deepEqual(security.relevantWorkstreamIds, ["WS-09", "WS-15"]);
+  assert.deepEqual(seo.relevantWorkstreamIds, ["WS-13", "WS-15"]);
+  const failedRuns = new Map(runs);
+  failedRuns.set("WS-15", run("WS-15", "ENG-15", "failed"));
+  assert.throws(() => buildEngineeringResult({
+    request: { requestId: "DEVREQ-TEST-001" }, plan, requestDigest: "a".repeat(64),
+    config: { roles: [{ id: "ENG-01", actorId: "actor-eng-01" }, { id: "ENG-15", actorId: "actor-eng-15" }] },
+    sealedRuns: failedRuns, evidence, implementationRevision: "abcdef1234567890",
+    changedComponents: ["app.js"], branch: "codex/test", now: new Date("2026-08-02T00:00:00Z")
+  }), /explicit passing ENG-15 disposition/);
+});
+
+test("transient infrastructure failures back off without consuming logical retry semantics", () => {
+  assert.equal(classifyAutopilotError(Object.assign(new Error("connection timed out"), { code: "ETIMEDOUT" })), "transient");
+  assert.equal(classifyAutopilotError(new Error("schema validation failed")), "logical");
+  assert.deepEqual([1, 2, 3, 8].map(transientRetryDelay), [1000, 2000, 4000, 60000]);
 });
 
 test("cross-boundary product summaries stay within the published contract budget", () => {

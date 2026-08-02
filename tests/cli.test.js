@@ -5,6 +5,7 @@ import test from "node:test";
 import { moveFileNoOverwrite } from "../src/atomic-move.js";
 import { CONFIG_FILE } from "../src/constants.js";
 import { run } from "../src/cli.js";
+import { parseCsv, stringifyCsv } from "../src/csv.js";
 import {
   applyWrites,
   planWrites,
@@ -114,10 +115,25 @@ test("generate-workbook --force preserves operational rows", async (t) => {
   const output = captureIo();
 
   assert.equal(await run(["init", target], output.io), 0);
-  await fs.appendFile(
-    workbook,
-    "ISS-20990101-999,EVT-20990101-999,Operational canary,open,P2,low,,,,,,,,,,,,RB-05,actor-rb-05,,\n"
-  );
+  const config = await readJson(path.join(target, CONFIG_FILE));
+  const issueRows = parseCsv(await fs.readFile(workbook, "utf8"));
+  const issue = issueRows[0].map(() => "");
+  const setIssue = (field, value) => { issue[issueRows[0].indexOf(field)] = value; };
+  setIssue("issue_id", "ISS-20990101-999"); setIssue("event_id", "EVT-20990101-999");
+  setIssue("title", "Operational canary"); setIssue("status", "open"); setIssue("priority", "P2"); setIssue("risk", "low");
+  setIssue("decision_id", "DEC-20990101-999"); setIssue("owner_role", "RB-05"); setIssue("owner_actor_id", "actor-rb-05");
+  issueRows.push(issue);
+  await fs.writeFile(workbook, stringifyCsv(issueRows), "utf8");
+  const decisionFile = path.join(target, "workbook", "09-decision-log.csv");
+  const decisionRows = parseCsv(await fs.readFile(decisionFile, "utf8"));
+  const decision = decisionRows[0].map(() => "");
+  const setDecision = (field, value) => { decision[decisionRows[0].indexOf(field)] = value; };
+  setDecision("decision_id", "DEC-20990101-999"); setDecision("event_id", "EVT-20990101-999");
+  setDecision("title", "Preserve operational canary"); setDecision("status", "approved"); setDecision("selected_option", "approved");
+  setDecision("decision_maker_actor_id", config.project.humanAuthorityActorId); setDecision("decided_at", "2099-01-01T00:00:00.000Z");
+  setDecision("brief_reference", "local-test"); setDecision("evidence_refs", "local-test"); setDecision("risk_acceptance", "none"); setDecision("conditions", "Test fixture");
+  decisionRows.push(decision);
+  await fs.writeFile(decisionFile, stringifyCsv(decisionRows), "utf8");
 
   assert.equal(await run(["generate-workbook", target], output.io), 1);
   assert.match(output.stderr.at(-1), /Refusing to overwrite/);

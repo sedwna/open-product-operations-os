@@ -49,6 +49,7 @@ test("engineering dependencies require a schema-valid result attributed to the p
     ownerRole: dependency.ownerRole,
     producerActorId: actor,
     status: "completed",
+    verificationDisposition: "not_applicable",
     implementationRevision: "abcdef1234567890",
     changedComponents: [],
     commands: [],

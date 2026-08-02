@@ -100,8 +100,8 @@ workbook_tabs:
   qc_log: { name: "QC Log", file: "18-qc-log.csv", owner: RB-12, key_fields: [qc_record_id] }
   readiness: { name: "Readiness", file: "19-readiness.csv", owner: RB-11, key_fields: [readiness_id] }
   releases: { name: "Releases", file: "20-releases.csv", owner: RB-11, key_fields: [release_id] }
-  writer_manifests: { name: "Writer Manifests", file: "21-writer-manifests.csv", owner: RB-10, key_fields: [write_manifest_id] }
-  writer_receipts: { name: "Writer Receipts", file: "22-writer-receipts.csv", owner: RB-10, key_fields: [write_receipt_id] }
+  writer_manifests: { name: "Writer Manifests", file: "21-writer-manifests.csv", owner: RB-12, key_fields: [write_manifest_id] }
+  writer_receipts: { name: "Writer Receipts", file: "22-writer-receipts.csv", owner: RB-12, key_fields: [write_receipt_id] }
   lineage: { name: "Lineage", file: "23-lineage.csv", owner: RB-01, key_fields: [lineage_edge_id] }
 
 field_authority:

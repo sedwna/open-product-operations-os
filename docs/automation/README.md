@@ -111,7 +111,8 @@ The default execution sequence is:
 
 ### Stage 2 — durable continuous orchestrator (implemented)
 
-- Renewable exclusive lease, task claiming, bounded retries, stale-lease recovery, and resume from
+- Renewable exclusive lease, task claiming, separately bounded logical and transient retries,
+  exponential infrastructure backoff, stale-lease recovery, and resume from
   immutable role/workstream outputs.
 - Local start, pause, resume, and retry controls. Pause is cooperative and takes effect after the
   active bounded agent returns.

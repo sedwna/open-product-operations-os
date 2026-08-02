@@ -1,5 +1,4 @@
 import crypto from "node:crypto";
-import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { stringifyCsv } from "../csv.js";
@@ -11,6 +10,8 @@ import { contractDigest } from "../development/contracts.js";
 import { loadDevelopmentConfig } from "../development/config.js";
 import { decideApproval, loadApprovals, requestApproval } from "../runtime/approvals.js";
 import { validatePublishedSchema } from "../schema-validation.js";
+import { QUALITY_GATES } from "../development/catalog.js";
+import { readJsonOptional, runGit, safeId, writeJson } from "./shared.js";
 
 const ALL_IMPACTS = [
   "architecture", "frontend", "accessibility", "backend", "api", "integration", "mobile", "desktop",
@@ -239,30 +240,55 @@ async function buildDevelopmentRequest(productRoot, developmentConfig, productCo
   };
 }
 
-async function createGateEvidence(root, plan, runs, implementationRevision, now) {
+export async function createGateEvidence(root, plan, runs, implementationRevision, now) {
   const evidence = [];
   const directory = path.join(root, ".development-os", "evidence");
   await fs.mkdir(directory, { recursive: true });
   for (const gateId of plan.qualityGates) {
+    const gate = QUALITY_GATES.find((candidate) => candidate.id === gateId);
+    if (!gate) throw new Error(`Engineering plan references unknown quality gate ${gateId}.`);
+    const relevantRuns = [...runs.values()].filter((run) =>
+      run.ownerRole === gate.ownerRole || (gateId !== "GATE-INDEPENDENT-VERIFICATION" && run.ownerRole === "ENG-15")
+    );
+    if (!relevantRuns.some((run) => run.ownerRole === gate.ownerRole)) {
+      throw new Error(`Quality gate ${gateId} has no completed owner workstream from ${gate.ownerRole}.`);
+    }
+    const relevantWorkstreamIds = relevantRuns.map((run) => run.workstreamId);
     const relative = `.development-os/evidence/${gateId}.json`;
-    const content = `${JSON.stringify({
+    const gateEvidence = {
       schemaVersion: "1.0.0",
       gateId,
       planId: plan.planId,
       implementationRevision,
-      workstreamRuns: [...runs.values()].map((run) => ({ workstreamId: run.workstreamId, ownerRole: run.ownerRole, status: run.status, commands: run.commands, evidence: run.evidence, knownRisks: run.knownRisks })),
+      relevantWorkstreamIds,
+      workstreamRuns: relevantRuns.map((run) => ({
+        workstreamId: run.workstreamId,
+        ownerRole: run.ownerRole,
+        status: run.status,
+        verificationDisposition: run.verificationDisposition,
+        commands: run.commands,
+        evidence: run.evidence,
+        knownRisks: run.knownRisks
+      })),
       generatedAt: now.toISOString()
-    }, null, 2)}\n`;
+    };
+    const errors = validatePublishedSchema("engineering-gate-evidence.schema.json", gateEvidence);
+    if (errors.length) throw new Error(`Quality-gate evidence ${gateId} is invalid:\n- ${errors.join("\n- ")}`);
+    const content = `${JSON.stringify(gateEvidence, null, 2)}\n`;
     await fs.writeFile(path.join(root, relative), content, "utf8");
-    evidence.push({ path: relative, kind: evidenceKind(gateId), sha256: sha256(content), sourceRevision: implementationRevision });
+    evidence.push({ path: relative, kind: evidenceKind(gateId), sha256: sha256(content), sourceRevision: implementationRevision, relevantWorkstreamIds });
   }
   return evidence;
 }
 
-function buildEngineeringResult({ request, plan, requestDigest, config, sealedRuns, evidence, implementationRevision, changedComponents, branch, now }) {
+export function buildEngineeringResult({ request, plan, requestDigest, config, sealedRuns, evidence, implementationRevision, changedComponents, branch, now }) {
   const verifier = config.roles.find((role) => role.id === "ENG-15");
   const coordinator = config.roles.find((role) => role.id === "ENG-01");
   const verificationEvidence = evidence.find((item) => item.path.includes("GATE-INDEPENDENT-VERIFICATION"))?.path;
+  const verifierRun = [...sealedRuns.values()].find((run) => run.ownerRole === "ENG-15");
+  if (!verifierRun || verifierRun.status !== "completed" || verifierRun.verificationDisposition !== "passed") {
+    throw new Error("Engineering delivery cannot be marked verified without an explicit passing ENG-15 disposition.");
+  }
   return {
     schemaVersion: "1.0.0",
     resultId: `ENGRESULT-${request.requestId.replace(/^DEVREQ-/, "")}`,
@@ -388,18 +414,6 @@ async function gitRevision(root) {
   return (await runGit(root, ["rev-parse", "HEAD"])).stdout.trim();
 }
 
-function runGit(cwd, args) {
-  return new Promise((resolve, reject) => {
-    const child = spawn("git", ["-c", `safe.directory=${path.resolve(cwd)}`, ...args], { cwd, shell: false, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
-    let stdout = ""; let stderr = "";
-    child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.once("error", reject);
-    child.once("close", (code) => code === 0 ? resolve({ stdout, stderr }) : reject(new Error(`Git failed (${code}): ${stderr.trim()}`)));
-  });
-}
-
 async function resumeCompletedDelivery(productRoot, applicationRoot, config, request, branch) {
   const resultId = `ENGRESULT-${request.requestId.replace(/^DEVREQ-/, "")}`;
   const resultFile = path.join(applicationRoot, config.sync.outbox, `${resultId}.json`);
@@ -468,11 +482,6 @@ async function loadExistingWorkstreamRun(root, plan, workstream, config) {
   return result;
 }
 
-async function readJsonOptional(file) {
-  try { return JSON.parse(await fs.readFile(file, "utf8")); }
-  catch (error) { if (error.code === "ENOENT") return null; throw error; }
-}
-
 async function validationCommands(applicationRoot) {
   try {
     const pkg = JSON.parse(await fs.readFile(path.join(applicationRoot, "package.json"), "utf8"));
@@ -492,12 +501,6 @@ function findRoleTask(runs, roleId) {
   return runs.find((run) => run.roleId === roleId)?.taskId;
 }
 
-function safeId(value) {
-  const result = String(value).replace(/[^A-Za-z0-9._-]/g, "-").replace(/^-+|-+$/g, "");
-  if (!result || result.includes("..")) throw new Error("Unsafe autonomous cycle identifier.");
-  return result.slice(0, 100);
-}
-
 function unique(values) { return [...new Set(values.filter(Boolean))]; }
 function uniqueObjects(values, key) { const seen = new Set(); return values.filter((value) => { const id = key(value); if (seen.has(id)) return false; seen.add(id); return true; }); }
 function isProductConstraint(value) {
@@ -509,8 +512,6 @@ function isProductConstraint(value) {
   return true;
 }
 function sha256(value) { return crypto.createHash("sha256").update(value).digest("hex"); }
-async function writeJson(file, value) { await fs.mkdir(path.dirname(file), { recursive: true }); await fs.writeFile(file, `${JSON.stringify(value, null, 2)}\n`, "utf8"); }
-
 function evidenceKind(gateId) {
   if (gateId.includes("ARCHITECTURE")) return "architecture";
   if (gateId.includes("SECURITY") || gateId.includes("SUPPLY")) return "security";

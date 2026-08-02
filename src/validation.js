@@ -58,8 +58,8 @@ const RECORD_ID_PATTERNS = {
   qc_log: /^QCV-[0-9]{8}-[0-9]{3}$/,
   readiness: /^RDY-[0-9]{8}-[0-9]{3}$/,
   releases: /^REL-[0-9]{8}-[0-9]{3}$/,
-  writer_manifests: /^WFM-[0-9]{8}-[0-9]{3}$/,
-  writer_receipts: /^WRC-[0-9]{8}-[0-9]{3}$/
+  writer_manifests: /^WFM-[A-Za-z0-9._-]+$/,
+  writer_receipts: /^WRC-[A-Za-z0-9._-]+$/
 };
 
 const STATUS_FIELDS = {
@@ -175,6 +175,7 @@ export async function validateProject(target, config) {
       validateWorkbook(sheet, contents.get(sheet.file), config, errors);
     }
   }
+  validateCrossWorkbookRelationships(contents, config, errors);
 
   for (const [name, adapter] of Object.entries(config.adapters)) {
     if (contents.has(adapter.file)) {
@@ -227,6 +228,52 @@ export async function validateProject(target, config) {
     checkedFiles: inventory.files.length,
     binaryFiles: inventory.binaryFiles
   };
+}
+
+function validateCrossWorkbookRelationships(contents, config, errors) {
+  const workbookTaskboard = config.workbook.sheets.find((sheet) => sheet.key === "taskboard");
+  if (contents.has(TASKBOARD_FILE) && workbookTaskboard && contents.has(workbookTaskboard.file)) {
+    const canonical = rowsToObjects(parseCsv(contents.get(TASKBOARD_FILE))).records;
+    const projection = rowsToObjects(parseCsv(contents.get(workbookTaskboard.file))).records;
+    const projectedById = new Map(projection.filter((row) => !isPlaceholder(row.task_id)).map((row) => [row.task_id, row]));
+    for (const task of canonical.filter((row) => !isPlaceholder(row.task_id))) {
+      const projected = projectedById.get(task.task_id);
+      if (!projected) {
+        errors.push(`Workbook taskboard projection is missing canonical task "${task.task_id}".`);
+        continue;
+      }
+      for (const field of TASKBOARD_COLUMNS) {
+        if ((projected[field] ?? "") !== (task[field] ?? "")) {
+          errors.push(`Workbook taskboard projection for "${task.task_id}" differs from canonical field "${field}".`);
+        }
+      }
+    }
+  }
+
+  const sheetRecords = (key) => {
+    const sheet = config.workbook.sheets.find((candidate) => candidate.key === key);
+    return sheet && contents.has(sheet.file)
+      ? rowsToObjects(parseCsv(contents.get(sheet.file))).records.filter((row) => !isPlaceholder(row[canonicalRecordKeys(key)[0]]))
+      : [];
+  };
+  const decisions = new Map(sheetRecords("decision_log").map((row) => [row.decision_id, row]));
+  for (const [kind, rows] of [["issue", sheetRecords("issues")], ["delivery ticket", sheetRecords("delivery_tickets")]]) {
+    for (const row of rows) {
+      const decision = decisions.get(row.decision_id);
+      if (!row.decision_id || !decision || decision.status !== "approved" || !decision.decision_maker_actor_id) {
+        errors.push(`Workbook ${kind} "${row.issue_id ?? row.ticket_id}" advanced without an approved attributed decision.`);
+      }
+    }
+  }
+  const releases = new Map(sheetRecords("releases").map((row) => [row.release_id, row]));
+  for (const readiness of sheetRecords("readiness")) {
+    if (readiness.status !== "ready") continue;
+    const missing = [];
+    if (!readiness.human_risk_acceptance_id || /^(?:none|n\/a|not_applicable)$/i.test(readiness.human_risk_acceptance_id)) missing.push("human_risk_acceptance_id");
+    if (!readiness.rollback_reference) missing.push("rollback_reference");
+    if (!readiness.release_id || !releases.has(readiness.release_id)) missing.push("release_id");
+    if (missing.length) errors.push(`Readiness "${readiness.readiness_id}" may not be ready without ${missing.join(", ")}.`);
+  }
 }
 
 export function validateWriteManifest(manifest, config, relativePath = "write manifest") {
@@ -327,6 +374,9 @@ export function validateWriteManifest(manifest, config, relativePath = "write ma
     ...config.fieldAuthority.protectedDevelopmentFields,
     ...config.fieldAuthority.protectedHumanFields
   ]);
+  const humanAuthorityEvidence = manifest.authorization.authorityEvidence?.some((item) => item.kind === "human_approval")
+    && manifest.authorization.authorizedByActorId === config.project.humanAuthorityActorId;
+  const developmentAuthorityEvidence = manifest.authorization.authorityEvidence?.some((item) => item.kind === "development_result");
   for (const field of manifest.scope.keyFields) {
     if (!columns.has(field)) {
       errors.push(`${relativePath} key field "${field}" is not in "${sheet.name}".`);
@@ -336,7 +386,10 @@ export function validateWriteManifest(manifest, config, relativePath = "write ma
     if (!columns.has(field)) {
       errors.push(`${relativePath} allowed field "${field}" is not in "${sheet.name}".`);
     }
-    if (protectedFields.has(field)) {
+    if (config.fieldAuthority.protectedHumanFields.includes(field) && !humanAuthorityEvidence) {
+      errors.push(`${relativePath} may not allow protected field "${field}".`);
+    }
+    if (config.fieldAuthority.protectedDevelopmentFields.includes(field) && !developmentAuthorityEvidence) {
       errors.push(`${relativePath} may not allow protected field "${field}".`);
     }
     if (prohibited.has(field)) {
@@ -347,7 +400,9 @@ export function validateWriteManifest(manifest, config, relativePath = "write ma
     }
   }
   for (const field of sheet.columns.filter((column) => protectedFields.has(column))) {
-    if (!prohibited.has(field)) {
+    const authorized = (config.fieldAuthority.protectedHumanFields.includes(field) && humanAuthorityEvidence)
+      || (config.fieldAuthority.protectedDevelopmentFields.includes(field) && developmentAuthorityEvidence);
+    if (!authorized && !prohibited.has(field)) {
       errors.push(`${relativePath} must explicitly prohibit protected field "${field}".`);
     }
   }
@@ -370,7 +425,9 @@ export function validateWriteManifest(manifest, config, relativePath = "write ma
       errors.push(`${label} insert requires the exact precondition {"$record":"absent"}.`);
     }
     for (const field of Object.keys(row.changes)) {
-      if (!allowed.has(field) || prohibited.has(field) || protectedFields.has(field)) {
+      const authorizedProtected = (config.fieldAuthority.protectedHumanFields.includes(field) && humanAuthorityEvidence)
+        || (config.fieldAuthority.protectedDevelopmentFields.includes(field) && developmentAuthorityEvidence);
+      if (!allowed.has(field) || prohibited.has(field) || (protectedFields.has(field) && !authorizedProtected)) {
         errors.push(`${label} change to field "${field}" is not authorized.`);
       }
       if (!insert && !(field in row.preconditions)) {
@@ -728,7 +785,10 @@ function validateRecordSeparation(
 ) {
   const verifier = record.verifier_actor_id?.trim();
   if ("verifier_actor_id" in record) {
-    const requiredRole = config.separation.independentVerifierRole;
+    const producerRole = record.owner_role?.trim() || record.producer_role?.trim();
+    const requiredRole = producerRole === config.separation.independentVerifierRole
+      ? config.separation.verificationOfVerifierRole ?? "RB-08"
+      : config.separation.independentVerifierRole;
     const requiredActor = actorByRole.get(requiredRole);
     for (const roleField of ["verifier_role", "independent_verifier_role"]) {
       if (

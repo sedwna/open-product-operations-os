@@ -1,5 +1,3 @@
-import crypto from "node:crypto";
-import { spawn } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { INTAKE_STORE_FILE } from "../constants.js";
@@ -12,6 +10,7 @@ import { dependencyState, loadTaskboard, replaceTaskboard, selectRunnableTasks }
 import { runEngineeringDelivery } from "./engineering.js";
 import { runProductAgent } from "./product-agent.js";
 import { materializeCycleWorkbook, materializeWriterCheckpoint } from "./workbook.js";
+import { runGit, safeId, writeJson } from "./shared.js";
 import {
   acquireAutopilotLease,
   appendAutopilotEvent,
@@ -24,6 +23,7 @@ import {
 } from "./state.js";
 
 const MAX_ATTEMPTS = 3;
+const MAX_TRANSIENT_ATTEMPTS = 8;
 const PRODUCT_RUN_ROOT = ".product-ops/runtime/autopilot/product-runs";
 const REPORT_ROOT = ".product-ops/runtime/autopilot/reports";
 
@@ -42,7 +42,11 @@ export async function runPendingAutopilotCycle(
   try {
     const initialState = await readAutopilotState(root);
     if (initialState.status === "paused") return { status: "paused", state: initialState };
-    if (initialState.status === "blocked" && initialState.attempt >= MAX_ATTEMPTS) {
+    if (initialState.lastErrorKind === "transient" && initialState.nextRetryAt && Date.parse(initialState.nextRetryAt) > now().getTime()) {
+      return { status: "retry_wait", retryAt: initialState.nextRetryAt, state: initialState };
+    }
+    if (initialState.status === "blocked"
+        && (initialState.attempt >= MAX_ATTEMPTS || initialState.transientAttempt >= MAX_TRANSIENT_ATTEMPTS)) {
       return { status: "blocked", state: initialState };
     }
     const config = await loadConfig(root);
@@ -72,6 +76,9 @@ export async function runPendingAutopilotCycle(
       currentRoleId: null,
       applicationRoot: link.applicationRoot,
       attempt: initialState.activeEventId === intake.eventId ? initialState.attempt : 0,
+      transientAttempt: initialState.activeEventId === intake.eventId ? initialState.transientAttempt : 0,
+      nextRetryAt: null,
+      lastErrorKind: null,
       startedAt: initialState.activeEventId === intake.eventId && initialState.startedAt ? initialState.startedAt : now().toISOString(),
       updatedAt: now().toISOString(),
       completedAt: null,
@@ -102,6 +109,9 @@ export async function runPendingAutopilotCycle(
           currentRoleId: null,
           completedAt: now().toISOString(),
           lastError: null,
+          transientAttempt: 0,
+          nextRetryAt: null,
+          lastErrorKind: null,
           latestReport: report.markdown
         }, now());
         await updateAutomationStatus(root, "چرخهٔ ایده تا پیاده‌سازی کامل شد و گزارش محصول آماده است.");
@@ -199,11 +209,18 @@ export async function runPendingAutopilotCycle(
     if (state?.currentTaskId) {
       await resetInProgressTask(root, state.currentTaskId, String(error.message), now()).catch(() => {});
     }
-    const attempt = Math.min(MAX_ATTEMPTS, (state?.attempt ?? 0) + 1);
-    const status = attempt >= MAX_ATTEMPTS ? "blocked" : "failed";
+    const transient = classifyAutopilotError(error) === "transient";
+    const attempt = transient ? (state?.attempt ?? 0) : Math.min(MAX_ATTEMPTS, (state?.attempt ?? 0) + 1);
+    const transientAttempt = transient ? Math.min(MAX_TRANSIENT_ATTEMPTS, (state?.transientAttempt ?? 0) + 1) : 0;
+    const exhausted = transient ? transientAttempt >= MAX_TRANSIENT_ATTEMPTS : attempt >= MAX_ATTEMPTS;
+    const status = exhausted ? "blocked" : "failed";
+    const retryDelayMs = transient && !exhausted ? transientRetryDelay(transientAttempt) : 0;
     await patchAutopilotState(root, {
       status,
       attempt,
+      transientAttempt,
+      nextRetryAt: retryDelayMs ? new Date(now().getTime() + retryDelayMs).toISOString() : null,
+      lastErrorKind: transient ? "transient" : "logical",
       lastError: String(error.message).slice(0, 2000)
     }, now()).catch(() => {});
     await appendAutopilotEvent(root, {
@@ -214,7 +231,7 @@ export async function runPendingAutopilotCycle(
       roleId: state?.currentRoleId ?? null,
       message: String(error.message).slice(0, 2000)
     }).catch(() => {});
-    return { status, attempt, error: String(error.message) };
+    return { status, attempt, transientAttempt, retryDelayMs, errorKind: transient ? "transient" : "logical", error: String(error.message) };
   } finally {
     await releaseAutopilotLease(activeLease).catch(() => {});
   }
@@ -477,20 +494,6 @@ async function changedGitPaths(root) {
   return unique(files);
 }
 
-function runGit(cwd, args) {
-  return new Promise((resolve, reject) => {
-    const child = spawn("git", ["-c", `safe.directory=${path.resolve(cwd)}`, ...args], {
-      cwd, shell: false, windowsHide: true, stdio: ["ignore", "pipe", "pipe"]
-    });
-    let stdout = ""; let stderr = "";
-    child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
-    child.stdout.on("data", (chunk) => { stdout += chunk; });
-    child.stderr.on("data", (chunk) => { stderr += chunk; });
-    child.once("error", reject);
-    child.once("close", (code) => code === 0 ? resolve({ stdout, stderr }) : reject(new Error(`Git failed (${code}): ${stderr.trim()}`)));
-  });
-}
-
 async function updateAutomationStatus(root, currentCapability) {
   const file = path.join(root, ".product-ops", "runtime", "automation", "status.json");
   let status;
@@ -532,17 +535,17 @@ function event(type, cycleId, intake, task, message) {
 }
 
 function cycleIdFor(eventId) { return `CYCLE-${safeId(eventId)}`; }
-function safeId(value) {
-  const safe = String(value).replace(/[^A-Za-z0-9._-]/g, "-").replace(/^-+|-+$/g, "");
-  if (!safe || safe.includes("..")) throw new Error("Unsafe autonomous cycle identifier.");
-  return safe.slice(0, 100);
-}
 function unique(values) { return [...new Set(values.filter(Boolean))]; }
 export function boundedUnique(values, limit = 30) { return unique(values).slice(0, limit); }
+export function classifyAutopilotError(error) {
+  const value = `${error?.code ?? ""} ${error?.message ?? error ?? ""}`;
+  return /\b(?:ENOENT|ECONNRESET|ECONNREFUSED|ETIMEDOUT|EAI_AGAIN|ENETUNREACH|EHOSTUNREACH|429|502|503|504)\b|timed out|websocket|temporarily unavailable|network connection/i.test(value)
+    ? "transient"
+    : "logical";
+}
+export function transientRetryDelay(attempt) {
+  return Math.min(60_000, 1_000 * (2 ** Math.max(0, attempt - 1)));
+}
 function isManagedProductPath(file) {
   return file.startsWith(".product-ops/") || file === "taskboard/tasks.csv" || file.startsWith("product-intake/") || file.startsWith("workbook/");
-}
-async function writeJson(file, value) {
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }

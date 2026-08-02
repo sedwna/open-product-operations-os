@@ -152,7 +152,7 @@ test("specialist execution is disabled by default, shell-free, attributed, and v
   executor.executable = process.execPath;
   executor.arguments = [tool, "{inputFile}"];
   await writeJson(configPath, config);
-  await fs.writeFile(tool, `import fs from "node:fs";\nconst input=JSON.parse(fs.readFileSync(process.argv[2],"utf8"));\nprocess.stdout.write(JSON.stringify({schemaVersion:"1.0.0",planId:input.planId,workstreamId:input.workstream.id,ownerRole:input.workstream.ownerRole,producerActorId:"actor-eng-01",status:"completed",implementationRevision:"abcdef1234567890",changedComponents:["docs"],commands:["synthetic-check"],evidence:["evidence/synthetic.json"],knownRisks:[],completedAt:"2026-08-01T03:00:00.000Z"}));\n`);
+  await fs.writeFile(tool, `import fs from "node:fs";\nconst input=JSON.parse(fs.readFileSync(process.argv[2],"utf8"));\nprocess.stdout.write(JSON.stringify({schemaVersion:"1.0.0",planId:input.planId,workstreamId:input.workstream.id,ownerRole:input.workstream.ownerRole,producerActorId:"actor-eng-01",status:"completed",verificationDisposition:"not_applicable",implementationRevision:"abcdef1234567890",changedComponents:["docs"],commands:["synthetic-check"],evidence:["evidence/synthetic.json"],knownRisks:[],completedAt:"2026-08-01T03:00:00.000Z"}));\n`);
   const preview = await runEngineeringWorkstream(root, plan.planId, "WS-01", { dryRun: true });
   assert.equal(preview.payload.policy.isolation, "external-required");
   const executed = await runEngineeringWorkstream(root, plan.planId, "WS-01", { dryRun: false });
@@ -180,7 +180,7 @@ test("failed engineering attempts are retained without poisoning a safe retry", 
   executor.executable = process.execPath;
   executor.arguments = [tool, "{inputFile}"];
   await writeJson(configPath, config);
-  const script = (status) => `import fs from "node:fs";\nconst input=JSON.parse(fs.readFileSync(process.argv[2],"utf8"));\nprocess.stdout.write(JSON.stringify({schemaVersion:"1.0.0",planId:input.planId,workstreamId:input.workstream.id,ownerRole:input.workstream.ownerRole,producerActorId:"actor-eng-01",status:${JSON.stringify(status)},implementationRevision:"pending",changedComponents:[],commands:["synthetic-check"],evidence:["synthetic retry evidence"],knownRisks:[],completedAt:"2026-08-01T03:00:00.000Z"}));\n`;
+  const script = (status) => `import fs from "node:fs";\nconst input=JSON.parse(fs.readFileSync(process.argv[2],"utf8"));\nprocess.stdout.write(JSON.stringify({schemaVersion:"1.0.0",planId:input.planId,workstreamId:input.workstream.id,ownerRole:input.workstream.ownerRole,producerActorId:"actor-eng-01",status:${JSON.stringify(status)},verificationDisposition:"not_applicable",implementationRevision:"pending",changedComponents:[],commands:["synthetic-check"],evidence:["synthetic retry evidence"],knownRisks:[],completedAt:"2026-08-01T03:00:00.000Z"}));\n`;
   await fs.writeFile(tool, script("failed"));
   const failed = await runEngineeringWorkstream(root, plan.planId, "WS-01", { dryRun: false });
   assert.equal(failed.result.status, "failed");
@@ -334,7 +334,8 @@ async function engineeringResult(root, request, plan, digest, config) {
       path: relative,
       kind: evidenceKind(gateId),
       sha256: crypto.createHash("sha256").update(content).digest("hex"),
-      sourceRevision: implementationRevision
+      sourceRevision: implementationRevision,
+      relevantWorkstreamIds: [plan.workstreams.find((workstream) => workstream.ownerRole === config.qualityGates.find((gate) => gate.id === gateId).ownerRole).id]
     });
   }
   const workstreamRuns = [];
@@ -346,6 +347,7 @@ async function engineeringResult(root, request, plan, digest, config) {
       ownerRole: workstream.ownerRole,
       producerActorId: config.roles.find((role) => role.id === workstream.ownerRole).actorId,
       status: "completed",
+      verificationDisposition: workstream.ownerRole === "ENG-15" ? "passed" : "not_applicable",
       implementationRevision,
       changedComponents: ["src/catalog"],
       commands: ["synthetic verification"],

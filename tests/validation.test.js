@@ -72,6 +72,27 @@ function buildSafeManifest(config, sheet) {
   };
 }
 
+async function appendApprovedDecision(target, config, decisionId, eventId) {
+  const file = path.join(target, "workbook", "09-decision-log.csv");
+  const rows = parseCsv(await fs.readFile(file, "utf8"));
+  const headers = rows[0];
+  const decision = headers.map(() => "");
+  const set = (field, value) => { decision[headers.indexOf(field)] = value; };
+  set("decision_id", decisionId);
+  set("event_id", eventId);
+  set("title", "Authorize bounded test delivery");
+  set("status", "approved");
+  set("selected_option", "approved");
+  set("decision_maker_actor_id", config.project.humanAuthorityActorId);
+  set("decided_at", "2026-07-29T10:00:00.000Z");
+  set("brief_reference", "test-fixture");
+  set("evidence_refs", "test-fixture");
+  set("risk_acceptance", "none");
+  set("conditions", "Local test only");
+  rows.push(decision);
+  await fs.writeFile(file, stringifyCsv(rows), "utf8");
+}
+
 test("controlled local writer inserts a new canonical row with absent-record precondition and replays safely", async (t) => {
   const { target } = await initializedProject(t, "writer-insert");
   const config = await readJson(path.join(target, CONFIG_FILE));
@@ -115,6 +136,7 @@ async function preparedWriter(t, name) {
   const rows = parseCsv(await fs.readFile(workbookPath, "utf8"));
   const record = rows[0].map(() => "");
   record[rows[0].indexOf("ticket_id")] = "TKT-20260729-001";
+  record[rows[0].indexOf("decision_id")] = "DEC-20260729-001";
   record[rows[0].indexOf("status")] = "implementation_complete";
   rows.push(record);
   const originalBytes = stringifyCsv(rows);
@@ -308,9 +330,11 @@ test("safe local writer enforces dry-run, read-back, replay, and rollback", asyn
   const rows = parseCsv(await fs.readFile(workbookPath, "utf8"));
   const record = rows[0].map(() => "");
   record[rows[0].indexOf("ticket_id")] = "TKT-20260729-001";
+  record[rows[0].indexOf("decision_id")] = "DEC-20260729-001";
   record[rows[0].indexOf("status")] = "implementation_complete";
   rows.push(record);
   await fs.writeFile(workbookPath, stringifyCsv(rows), "utf8");
+  await appendApprovedDecision(target, config, "DEC-20260729-001", "EVT-20260729-001");
 
   const manifest = buildSafeManifest(config, sheet);
 
@@ -429,6 +453,26 @@ test("validate enforces workbook row widths", async (t) => {
   );
   assert.equal(await run(["validate", target], output.io), 1);
   assert.match(output.stderr.at(-1), /has 2 cells; expected 21/);
+});
+
+test("ready status requires attributed risk acceptance, rollback, and a real release", async (t) => {
+  const { target, output } = await initializedProject(t, "readiness-hard-gate");
+  const file = path.join(target, "workbook", "19-readiness.csv");
+  const rows = parseCsv(await fs.readFile(file, "utf8"));
+  const record = rows[0].map(() => "");
+  const set = (field, value) => { record[rows[0].indexOf(field)] = value; };
+  set("readiness_id", "RDY-20260802-001");
+  set("event_id", "EVT-20260802-001");
+  set("status", "ready");
+  set("target_environment", "local");
+  set("owner_role", "RB-11");
+  set("owner_actor_id", "actor-rb-11");
+  set("producer_actor_id", "actor-rb-11");
+  set("verifier_actor_id", "actor-rb-12");
+  rows.push(record);
+  await fs.writeFile(file, stringifyCsv(rows), "utf8");
+  assert.equal(await run(["validate", target], output.io), 1);
+  assert.match(output.stderr.at(-1), /may not be ready without human_risk_acceptance_id, rollback_reference, release_id/);
 });
 
 test("validate scans both alignments of UTF-16LE and UTF-16BE secret canaries", async (t) => {

@@ -4,7 +4,7 @@
   "title": "Autopilot State",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schemaVersion", "status", "activeCycleId", "activeEventId", "phase", "currentTaskId", "currentRoleId", "applicationRoot", "attempt", "startedAt", "updatedAt", "completedAt", "lastError", "latestReport"],
+  "required": ["schemaVersion", "status", "activeCycleId", "activeEventId", "phase", "currentTaskId", "currentRoleId", "applicationRoot", "attempt", "transientAttempt", "nextRetryAt", "lastErrorKind", "startedAt", "updatedAt", "completedAt", "lastError", "latestReport"],
   "properties": {
     "schemaVersion": { "const": "1.0.0" },
     "status": { "enum": ["idle", "running", "paused", "waiting_for_human", "completed", "blocked", "failed"] },
@@ -15,6 +15,9 @@
     "currentRoleId": { "type": ["string", "null"] },
     "applicationRoot": { "type": ["string", "null"] },
     "attempt": { "type": "integer", "minimum": 0 },
+    "transientAttempt": { "type": "integer", "minimum": 0 },
+    "nextRetryAt": { "type": ["string", "null"], "format": "date-time" },
+    "lastErrorKind": { "enum": [null, "logical", "transient"] },
     "startedAt": { "type": ["string", "null"], "format": "date-time" },
     "updatedAt": { "type": "string", "format": "date-time" },
     "completedAt": { "type": ["string", "null"], "format": "date-time" },
