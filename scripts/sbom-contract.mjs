@@ -22,3 +22,17 @@ export function normalizeSbomRoot(sbom, packageMetadata) {
   }
   return normalized;
 }
+
+export function fillSbomLicensesFromLock(sbom, packageLock) {
+  const normalized = structuredClone(sbom);
+  for (const component of normalized.components ?? []) {
+    if (Array.isArray(component.licenses) && component.licenses.length > 0) continue;
+    const declaredLicense = packageLock.packages?.[`node_modules/${component.name}`]?.license;
+    if (typeof declaredLicense !== "string" || declaredLicense.length === 0) continue;
+    const spdxLicense = declaredLicense === "OFL" ? "OFL-1.1" : declaredLicense;
+    component.licenses = spdxLicense.includes(" OR ") || spdxLicense.includes(" AND ")
+      ? [{ expression: spdxLicense }]
+      : [{ license: { id: spdxLicense } }];
+  }
+  return normalized;
+}

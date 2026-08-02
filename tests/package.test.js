@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { normalizeSbomRoot } from "../scripts/sbom-contract.mjs";
+import { fillSbomLicensesFromLock, normalizeSbomRoot } from "../scripts/sbom-contract.mjs";
 import {
   npmInvocation,
   runProcess
@@ -185,4 +185,14 @@ test("SBOM root identity is invariant across clone and archive directory names",
       "open-product-operations-os@0.1.0"
     );
   }
+});
+
+test("SBOM fills the official Vazirmatn license from the lockfile", () => {
+  const normalized = fillSbomLicensesFromLock(
+    { components: [{ name: "vazirmatn", version: "33.0.3" }] },
+    { packages: { "node_modules/vazirmatn": { license: "OFL" } } }
+  );
+  assert.deepEqual(normalized.components[0].licenses, [
+    { license: { id: "OFL-1.1" } }
+  ]);
 });
