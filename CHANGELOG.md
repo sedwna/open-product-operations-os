@@ -4,6 +4,20 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+## 0.8.1 - 2026-08-02
+
+- Made release readiness fail closed unless risk acceptance, rollback planning, and a real linked
+  release record are present, and connected every advanced issue and delivery ticket to an
+  attributed, approved product decision.
+- Replaced inferred engineering verification with an explicit independent-verifier disposition and
+  narrowed every quality-gate evidence package to its relevant owner workstream plus verification.
+- Made the canonical task board and workbook projection update atomically, validated them
+  field-for-field, and populated independent writer-manifest and writer-receipt audit projections.
+- Separated transient infrastructure retries from logical execution attempts with bounded backoff,
+  centralized shared automation helpers, and added regression coverage for all reported failures.
+- Added real browser behavior tests and a single shared task-domain implementation to generated
+  products, eliminating duplicated UI and service business logic.
+
 - Added Claude Code as a first-class automation provider alongside Codex for product analysis,
   all 15 engineering boundaries, independent verification, and the continuous local cycle.
 - Added provider-native installation, executable-health and authentication checks, explicit

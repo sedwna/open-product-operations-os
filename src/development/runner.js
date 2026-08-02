@@ -100,9 +100,11 @@ export async function runEngineeringWorkstream(
     .replaceAll("{workstreamId}", workstreamId));
   if (usesCodexPreset || usesClaudePreset) {
     const promptIndex = usesCodexPreset ? argumentsList.length - 1 : argumentsList.indexOf("-p") + 1;
-    argumentsList[promptIndex] = `${argumentsList[promptIndex]} Product-agent execution limits such as "no repository edits for this run" apply to the historical product-analysis role, not to this approved engineering execution. The development request writeBoundary is the authoritative repository-write permission for this workstream; durable product scope, environment, security, and production constraints still apply.`;
+    argumentsList[promptIndex] = `${argumentsList[promptIndex]} Product-agent execution limits such as "no repository edits for this run" apply to the historical product-analysis role, not to this approved engineering execution. The development request writeBoundary is the authoritative repository-write permission for this workstream; durable product scope, environment, security, and production constraints still apply. Keep business rules in one shared domain or service implementation consumed by the UI and other adapters. User-visible behavior needs a real DOM, browser, integration, or equivalent runtime test; source-pattern assertions alone are not behavioral evidence.`;
     if (workstream.ownerRole === "ENG-15") {
-      argumentsList[promptIndex] += " On Windows, run Node test files with node --test tests\\*.test.js rather than passing the tests directory. You have tool-execution access only so you can reproduce verification; do not modify any file. The orchestrator compares repository content before and after this run and rejects verification if anything changes.";
+      argumentsList[promptIndex] += " On Windows, run Node test files with node --test tests\\*.test.js rather than passing the tests directory. You have tool-execution access only so you can reproduce verification; do not modify any file. The orchestrator compares repository content before and after this run and rejects verification if anything changes. Set verificationDisposition to passed only when you actually reproduced every material claim; otherwise set it to failed or blocked and return the matching non-completed status.";
+    } else {
+      argumentsList[promptIndex] += " Set verificationDisposition to not_applicable because only ENG-15 may issue the independent engineering disposition.";
     }
     if (usesCodexPreset) argumentsList = effectiveCodexSandboxArguments(argumentsList);
   }
@@ -139,6 +141,12 @@ export async function runEngineeringWorkstream(
   if (result.workstreamId !== workstreamId) mismatches.push("workstreamId");
   if (result.ownerRole !== workstream.ownerRole) mismatches.push("ownerRole");
   if (result.producerActorId !== actor) mismatches.push("producerActorId");
+  if (workstream.ownerRole === "ENG-15") {
+    const expectedDisposition = result.status === "completed" ? "passed" : result.status === "failed" ? "failed" : "blocked";
+    if (result.verificationDisposition !== expectedDisposition) mismatches.push("verificationDisposition");
+  } else if (result.verificationDisposition !== "not_applicable") {
+    mismatches.push("verificationDisposition");
+  }
   if (mismatches.length) throw new Error(`Engineering executor result mismatches dispatched ${mismatches.join(", ")}.`);
   const storedResultFile = result.status === "completed"
     ? resultFile

@@ -51,7 +51,7 @@ export function createDevelopmentConfig(target) {
       requireIndependentVerification: true,
       requireThreatModelForHighRisk: true,
       requireHumanProductionApproval: true,
-      allowedPaths: ["src", "app", "apps", "packages", "services", "tests", "docs", "database", "migrations", "infrastructure", ".github"],
+      allowedPaths: ["src", "app", "apps", "packages", "services", "tests", "docs", "database", "migrations", "infrastructure", ".github", "package.json", "package-lock.json"],
       prohibitedPaths: [".git", "node_modules", ".env", "secrets", "production-data"]
     }
   };

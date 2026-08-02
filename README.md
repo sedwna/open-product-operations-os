@@ -282,6 +282,7 @@ links, unsafe replacement races, and ambiguous recovery states.
 | Initialize the complete engineering system | [Development OS](docs/development/README.md) |
 | Understand Product/Development synchronization | [Dual OS architecture](docs/architecture/dual-operating-system.md) |
 | Review the latest production-readiness security audit | [Security review](docs/verification/2026-08-02-production-readiness-security-review.md) |
+| Review the first full-cycle product-test corrections | [Root-cause remediation](docs/verification/2026-08-02-product-cycle-root-cause-remediation.md) |
 | Connect external systems | [Provider adapters](docs/runtime/provider-adapters.md) |
 | Work with the workbook | [Workbook operating model](docs/workbook/operating-model.md) |
 | Evaluate publication readiness | [Public release gates](docs/publication-gates.md) |

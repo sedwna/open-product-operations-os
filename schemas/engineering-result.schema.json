@@ -54,7 +54,8 @@
           "path": { "type": "string", "pattern": "^\\.development-os/evidence/(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+$" },
           "kind": { "enum": ["architecture", "review", "test", "security", "database", "api", "infrastructure", "privacy", "accessibility", "performance", "reliability", "seo", "documentation", "verification", "other"] },
           "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
-          "sourceRevision": { "type": "string", "pattern": "^[a-f0-9]{7,64}$" }
+          "sourceRevision": { "type": "string", "pattern": "^[a-f0-9]{7,64}$" },
+          "relevantWorkstreamIds": { "$ref": "#/$defs/nonEmptyStrings" }
         }
       }
     },

@@ -11,6 +11,6 @@ risk_audit,RB-08,RB-10,RB-12,<HUMAN_ROLE>,,Risk acceptance remains human
 validation_run,RB-09,RB-10,RB-12,<HUMAN_ROLE>,,Executor cannot independently verify same run
 validation_result,RB-09,RB-10,RB-12,<HUMAN_ROLE>,,No result without executed run
 evidence_manifest,RB-09,RB-10,RB-12,<HUMAN_ROLE>,,Evidence must be reproducible and non-sensitive
-controlled_write,RB-10,RB-10,RB-12,<HUMAN_ROLE>,,Writer applies owner-authorized manifest only
+controlled_write_audit,RB-12,RB-10,RB-08,<HUMAN_ROLE>,,Independent control owner records writer manifests and receipts; the mechanical writer cannot own its own audit trail
 readiness,RB-11,RB-10,RB-12,<HUMAN_ROLE>,,Unmet gates prevent ready status
 release,RB-11,RB-10,RB-12,<HUMAN_ROLE>,deployment_reference|deployment_status,Human production authorization required

@@ -37,7 +37,22 @@
         "authorizedByActorId": { "type": "string", "minLength": 2 },
         "authorizedAt": { "type": "string", "format": "date-time" },
         "ownerConfirmed": { "const": true },
-        "humanProductionAuthorizationId": { "type": "string", "minLength": 2 }
+        "humanProductionAuthorizationId": { "type": "string", "minLength": 2 },
+        "authorityEvidence": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "reference", "recordId", "sha256"],
+            "properties": {
+              "kind": { "enum": ["human_approval", "development_result"] },
+              "reference": { "type": "string", "pattern": "^(?!.*(?:^|/)\\.\\.(?:/|$))[A-Za-z0-9._/-]+$" },
+              "recordId": { "type": "string", "minLength": 3 },
+              "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+            }
+          }
+        }
       }
     },
     "writer": { "$ref": "#/$defs/actorRole" },

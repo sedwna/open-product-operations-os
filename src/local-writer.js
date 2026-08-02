@@ -35,6 +35,7 @@ export async function applyLocalWrite(
   if (typeof transactionObserver !== "function") {
     throw new Error("transactionObserver must be a function when provided.");
   }
+  await verifyAuthorityEvidence(absoluteRoot, manifest, config);
 
   const paths = writePaths(absoluteRoot, manifest);
   const manifestSha256 = sha256(canonicalJson(manifest));
@@ -276,6 +277,51 @@ export async function applyLocalWrite(
   }
 
   return { ...receipt, receiptFile: paths.receiptRelativePath };
+}
+
+async function verifyAuthorityEvidence(root, manifest, config) {
+  let productionAuthorizationVerified = manifest.target.environment !== "production";
+  for (const evidence of manifest.authorization.authorityEvidence ?? []) {
+    const file = resolveInside(root, evidence.reference, "Write authority evidence");
+    await assertNoLinkTraversal(root, file, "Write authority evidence");
+    await assertNoHardLinkedFile(file, "Write authority evidence");
+    const bytes = await fs.readFile(file);
+    if (sha256(bytes) !== evidence.sha256) throw new Error(`Write authority evidence changed: ${evidence.reference}.`);
+    const value = JSON.parse(bytes.toString("utf8"));
+    if (evidence.kind === "human_approval") {
+      const approval = value.requests?.find((item) => item.requestId === evidence.recordId);
+      if (!approval || approval.status !== "approved" || approval.decidedByActorId !== config.project.humanAuthorityActorId) {
+        throw new Error(`Human approval evidence ${evidence.recordId} is missing, undecided, or attributed to the wrong actor.`);
+      }
+      for (const row of manifest.scope.rows) {
+        if (row.changes.decision_maker_actor_id && row.changes.decision_maker_actor_id !== approval.decidedByActorId) {
+          throw new Error("Protected decision actor does not match the cited human approval.");
+        }
+        for (const field of ["human_risk_acceptance_id", "human_authorization_id"]) {
+          if (row.changes[field] && row.changes[field] !== approval.requestId) {
+            throw new Error(`Protected field ${field} does not match the cited human approval.`);
+          }
+        }
+        if (row.changes.human_risk_acceptance_id && !/risk[_ -]?acceptance/i.test(approval.gate)) {
+          throw new Error("Human risk acceptance requires an approval issued for a risk-acceptance gate.");
+        }
+        if (row.changes.human_authorization_id && !/(?:production|release)/i.test(approval.gate)) {
+          throw new Error("Release authorization requires an approval issued for a release or production gate.");
+        }
+      }
+      if (manifest.target.environment === "production"
+          && manifest.authorization.humanProductionAuthorizationId === approval.requestId
+      ) {
+        if (!/production/i.test(approval.gate)) {
+          throw new Error("Production writes require approval evidence issued for a production gate.");
+        }
+        productionAuthorizationVerified = true;
+      }
+    }
+  }
+  if (!productionAuthorizationVerified) {
+    throw new Error("Production write authorization was not verified against durable human approval evidence.");
+  }
 }
 
 export async function rollbackLocalWrite(

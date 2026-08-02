@@ -107,6 +107,9 @@ async function handleRequest(root, { writable, csrfToken, request, response, aut
       const result = await patchAutopilotState(root, {
         status: "idle",
         attempt: url.pathname.endsWith("/retry") ? 0 : current.attempt,
+        transientAttempt: url.pathname.endsWith("/retry") ? 0 : current.transientAttempt,
+        nextRetryAt: null,
+        lastErrorKind: null,
         lastError: url.pathname.endsWith("/retry") ? null : current.lastError
       });
       void autopilot.runNow();
