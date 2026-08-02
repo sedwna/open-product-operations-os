@@ -6,6 +6,10 @@ local, refuses unsafe destination paths, and opens the live product dashboard wh
 
 ## Start on your platform
 
+Download the complete archive for your platform and extract all of it before opening a launcher.
+Do not run a launcher from inside the ZIP viewer, and do not copy `OpenProductOS.exe` away from the
+adjacent PowerShell script, package lock, source, and schemas.
+
 | Platform | Open this file | What happens |
 | --- | --- | --- |
 | Windows | [`launchers/windows/OpenProductOS.exe`](../../launchers/windows/OpenProductOS.exe) | A small window starts the local graphical wizard. No administrator access is requested. |
@@ -77,6 +81,9 @@ folders.
 - If Node.js 20 or newer already exists, the launcher uses it.
 - Otherwise, it downloads the maintained Node.js 22 portable archive directly from `nodejs.org`,
   verifies the official SHA-256 checksum, and extracts it under `.product-ops-tools/` in this clone.
+- Release archives contain the exact production dependencies resolved from the published lockfile.
+  The launcher binds them to the lockfile hash and automatically performs a locked, lifecycle-script-
+  free repair if the dependency directory is absent, incomplete, or stale.
 - It does not modify the system-wide runtime, request administrator access, or install a package
   manager globally.
 - The onboarding and dashboard servers bind only to a loopback address.
@@ -89,6 +96,10 @@ folders.
 If setup stops, read the final message in the launcher terminal. Fix the reported prerequisite and
 open the launcher again. A partially generated operations folder can resume only when its local
 onboarding marker proves that this wizard created it. User-created non-empty folders fail closed.
+
+On Windows, run the adjacent `OpenProductOS.cmd` file when detailed diagnostics are needed; it keeps
+the terminal open after a failure. The executable also shows a persistent message when its
+PowerShell child exits unsuccessfully.
 
 Portable runtimes can be removed safely by deleting `.product-ops-tools/` while the launcher is not
 running; the next launch will verify or download the runtime again.

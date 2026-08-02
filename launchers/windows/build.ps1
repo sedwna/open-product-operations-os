@@ -1,9 +1,10 @@
 [CmdletBinding()]
 param(
-  [string]$Output = (Join-Path $PSScriptRoot 'OpenProductOS.exe')
+  [string]$Output
 )
 
 $ErrorActionPreference = 'Stop'
+if (-not $Output) { $Output = Join-Path $PSScriptRoot 'OpenProductOS.exe' }
 $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework64\v4.0.30319\csc.exe'
 if (-not (Test-Path -LiteralPath $compiler)) {
   throw 'The Windows C# compiler was not found.'

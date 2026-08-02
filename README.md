@@ -95,8 +95,10 @@ Read the [runtime guide](docs/runtime/README.md) for the complete operating and 
 
 ## One-click start
 
-Clone the repository, then open the launcher for your platform. The graphical wizard asks for the
-folder names, product definition, and optional first idea. For a new application it initializes
+Clone the repository, or download and fully extract the complete release archive for your platform,
+then open its launcher. Do not run a launcher from inside a compressed archive or copy the Windows
+executable away from its adjacent files. The graphical wizard asks for the folder names, product
+definition, and optional first idea. For a new application it initializes
 and validates both Product Operations OS and the independent Development Operations OS, creates
 separate Git histories, and opens the read-only live dashboard. Existing application repositories
 receive Development Operations OS files only after explicit opt-in.
@@ -107,6 +109,8 @@ receive Development Operations OS files only after explicit opt-in.
 
 No administrator access is required. If Node.js is missing, the launcher downloads a portable
 Node.js 22 runtime from the official distribution and verifies its SHA-256 checksum before use.
+Release archives include the exact locked runtime dependencies; if they are missing or stale, the
+launcher repairs them from the lockfile without running package lifecycle scripts.
 See the [one-click onboarding guide](docs/onboarding/one-click.md) for first-open notes, the safety
 contract, recovery, and distributable bundles.
 
