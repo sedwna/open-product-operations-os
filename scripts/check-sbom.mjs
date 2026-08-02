@@ -14,7 +14,8 @@ if (result.status !== 0) {
 }
 
 const packageMetadata = JSON.parse(fs.readFileSync("package.json", "utf8"));
-const packageLock = JSON.parse(fs.readFileSync("package-lock.json", "utf8"));
+const lockPath = fs.existsSync("package-lock.json") ? "package-lock.json" : "npm-shrinkwrap.json";
+const packageLock = JSON.parse(fs.readFileSync(lockPath, "utf8"));
 const sbom = fillSbomLicensesFromLock(
   normalizeSbomRoot(JSON.parse(result.stdout), packageMetadata),
   packageLock
