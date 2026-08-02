@@ -25,6 +25,7 @@ export async function loadDashboardSnapshot(root, { now = new Date(), mode = "sn
       provider: null,
       status: "not-configured",
       codex: null,
+      claude: null,
       productCycle: "unknown",
       developmentSystem: "unknown",
       executorsEnabled: false,

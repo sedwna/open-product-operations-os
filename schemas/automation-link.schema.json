@@ -8,7 +8,7 @@
   "properties": {
     "schemaVersion": { "const": "1.0.0" },
     "applicationRelativePath": { "type": "string", "minLength": 1, "maxLength": 1000 },
-    "provider": { "const": "codex" },
+    "provider": { "enum": ["codex", "claude"] },
     "productExecutorsEnabled": { "type": "boolean" },
     "engineeringExecutorsEnabled": { "type": "boolean" },
     "autoStart": { "type": "boolean" },

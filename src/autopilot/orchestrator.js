@@ -168,6 +168,7 @@ export async function runPendingAutopilotCycle(
           cycleId,
           applicationRoot: link.applicationRoot,
           operationalArtifacts,
+          provider: link.provider,
           now: now()
         });
         run = executed.result;
@@ -496,13 +497,15 @@ async function updateAutomationStatus(root, currentCapability) {
   try { status = JSON.parse(await fs.readFile(file, "utf8")); }
   catch (error) {
     if (error.code !== "ENOENT") throw error;
+    const link = await readAutomationLink(root).catch(() => ({ provider: "codex" }));
     status = {
       schemaVersion: "1.0.0",
       updatedAt: new Date().toISOString(),
-      mode: "codex",
-      provider: "codex",
+      mode: link.provider,
+      provider: link.provider,
       status: "executors-ready",
       codex: null,
+      claude: null,
       productCycle: "initialized",
       developmentSystem: "ready",
       executorsEnabled: true,

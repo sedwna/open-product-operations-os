@@ -94,7 +94,7 @@ backup, restore, capacity, and rollback evidence.
 Each role also has a disabled-by-default specialist executor. After configuring an executor to
 launch an externally isolated worker, one dependency-ready workstream can be previewed and run:
 
-Configure the official Codex non-interactive preset for one role or every role. Setup is a dry run
+Configure the official Codex or Claude Code non-interactive preset for one role or every role. Setup is a dry run
 unless `--apply` is present. Configuration remains disabled unless `--enable` is also present, and
 activation is refused until the read-only doctor succeeds:
 
@@ -103,9 +103,10 @@ development-os executor-setup ./my-application --provider codex --role ENG-04
 development-os executor-setup ./my-application --provider codex --role all --apply
 development-os executor-doctor ./my-application --role all
 development-os executor-setup ./my-application --provider codex --role all --enable --apply
+development-os executor-setup ./my-application --provider claude --role all --enable --apply
 ```
 
-The preset uses the supported non-interactive command shape:
+The Codex preset uses the supported non-interactive command shape:
 
 ```text
 codex exec --ephemeral --ignore-user-config --sandbox workspace-write \
@@ -119,6 +120,18 @@ implementation roles use workspace-write. The coordinator rejects final changes 
 configured allowed paths or inside prohibited paths and seals every accepted run to the final
 content digest. The setup stores no credential. Codex authentication stays outside
 `development-os.config.json`.
+
+The Claude Code preset uses bare, non-persistent print mode and schema-bound JSON output:
+
+```text
+claude --bare -p "..." --output-format json --json-schema "{...}" \
+  --no-session-persistence --permission-mode acceptEdits
+```
+
+Implementation roles receive editing tools and `acceptEdits`; the independent verifier receives
+no editing tools and uses `dontAsk`. Authentication remains in Claude Code's external credential
+store and is never copied into the repository. Both provider presets are disabled and dry-run-first
+until the read-only doctor passes and `--enable --apply` is supplied.
 
 For a locally installed adapter that already emits the same JSON contract on standard output:
 

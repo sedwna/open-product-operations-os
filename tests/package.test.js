@@ -62,6 +62,7 @@ test("npm package inspection is isolated and contains promised public files", as
     "src/onboarding/service.js",
     "src/onboarding/view.js",
     "src/adapters/provider-sync.js",
+    "src/claude/readiness.js",
     "schemas/approval-store.schema.json",
     "schemas/development-run.schema.json",
     "schemas/development-os-config.schema.json",

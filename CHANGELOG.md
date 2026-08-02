@@ -4,6 +4,17 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+- Added Claude Code as a first-class automation provider alongside Codex for product analysis,
+  all 15 engineering boundaries, independent verification, and the continuous local cycle.
+- Added provider-native installation, executable-health and authentication checks, explicit
+  Codex/Claude selection, and deterministic automatic fallback to an already authenticated CLI.
+- Added schema-bound, non-persistent Claude Code execution with role-specific tool permissions,
+  shell-free Windows launcher resolution, bounded output, and credential-free persisted status.
+- Updated one-click onboarding and the RTL Automation Center to show both providers and the actual
+  provider linked to product and engineering agents.
+- Added integration and package tests covering Claude readiness, provider fallback, structured
+  output extraction, verifier restrictions, Product/Development linking, and public artifacts.
+
 ## 0.8.0 - 2026-08-02
 
 - Implemented the complete resumable idea-to-product-to-engineering-to-product loop with an

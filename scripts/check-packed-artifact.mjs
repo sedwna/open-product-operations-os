@@ -56,6 +56,7 @@ try {
     "src/runtime/control-tower.js",
     "src/runtime/development-runner.js",
     "src/adapters/provider-sync.js",
+    "src/claude/readiness.js",
     "schemas/provider-outbox-item.schema.json",
     "docs/runtime/README.md"
   ]) {

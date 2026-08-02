@@ -150,8 +150,8 @@ test("onboarding Codex automation activates engineering executors only after rea
   };
   const result = await runOnboarding(request(parent, {
     automationMode: "codex",
-    installCodexCli: false,
-    authenticateCodex: false,
+    installProviderCli: false,
+    authenticateProvider: false,
     ideaEnabled: false,
     initializeGit: false,
     createInitialCommit: false
@@ -182,9 +182,68 @@ test("onboarding Codex automation activates engineering executors only after rea
     "utf8"
   ));
   assert.equal(automationLink.autoStart, true);
+  assert.equal(automationLink.provider, "codex");
   assert.equal(automationLink.productExecutorsEnabled, true);
   assert.equal(automationLink.engineeringExecutorsEnabled, true);
   assert.doesNotMatch(JSON.stringify(automation), /api[_-]?key|password|secret/i);
+});
+
+test("onboarding auto mode falls back to authenticated Claude and links both agent planes", async (t) => {
+  const parent = await makeTempDirectory("product-ops-onboarding-claude-");
+  t.after(() => fs.rm(parent, { recursive: true, force: true }));
+  const codexMissing = {
+    provider: "codex", status: "not-installed", installed: false, executable: null, version: null,
+    executableUsable: false, authenticated: false, authenticationMode: null,
+    entitlementVerified: false, canAutomate: false, message: "کدکس پیدا نشد.", diagnostic: ""
+  };
+  const claudeReady = {
+    provider: "claude", status: "ready", installed: true, executable: path.join(parent, "claude"),
+    version: "2.1.220 (Claude Code)", executableUsable: true, authenticated: true,
+    authenticationMode: "claude-subscription", entitlementVerified: false, canAutomate: true,
+    message: "کلاد کد آماده است.", diagnostic: ""
+  };
+
+  const result = await runOnboarding(request(parent, {
+    operationsFolder: "claude-ops",
+    applicationFolder: "claude-app",
+    automationMode: "auto",
+    installProviderCli: false,
+    authenticateProvider: false,
+    ideaEnabled: false,
+    initializeGit: false,
+    createInitialCommit: false
+  }), {
+    repoRoot: repositoryRoot,
+    skipDependencyInstall: true,
+    inspectCodex: async () => codexMissing,
+    inspectClaude: async () => claudeReady
+  });
+
+  assert.equal(result.automation.mode, "auto");
+  assert.equal(result.automation.provider, "claude");
+  assert.equal(result.automation.status, "executors-ready");
+  assert.equal(result.development.executorsEnabled, true);
+  const developmentConfig = JSON.parse(await fs.readFile(
+    path.join(result.applicationPath, "development-os.config.json"),
+    "utf8"
+  ));
+  assert.ok(developmentConfig.executors.every((executor) =>
+    executor.enabled && executor.executable === "claude" && executor.arguments.includes("--json-schema")
+  ));
+  const automation = JSON.parse(await fs.readFile(
+    path.join(result.operationsPath, ".product-ops", "runtime", "automation", "status.json"),
+    "utf8"
+  ));
+  const automationLink = JSON.parse(await fs.readFile(
+    path.join(result.operationsPath, ".product-ops", "runtime", "automation", "link.json"),
+    "utf8"
+  ));
+  assert.equal(automation.provider, "claude");
+  assert.equal(automation.claude.authenticationMode, "claude-subscription");
+  assert.equal(automationLink.provider, "claude");
+  assert.equal(automationLink.productExecutorsEnabled, true);
+  assert.equal(automationLink.engineeringExecutorsEnabled, true);
+  assert.doesNotMatch(JSON.stringify({ automation, automationLink, developmentConfig }), /(?:api[_-]?key|password|secret)\s*[:=]\s*["']?[^"'\s]{8,}/i);
 });
 
 test("onboarding never treats an existing Git repository as a new application or stages existing code", async (t) => {
@@ -354,6 +413,11 @@ test("onboarding view escapes embedded values and launcher artifacts are integri
   assert.match(html, /\\u003c\/script\\u003e/);
   assert.match(html, /name="initializeDevelopmentOs"/);
   assert.match(html, /name="writableDashboard" checked/);
+  assert.match(html, /id="automationProvider"/);
+  assert.match(html, /<option value="claude">کلاد کد<\/option>/);
+  assert.match(html, /id="claude-state"/);
+  assert.match(html, /name="installProviderCli" checked/);
+  assert.match(html, /name="authenticateProvider" checked/);
   assert.match(html, /id="form-error" role="alert"/);
   assert.match(html, /id="retry"/);
   assert.match(html, /font-family:"Vazirmatn"/);

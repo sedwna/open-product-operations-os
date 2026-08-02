@@ -5,7 +5,7 @@ import path from "node:path";
 import test from "node:test";
 import { run } from "../src/cli.js";
 import { boundedUnique, runPendingAutopilotCycle } from "../src/autopilot/orchestrator.js";
-import { runProductAgent } from "../src/autopilot/product-agent.js";
+import { executeClaudeProductAgent, runProductAgent } from "../src/autopilot/product-agent.js";
 import { dependencyOrderedWorkstreams } from "../src/autopilot/engineering.js";
 import { emptyAutopilotState, readAutopilotState, writeAutomationLink, writeAutopilotState } from "../src/autopilot/state.js";
 import { loadConfig } from "../src/config.js";
@@ -250,6 +250,44 @@ test("product agent retries use isolated artifacts and a Codex-compatible output
   assert.equal(files.filter((file) => file.endsWith("-schema.json")).length, 2);
   assert.equal(files.filter((file) => /-attempt-.*-result\.json$/.test(file)).length, 1);
   assert.ok(files.includes("RTP-0002-result.json"));
+});
+
+test("Claude product executor uses bounded read-only structured output", async (t) => {
+  const parent = await makeTempDirectory("product-ops-claude-agent-");
+  t.after(() => fs.rm(parent, { recursive: true, force: true }));
+  const productRoot = path.join(parent, "claude-product");
+  assert.equal(await run(["init", productRoot], captureIo().io), 0);
+  const config = await loadConfig(productRoot);
+  const role = config.agents.find((candidate) => candidate.id === "RB-02");
+  const task = {
+    task_id: "CLD-0001",
+    event_id: "EVT-CLAUDE-001",
+    owner_role: role.id
+  };
+  const resultValue = productAgentResult(task, role, "completed", new Date("2026-08-02T01:03:00.000Z"));
+  const result = await executeClaudeProductAgent({
+    root: productRoot,
+    inputFile: path.join(productRoot, ".product-ops", "runtime", "claude-input.json"),
+    schemaFile: path.join(productRoot, "schemas", "product-agent-run.schema.json"),
+    task,
+    role,
+    applicationRoot: null,
+    operationalArtifacts: null
+  }, {
+    inspectClaude: async () => ({ canAutomate: true, executable: "claude", message: "ready" }),
+    executeClaude: async (_executable, args, options) => {
+      assert.ok(args.includes("--bare"));
+      assert.ok(args.includes("--no-session-persistence"));
+      assert.equal(args[args.indexOf("--permission-mode") + 1], "dontAsk");
+      assert.equal(args[args.indexOf("--tools") + 1], "Read,Glob,Grep");
+      assert.doesNotMatch(args[args.indexOf("--allowedTools") + 1], /\b(?:Edit|Write|Bash)\b/);
+      assert.equal(options.cwd, productRoot);
+      const schema = JSON.parse(args[args.indexOf("--json-schema") + 1]);
+      assert.equal(schema.title, "Product Agent Run");
+      return { ok: true, stdout: JSON.stringify({ structured_output: resultValue }), stderr: "" };
+    }
+  });
+  assert.deepEqual(result, resultValue);
 });
 
 async function stubProductAgent(root, config, task, { now }) {

@@ -43,20 +43,21 @@ The runtime has four layers:
 - **Local orchestration journal:** schema-validated state, an exclusive renewable lease, JSONL
   events, immutable role outputs, retry counters, and reports live under `.product-ops/runtime/`.
   The journal is reconstructable and does not replace the canonical task board or workbook.
-- **Execution plane:** provider adapters invoke Codex first, with a provider-neutral boundary for
-  future executors. Every engineering role has a bounded workstream and attributed actor identity.
+- **Execution plane:** provider adapters invoke the selected local Codex or Claude Code CLI through
+  one provider-neutral contract. Every product and engineering role has a bounded workstream and
+  attributed actor identity.
 - **Observation plane:** the local dashboard displays provider readiness, contract transfer, task
   claims, execution events, evidence, failures, retries, and human gates.
 
-## Codex readiness contract
+## Automation-provider readiness contract
 
 One-click onboarding checks these states in order:
 
 | State | Meaning | Allowed action |
 | --- | --- | --- |
-| Not installed | No Codex CLI candidate was found | Offer installation of the official package |
+| Not installed | No CLI candidate was found for the selected provider | Offer installation of its official package |
 | Installed but unusable | A desktop alias or binary exists but cannot execute | Install or select a usable CLI |
-| Login required | The CLI executes but `codex login status` fails | Open the official browser login flow |
+| Login required | The CLI executes but its provider-native auth status is not logged in | Open the official browser login flow |
 | Provider ready | CLI version and login status both pass | Configure and enable bounded executors |
 | Capability proven | A real workstream completes successfully | Permit the scheduler to continue |
 
@@ -101,8 +102,9 @@ The default execution sequence is:
 
 ### Stage 1 — truthful connection status (implemented)
 
-- Detect installed, executable, authenticated, and ready Codex states separately.
-- Offer official CLI installation and browser authentication during one-click onboarding.
+- Detect installed, executable, authenticated, and ready states for Codex and Claude Code separately.
+- Offer only the selected official CLI installation and provider-native browser authentication during one-click onboarding.
+- Support explicit Codex, explicit Claude Code, or deterministic automatic provider selection.
 - Configure and enable all engineering role executors only after readiness passes.
 - Persist a credential-free automation status record.
 - Display the actual state and current limitation in the dashboard Automation Center.
@@ -144,7 +146,8 @@ The default execution sequence is:
 ## Current boundary
 
 The local single-owner cycle is implemented and reports `continuousOrchestrator: true` only when the
-Codex provider, product agents, engineering executors, Product/Development link, and dashboard loop
+selected Codex or Claude Code provider, product agents, engineering executors,
+Product/Development link, and dashboard loop
 are ready. The submitted local idea authorizes that bounded cycle; it does not authorize production.
 Multi-user distributed queues, remote worker pools, signed provenance, provider failover, hosted
 deployment, and unattended production changes are outside the current boundary.
