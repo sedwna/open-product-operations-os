@@ -241,6 +241,18 @@ test("onboarding server is loopback-only, CSRF guarded, and completes a graphica
   });
   assert.equal(withoutToken.status, 403);
 
+  const invalid = await fetch(`${onboarding.url}/api/apply`, {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-product-ops-csrf": onboarding.csrfToken
+    },
+    body: JSON.stringify(request(parent, { applicationFolder: "sample-product-ops" }))
+  });
+  assert.equal(invalid.status, 422);
+  assert.match((await invalid.json()).error, /جدا/);
+  assert.equal(onboarding.job.status, "idle", "invalid answers must not start or poison the job");
+
   const accepted = await fetch(`${onboarding.url}/api/apply`, {
     method: "POST",
     headers: {
@@ -271,6 +283,8 @@ test("onboarding view escapes embedded values and launcher artifacts are integri
   assert.match(html, /\\u003c\/script\\u003e/);
   assert.match(html, /name="initializeDevelopmentOs"/);
   assert.doesNotMatch(html, /name="writableDashboard" checked/);
+  assert.match(html, /id="form-error" role="alert"/);
+  assert.match(html, /id="retry"/);
   const browserScript = html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)?.[1];
   assert.ok(browserScript, "generated browser script is present");
   assert.doesNotThrow(() => new vm.Script(browserScript), "generated browser script parses");

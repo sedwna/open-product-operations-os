@@ -83,7 +83,12 @@ async function handleRequest(context) {
     if (job.status === "running") throw httpError(409, "راه‌اندازی دیگری در حال اجرا است.");
     if (job.status === "completed") throw httpError(409, "راه‌اندازی این نشست قبلاً کامل شده است.");
     const body = await readJsonBody(request);
-    const normalized = normalizeOnboardingRequest(body, { repoRoot: root });
+    let normalized;
+    try {
+      normalized = normalizeOnboardingRequest(body, { repoRoot: root });
+    } catch (error) {
+      throw httpError(422, safeError(error));
+    }
     resetJob(job);
     void executeJob(context, normalized);
     sendJson(response, 202, { status: "running" });
