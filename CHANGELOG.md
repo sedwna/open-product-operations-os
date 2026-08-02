@@ -4,6 +4,15 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+## 0.6.1 - 2026-08-02
+
+- Fixed downloaded one-click bundles closing immediately because runtime dependencies were absent.
+- Bundled the exact locked production dependencies in Windows, macOS, and Linux releases and added
+  a lockfile-bound first-launch repair path when dependencies are missing or stale.
+- Added clean-bundle launcher checks that start and close the onboarding server before publication.
+- Kept Windows launcher failures visible through a persistent diagnostic message and fixed direct
+  local compilation of the Windows executable.
+
 ## 0.6.0 - 2026-08-02
 
 - Added dry-run-first Codex and custom-command executor setup for all 15 engineering roles, with a

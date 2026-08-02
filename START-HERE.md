@@ -15,7 +15,8 @@
 
 ## The easiest path
 
-After cloning, open one file and let the graphical wizard do the rest:
+After cloning, open one file and let the graphical wizard do the rest. If you use a release archive,
+extract the entire archive first; do not open it in-place or separate a launcher from its files.
 
 | Your computer | Open |
 | --- | --- |

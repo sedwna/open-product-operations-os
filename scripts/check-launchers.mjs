@@ -34,11 +34,16 @@ assert.equal(crypto.createHash("sha256").update(executable).digest("hex"), expec
 
 const powershell = await fs.readFile(path.join(launcherRoot, "windows", "OpenProductOS.ps1"), "utf8");
 const posix = await fs.readFile(path.join(launcherRoot, "common", "bootstrap-node.sh"), "utf8");
+const windowsSource = await fs.readFile(path.join(launcherRoot, "windows", "OpenProductOS.cs"), "utf8");
 const desktop = await fs.readFile(path.join(launcherRoot, "linux", "OpenProductOS.desktop"), "utf8");
 for (const source of [powershell, posix]) {
   assert.match(source, /latest-v22\.x/, "portable runtime must use the maintained Node.js 22 line");
   assert.match(source, /SHA|sha256|shasum|Get-FileHash/i, "portable runtime downloads must be integrity checked");
+  assert.match(source, /dependencies\.sha256/, "launcher must bind installed dependencies to the lockfile");
+  assert.match(source, /ci[^\n]+--omit=dev[^\n]+--ignore-scripts/, "launcher must install locked production dependencies without lifecycle scripts");
 }
+assert.match(windowsSource, /WaitForExit/, "Windows executable must retain failure visibility until PowerShell exits");
+assert.match(windowsSource, /OpenProductOS\.cmd/, "Windows executable must provide a persistent diagnostic fallback");
 assert.match(desktop, /^\[Desktop Entry\]$/m);
 assert.match(desktop, /^Terminal=true$/m);
 
@@ -69,5 +74,17 @@ if (process.platform === "win32") {
     }
   }
 }
+
+const onboardingCheck = spawnSync(
+  process.execPath,
+  [path.join(root, "scripts", "one-click-onboarding.mjs"), "--check"],
+  { cwd: root, encoding: "utf8", timeout: 30_000 }
+);
+assert.equal(
+  onboardingCheck.status,
+  0,
+  onboardingCheck.stderr || onboardingCheck.stdout || "one-click onboarding check must pass"
+);
+assert.match(onboardingCheck.stdout, /dependency and server check passed/);
 
 process.stdout.write("One-click launchers are complete, parseable, and integrity checked.\n");

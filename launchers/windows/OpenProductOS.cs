@@ -25,7 +25,23 @@ internal static class OpenProductOSLauncher
                 UseShellExecute = false,
                 CreateNoWindow = false
             };
-            Process.Start(start);
+            using (Process process = Process.Start(start))
+            {
+                if (process == null)
+                {
+                    throw new InvalidOperationException("PowerShell could not be started.");
+                }
+                process.WaitForExit();
+                if (process.ExitCode != 0)
+                {
+                    MessageBox.Show(
+                        "Setup could not start. Run OpenProductOS.cmd from the same folder to keep the detailed error visible.",
+                        "Open Product Operations OS",
+                        MessageBoxButtons.OK,
+                        MessageBoxIcon.Error
+                    );
+                }
+            }
         }
         catch (Exception error)
         {

@@ -82,7 +82,15 @@ jobs:
           New-Item -ItemType Directory -Path dist, dist/stage -Force | Out-Null
           git archive --format=zip --output dist/source.zip HEAD
           Expand-Archive -LiteralPath dist/source.zip -DestinationPath dist/stage
+          Push-Location dist/stage
+          npm ci --omit=dev --ignore-scripts --no-audit --no-fund
+          New-Item -ItemType Directory -Path .product-ops-tools -Force | Out-Null
+          $dependencyHash = (Get-FileHash -LiteralPath npm-shrinkwrap.json -Algorithm SHA256).Hash.ToLowerInvariant()
+          Set-Content -LiteralPath .product-ops-tools/dependencies.sha256 -Value $dependencyHash -Encoding ascii
+          Pop-Location
           & dist/stage/launchers/windows/build.ps1 -Output dist/stage/launchers/windows/OpenProductOS.exe
+          & dist/stage/launchers/windows/OpenProductOS.ps1 -Check
+          if ($LASTEXITCODE -ne 0) { throw 'Clean Windows launcher check failed.' }
           $hash = (Get-FileHash -LiteralPath dist/stage/launchers/windows/OpenProductOS.exe -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  OpenProductOS.exe" | Set-Content -LiteralPath dist/stage/launchers/windows/OpenProductOS.exe.sha256 -Encoding ascii
           Compress-Archive -Path dist/stage/* -DestinationPath dist/${{ matrix.artifact }}.zip -CompressionLevel Optimal
@@ -96,6 +104,14 @@ jobs:
           set -euo pipefail
           mkdir -p dist/stage
           git archive HEAD | tar -xf - -C dist/stage
+          (cd dist/stage && npm ci --omit=dev --ignore-scripts --no-audit --no-fund)
+          mkdir -p dist/stage/.product-ops-tools
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum dist/stage/npm-shrinkwrap.json | awk '{print $1}' > dist/stage/.product-ops-tools/dependencies.sha256
+          else
+            shasum -a 256 dist/stage/npm-shrinkwrap.json | awk '{print $1}' > dist/stage/.product-ops-tools/dependencies.sha256
+          fi
+          sh dist/stage/launchers/common/bootstrap-node.sh "$(pwd)/dist/stage" --check
           tar -czf "dist/${{ matrix.artifact }}.tar.gz" -C dist/stage .
           if command -v sha256sum >/dev/null 2>&1; then
             (cd dist && sha256sum "${{ matrix.artifact }}.tar.gz" > "${{ matrix.artifact }}.tar.gz.sha256")
