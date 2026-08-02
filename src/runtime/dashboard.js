@@ -1,21 +1,43 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import { INTAKE_STORE_FILE } from "../constants.js";
 import { loadConfig } from "../config.js";
+import { parseCsv } from "../csv.js";
 import { applyWrites, planWrites } from "../file-writer.js";
+import { assertNoLinkTraversal, resolveInside } from "../paths.js";
 import { loadApprovals } from "./approvals.js";
 import { renderDashboard } from "./dashboard-view.js";
 import { readJsonOptional, writeJson } from "./io.js";
 import { calculateMetrics } from "./metrics.js";
-import { loadTaskboard } from "./taskboard.js";
+import { loadTaskboard, visibleTaskboardRecords } from "./taskboard.js";
+import { readAutopilotEvents, readAutopilotState } from "../autopilot/state.js";
 
 export async function loadDashboardSnapshot(root, { now = new Date(), mode = "snapshot", writable = false } = {}) {
-  const [config, metrics, taskboard, approvals, intake] = await Promise.all([
+  const [config, metrics, taskboard, approvals, intake, automation, autopilotState, autopilotEvents] = await Promise.all([
     loadConfig(root),
     calculateMetrics(root, { now }),
     loadTaskboard(root),
     loadApprovals(root),
-    readJsonOptional(root, INTAKE_STORE_FILE, { records: [] })
+    readJsonOptional(root, INTAKE_STORE_FILE, { records: [] }),
+    readJsonOptional(root, ".product-ops/runtime/automation/status.json", {
+      schemaVersion: "1.0.0",
+      mode: "manual",
+      provider: null,
+      status: "not-configured",
+      codex: null,
+      productCycle: "unknown",
+      developmentSystem: "unknown",
+      executorsEnabled: false,
+      continuousOrchestrator: false,
+      currentCapability: "ساخت خودکار برای این پروژه پیکربندی نشده است.",
+      nextCapability: "اتصال یک اجراگر و راه‌اندازی زمان‌بند محلی"
+    }),
+    readAutopilotState(root),
+    readAutopilotEvents(root, 100)
   ]);
-  const tasks = taskboard.records;
+  const tasks = visibleTaskboardRecords(taskboard.records);
+  const latestAutopilotReport = await loadLatestAutopilotReport(root, autopilotState);
+  const engineeringProgress = await loadEngineeringProgress(autopilotState.applicationRoot);
   const pendingApprovals = approvals.requests.filter((request) => request.status === "pending");
   const risks = collectRisks(tasks, pendingApprovals);
   const roleActivity = config.agents.map((agent) => {
@@ -48,6 +70,13 @@ export async function loadDashboardSnapshot(root, { now = new Date(), mode = "sn
     tasks,
     approvals: approvals.requests,
     intake: intake.records ?? [],
+    automation,
+    autopilot: {
+      state: autopilotState,
+      events: autopilotEvents,
+      latestReport: latestAutopilotReport,
+      engineering: engineeringProgress
+    },
     risks,
     roleActivity,
     readiness: {
@@ -60,6 +89,58 @@ export async function loadDashboardSnapshot(root, { now = new Date(), mode = "sn
       blockedTasks: metrics.totals.blocked
     }
   };
+}
+
+export async function loadEngineeringProgress(applicationRoot) {
+  if (typeof applicationRoot !== "string" || applicationRoot.trim() === "") return null;
+
+  const root = path.resolve(applicationRoot);
+  const taskboard = resolveInside(root, "engineering/taskboard/workstreams.csv", "Engineering taskboard");
+  try {
+    await assertNoLinkTraversal(root, taskboard, "Engineering taskboard");
+    const stat = await fs.lstat(taskboard);
+    if (!stat.isFile() || stat.isSymbolicLink()) return null;
+
+    const rows = parseCsv(await fs.readFile(taskboard, "utf8"));
+    const headers = rows[0] ?? [];
+    const required = ["workstream_id", "owner_role", "domain", "title", "status", "updated_at"];
+    if (!required.every((header) => headers.includes(header))) return null;
+
+    const workstreams = rows.slice(1).map((row) => {
+      const value = (header) => row[headers.indexOf(header)] ?? "";
+      return {
+        id: value("workstream_id"),
+        ownerRole: value("owner_role"),
+        domain: value("domain"),
+        title: value("title"),
+        status: value("status"),
+        updatedAt: value("updated_at")
+      };
+    }).filter((workstream) => workstream.id);
+    if (workstreams.length === 0) return null;
+
+    const withStatus = (statuses) => workstreams.filter((workstream) => statuses.includes(workstream.status));
+    return {
+      total: workstreams.length,
+      completed: withStatus(["completed"]).length,
+      active: withStatus(["claimed", "in_progress", "in_review"]),
+      blocked: withStatus(["blocked"]),
+      failed: withStatus(["failed"]),
+      ready: withStatus(["ready"]).length,
+      workstreams
+    };
+  } catch (error) {
+    if (error?.code === "ENOENT") return null;
+    throw error;
+  }
+}
+
+async function loadLatestAutopilotReport(root, state) {
+  const markdown = String(state?.latestReport ?? "").replaceAll("\\", "/");
+  const reportRoot = ".product-ops/runtime/autopilot/reports/";
+  if (!markdown.startsWith(reportRoot) || !markdown.endsWith(".md")) return null;
+  const json = `${markdown.slice(0, -3)}.json`;
+  return readJsonOptional(root, json, null);
 }
 
 export async function buildDashboard(

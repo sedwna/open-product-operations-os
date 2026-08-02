@@ -65,6 +65,10 @@ of guessing that deletion or overwrite is safe. Replay is accepted only with a m
 original preconditions. Rollback is refused if the target changed after the write. The
 implementation does not connect to a provider or production system.
 
+CSV serialization prefixes formula-capable cells, including apostrophe-prefixed edge cases, so
+idea and agent text cannot become a spreadsheet formula when a workbook is opened. Parsing removes
+only the serializer-owned prefix and preserves the exact logical value for hashing and read-back.
+
 ## Runtime adapters
 
 Runtime commands default to dry-run. Provider configurations are disabled by default, accept only
@@ -77,17 +81,39 @@ explicitly allowlisted variable names. It rejects obvious credential material in
 returns. It is not an operating-system sandbox; untrusted coding agents require an independently
 constrained worker, container, or virtual machine.
 
+On Windows, custom batch executors are rejected. If an official npm-installed `codex.cmd` shim is
+the only available Codex launcher, the runtime resolves its package-owned JavaScript entry point
+and starts it with the already trusted Node runtime; idea or task text never crosses `cmd.exe`.
+
 Development OS executors follow the same boundary. Configuration is disabled and dry-run-first;
-activation requires a passing read-only doctor. The Codex preset uses an ephemeral, workspace-write,
-schema-bound non-interactive run. Every returned result is attributed to the dispatched plan,
-workstream, role, and actor, and both output channels are bounded. External isolation remains a
-deployment requirement, not a claim made by this repository.
+activation requires a passing read-only doctor. Product agents and the independent engineering
+verifier use ephemeral read-only Codex runs; implementation roles use ephemeral workspace-write
+runs. The preset ignores mutable user configuration while reusing external Codex authentication,
+writes the final schema-bound response separately from progress output, and never uses the
+danger-full-access bypass. Every returned result is attributed to the dispatched plan, workstream,
+role, and actor, and both output channels are bounded. External isolation remains a deployment
+requirement, not a claim made by this repository.
+
+The continuous coordinator holds one renewable exclusive lease, retries an interrupted task at
+most three times, and resumes only from schema-valid immutable outputs. The application cycle is
+committed on its own Git branch. Before sealing it, the coordinator rejects changes outside allowed
+paths, inside prohibited paths, or through symbolic links. Production, destructive data work,
+credentials, spending, external publication, and live release remain outside the submitted idea's
+authorization.
+
+Opening the dashboard in read-only mode never starts the coordinator. A writable loopback session
+uses one coordinator path; the legacy manual routing endpoint is disabled while that coordinator
+owns the workspace, preventing two local schedulers from mutating the same task board.
 
 Completed engineering results must bind the canonical plan digest, every planned workstream run,
 the implementation revision, and content-addressed evidence inside the managed evidence boundary.
 Product-to-development exports require a matching canonical approval, and reverse imports require
 the source synchronization receipt. These receipts prove integrity and lineage; they are not
 cryptographic signatures or proof of an external identity.
+
+Engineering gate evidence is copied back into a content-addressed Product Operations boundary only
+after digest and regular-file checks. Downstream product QA and verification agents read that local
+copy instead of receiving access to the application repository.
 
 ## Validation scan boundary
 

@@ -12,7 +12,7 @@ import { initializeDevelopmentOs } from "../src/development/init.js";
 import { planDevelopmentRequest } from "../src/development/planner.js";
 import { completeDevelopmentResult } from "../src/development/result.js";
 import { validateDevelopmentOs } from "../src/development/validation.js";
-import { runEngineeringWorkstream } from "../src/development/runner.js";
+import { effectiveCodexSandboxArguments, runEngineeringWorkstream } from "../src/development/runner.js";
 import { buildDevelopmentDashboard } from "../src/development/dashboard.js";
 import { TASKBOARD_COLUMNS } from "../src/constants.js";
 import { main as developmentMain } from "../src/development-cli.js";
@@ -164,6 +164,49 @@ test("specialist execution is disabled by default, shell-free, attributed, and v
   const validation = await validateDevelopmentOs(root);
   assert.deepEqual(validation.errors, []);
   assert.equal(validation.contractCounts.runs, 1);
+});
+
+test("failed engineering attempts are retained without poisoning a safe retry", async (t) => {
+  const root = await temporaryRoot(t, "development-executor-retry-");
+  await initializeDevelopmentOs(root, { dryRun: false });
+  const requestFile = path.join(root, "request.json");
+  await writeJson(requestFile, developmentRequest("EXECUTOR-RETRY-001"));
+  const { plan } = await planDevelopmentRequest(root, requestFile, { dryRun: false });
+  const configPath = path.join(root, "development-os.config.json");
+  const config = await readJson(configPath);
+  const executor = config.executors.find((candidate) => candidate.roleId === "ENG-01");
+  const tool = path.join(root, "retryable-engineering-executor.mjs");
+  executor.enabled = true;
+  executor.executable = process.execPath;
+  executor.arguments = [tool, "{inputFile}"];
+  await writeJson(configPath, config);
+  const script = (status) => `import fs from "node:fs";\nconst input=JSON.parse(fs.readFileSync(process.argv[2],"utf8"));\nprocess.stdout.write(JSON.stringify({schemaVersion:"1.0.0",planId:input.planId,workstreamId:input.workstream.id,ownerRole:input.workstream.ownerRole,producerActorId:"actor-eng-01",status:${JSON.stringify(status)},implementationRevision:"pending",changedComponents:[],commands:["synthetic-check"],evidence:["synthetic retry evidence"],knownRisks:[],completedAt:"2026-08-01T03:00:00.000Z"}));\n`;
+  await fs.writeFile(tool, script("failed"));
+  const failed = await runEngineeringWorkstream(root, plan.planId, "WS-01", { dryRun: false });
+  assert.equal(failed.result.status, "failed");
+  assert.match(failed.resultFile, /-attempt-[a-f0-9-]+-result\.json$/);
+  await assert.rejects(fs.access(path.join(root, ".development-os", "runs", `${plan.planId}-WS-01-result.json`)));
+  await fs.writeFile(tool, script("completed"));
+  const completed = await runEngineeringWorkstream(root, plan.planId, "WS-01", { dryRun: false });
+  assert.equal(completed.result.status, "completed");
+  assert.equal(completed.resultFile, `.development-os/runs/${plan.planId}-WS-01-result.json`);
+});
+
+test("engineering honors an explicit full-access host profile while verifier writes remain separately guarded", () => {
+  const implementation = ["exec", "--sandbox", "workspace-write", "prompt"];
+  assert.deepEqual(
+    effectiveCodexSandboxArguments(implementation, { CODEX_PERMISSION_PROFILE: ":danger-full-access" }),
+    ["exec", "--sandbox", "danger-full-access", "prompt"]
+  );
+  assert.deepEqual(
+    effectiveCodexSandboxArguments(implementation, { CODEX_PERMISSION_PROFILE: ":read-only" }),
+    implementation
+  );
+  const verification = ["exec", "--sandbox", "read-only", "prompt"];
+  assert.deepEqual(
+    effectiveCodexSandboxArguments(verification, { CODEX_PERMISSION_PROFILE: ":danger-full-access" }),
+    ["exec", "--sandbox", "danger-full-access", "prompt"]
+  );
 });
 
 test("Product Operations and Development OS synchronize independently through digested contracts", async (t) => {

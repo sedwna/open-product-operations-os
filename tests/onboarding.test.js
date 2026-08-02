@@ -104,7 +104,9 @@ test("onboarding service creates operations, app, first cycle, and independent G
     requested: true,
     initialized: true,
     validated: true,
-    status: "ready"
+    status: "ready",
+    executorsConfigured: false,
+    executorsEnabled: false
   });
   assert.equal(result.git.operations, "committed");
   assert.equal(result.git.application, "committed");
@@ -115,11 +117,74 @@ test("onboarding service creates operations, app, first cycle, and independent G
   assert.equal((await validateDevelopmentOs(result.applicationPath)).errors.length, 0);
   await assert.rejects(fs.access(path.join(result.applicationPath, ".product-ops-onboarding.json")));
   assert.ok(await fs.readFile(path.join(result.operationsPath, "product-intake", "first-idea.json"), "utf8"));
+  const intakeStore = JSON.parse(await fs.readFile(
+    path.join(result.operationsPath, ".product-ops", "runtime", "intake.json"),
+    "utf8"
+  ));
+  assert.equal(intakeStore.records.length, 1, "the wizard must record the first idea exactly once");
+  assert.equal(intakeStore.records[0].title, request(parent).ideaTitle);
+  assert.equal(intakeStore.records[0].status, "accepted");
   assert.equal(await gitHead(result.operationsPath), true);
   assert.equal(await gitHead(result.applicationPath), true);
   for (const step of ONBOARDING_STEPS) {
     assert.ok(updates.some((update) => update.id === step.id && update.status === "completed"), step.id);
   }
+});
+
+test("onboarding Codex automation activates engineering executors only after readiness passes", async (t) => {
+  const parent = await makeTempDirectory("product-ops-onboarding-codex-");
+  t.after(() => fs.rm(parent, { recursive: true, force: true }));
+  const readiness = {
+    provider: "codex",
+    status: "ready",
+    installed: true,
+    executable: path.join(parent, "codex"),
+    version: "codex 1.2.3",
+    executableUsable: true,
+    authenticated: true,
+    authenticationMode: "chatgpt",
+    entitlementVerified: false,
+    canAutomate: true,
+    message: "کدکس آماده است.",
+    diagnostic: ""
+  };
+  const result = await runOnboarding(request(parent, {
+    automationMode: "codex",
+    installCodexCli: false,
+    authenticateCodex: false,
+    ideaEnabled: false,
+    initializeGit: false,
+    createInitialCommit: false
+  }), {
+    repoRoot: repositoryRoot,
+    skipDependencyInstall: true,
+    inspectCodex: async () => readiness
+  });
+
+  assert.equal(result.automation.status, "executors-ready");
+  assert.equal(result.development.executorsConfigured, true);
+  assert.equal(result.development.executorsEnabled, true);
+  const developmentConfig = JSON.parse(await fs.readFile(
+    path.join(result.applicationPath, "development-os.config.json"),
+    "utf8"
+  ));
+  assert.equal(developmentConfig.executors.length, 15);
+  assert.ok(developmentConfig.executors.every((executor) => executor.enabled));
+  const automation = JSON.parse(await fs.readFile(
+    path.join(result.operationsPath, ".product-ops", "runtime", "automation", "status.json"),
+    "utf8"
+  ));
+  assert.equal(automation.status, "executors-ready");
+  assert.equal(automation.continuousOrchestrator, true);
+  assert.match(automation.currentCapability, /چرخهٔ پیوسته/);
+  const automationLink = JSON.parse(await fs.readFile(
+    path.join(result.operationsPath, ".product-ops", "runtime", "automation", "link.json"),
+    "utf8"
+  ));
+  assert.equal(automationLink.autoStart, true);
+  assert.equal(automationLink.productExecutorsEnabled, true);
+  assert.equal(automationLink.engineeringExecutorsEnabled, true);
+  assert.doesNotMatch(JSON.stringify(automation), /api[_-]?key|password|secret/i);
 });
 
 test("onboarding never treats an existing Git repository as a new application or stages existing code", async (t) => {
@@ -282,7 +347,7 @@ test("onboarding view escapes embedded values and launcher artifacts are integri
   assert.doesNotMatch(html, /<\/script><script>alert/);
   assert.match(html, /\\u003c\/script\\u003e/);
   assert.match(html, /name="initializeDevelopmentOs"/);
-  assert.doesNotMatch(html, /name="writableDashboard" checked/);
+  assert.match(html, /name="writableDashboard" checked/);
   assert.match(html, /id="form-error" role="alert"/);
   assert.match(html, /id="retry"/);
   const browserScript = html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)?.[1];

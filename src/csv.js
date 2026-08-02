@@ -3,7 +3,7 @@ export function stringifyCsv(rows) {
 }
 
 function escapeCell(value) {
-  const text = value == null ? "" : String(value);
+  const text = protectSpreadsheetCell(value == null ? "" : String(value));
   if (!/[",\r\n]/.test(text)) {
     return text;
   }
@@ -37,10 +37,10 @@ export function parseCsv(text) {
       }
       quoted = true;
     } else if (character === ",") {
-      row.push(cell);
+      row.push(restoreSpreadsheetCell(cell));
       cell = "";
     } else if (character === "\n") {
-      row.push(cell.replace(/\r$/, ""));
+      row.push(restoreSpreadsheetCell(cell.replace(/\r$/, "")));
       rows.push(row);
       row = [];
       cell = "";
@@ -54,7 +54,7 @@ export function parseCsv(text) {
   }
 
   if (cell.length > 0 || row.length > 0) {
-    row.push(cell.replace(/\r$/, ""));
+    row.push(restoreSpreadsheetCell(cell.replace(/\r$/, "")));
     rows.push(row);
   }
 
@@ -62,6 +62,19 @@ export function parseCsv(text) {
     (candidate, index) =>
       index === 0 || candidate.some((value) => value.trim().length > 0)
   );
+}
+
+const SPREADSHEET_FORMULA = /^[\t\r\n ]*[=+\-@]/;
+
+function protectSpreadsheetCell(text) {
+  const withoutApostrophes = text.replace(/^'+/, "");
+  return SPREADSHEET_FORMULA.test(withoutApostrophes) ? `'${text}` : text;
+}
+
+function restoreSpreadsheetCell(text) {
+  if (!text.startsWith("'")) return text;
+  const encoded = text.slice(1);
+  return SPREADSHEET_FORMULA.test(encoded.replace(/^'+/, "")) ? encoded : text;
 }
 
 export function rowsToObjects(rows) {

@@ -6,6 +6,9 @@ import { loadDashboardSnapshot } from "./dashboard.js";
 import { renderDashboard } from "./dashboard-view.js";
 import { runControlTower } from "./control-tower.js";
 import { ingestRecord } from "./intake.js";
+import { startAutopilotLoop } from "../autopilot/orchestrator.js";
+import { patchAutopilotState, readAutomationLink, readAutopilotState } from "../autopilot/state.js";
+import { dependencyState, loadTaskboard, replaceTaskboard } from "./taskboard.js";
 
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -21,9 +24,14 @@ export async function startDashboardServer(
     throw new Error("Dashboard port must be an integer between 0 and 65535.");
   }
   await validatedConfig(root);
+  const automationLink = await readAutomationLink(root).catch((error) => {
+    if (error.code === "ENOENT") return null;
+    throw error;
+  });
+  const autopilot = writable && automationLink?.autoStart ? startAutopilotLoop(root) : null;
   const csrfToken = crypto.randomBytes(32).toString("base64url");
   const server = http.createServer((request, response) => {
-    handleRequest(root, { writable, csrfToken, request, response }).catch((error) => {
+    handleRequest(root, { writable, csrfToken, request, response, autopilot }).catch((error) => {
       if (!response.headersSent) setSecurityHeaders(response);
       sendJson(response, error.statusCode ?? 500, {
         error: error.statusCode ? error.message : "Dashboard request failed safely."
@@ -40,11 +48,14 @@ export async function startDashboardServer(
     server,
     url: `http://${host === "::1" ? "[::1]" : host}:${actualPort}`,
     writable,
-    close: () => new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()))
+    close: async () => {
+      await autopilot?.close();
+      await new Promise((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
+    }
   };
 }
 
-async function handleRequest(root, { writable, csrfToken, request, response }) {
+async function handleRequest(root, { writable, csrfToken, request, response, autopilot }) {
   setSecurityHeaders(response);
   const base = `http://${request.headers.host ?? "127.0.0.1"}`;
   const url = new URL(request.url ?? "/", base);
@@ -69,17 +80,37 @@ async function handleRequest(root, { writable, csrfToken, request, response }) {
     assertMutationAllowed({ writable, csrfToken, request });
     const body = await readJsonBody(request);
     if (url.pathname === "/api/intake") {
-      const result = await ingestRecord(root, body, { dryRun: false });
+      const result = await ingestRecord(root, { ...body, autopilotAuthorized: true }, { dryRun: false });
+      if (autopilot) void autopilot.runNow();
       sendJson(response, 201, result);
       return;
     }
     if (url.pathname === "/api/operate") {
+      if (autopilot) throw httpError(409, "The continuous orchestrator owns product-cycle routing in this workspace.");
       const config = await validatedConfig(root);
       const receipt = await runControlTower(root, config, {
         dryRun: false,
         executeDevelopment: false
       });
       sendJson(response, 200, receipt);
+      return;
+    }
+    if (url.pathname === "/api/autopilot/pause") {
+      const result = await patchAutopilotState(root, { status: "paused" });
+      sendJson(response, 200, result);
+      return;
+    }
+    if (["/api/autopilot/start", "/api/autopilot/resume", "/api/autopilot/retry"].includes(url.pathname)) {
+      if (!autopilot) throw httpError(409, "Autopilot is not configured for this workspace.");
+      const current = await readAutopilotState(root);
+      if (url.pathname.endsWith("/retry")) await resetRetryableBlockedTask(root, current);
+      const result = await patchAutopilotState(root, {
+        status: "idle",
+        attempt: url.pathname.endsWith("/retry") ? 0 : current.attempt,
+        lastError: url.pathname.endsWith("/retry") ? null : current.lastError
+      });
+      void autopilot.runNow();
+      sendJson(response, 202, result);
       return;
     }
     const approvalMatch = url.pathname.match(/^\/api\/approvals\/([^/]+)\/decision$/);
@@ -96,6 +127,23 @@ async function handleRequest(root, { writable, csrfToken, request, response }) {
     }
   }
   sendJson(response, 404, { error: "Dashboard route not found." });
+}
+
+async function resetRetryableBlockedTask(root, state) {
+  if (!state.activeEventId) return null;
+  const { headers, records, byId } = await loadTaskboard(root);
+  const current = records.find((task) => task.task_id === state.currentTaskId && task.status === "blocked");
+  const retryable = current ?? records.find((task) => task.event_id === state.activeEventId
+    && task.status === "blocked" && dependencyState(task, byId).satisfied);
+  if (!retryable) return null;
+  const updated = records.map((task) => task.task_id === retryable.task_id ? {
+    ...task,
+    status: "ready",
+    blocked_reason: `Retry requested after: ${String(task.blocked_reason ?? "blocked result").slice(0, 500)}`,
+    updated_at: new Date().toISOString()
+  } : task);
+  await replaceTaskboard(root, headers, updated, { dryRun: false });
+  return retryable.task_id;
 }
 
 function assertMutationAllowed({ writable, csrfToken, request }) {

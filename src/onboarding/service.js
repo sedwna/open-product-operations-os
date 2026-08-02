@@ -4,6 +4,9 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { assertNoCredentialMaterial } from "../runtime/security.js";
+import { validatePublishedSchema } from "../schema-validation.js";
+import { captureCodexCommand, inspectCodexReadiness } from "../codex/readiness.js";
+import { configureDevelopmentExecutors } from "../development/executor-setup.js";
 import { initializeDevelopmentOs as initializeDevelopmentSystem } from "../development/init.js";
 import { validateDevelopmentOs } from "../development/validation.js";
 import { assertNoLinkTraversal } from "../paths.js";
@@ -17,6 +20,7 @@ const MAX_COMMAND_OUTPUT_BYTES = 1024 * 1024;
 
 export const ONBOARDING_STEPS = Object.freeze([
   { id: "dependencies", label: "آماده‌سازی موتور" },
+  { id: "codex", label: "بررسی موتور هوشمند کدکس" },
   { id: "operations", label: "ساخت فضای عملیات محصول" },
   { id: "configuration", label: "ثبت مشخصات محصول" },
   { id: "application", label: "آماده‌سازی مخزن کد" },
@@ -67,6 +71,7 @@ export function normalizeOnboardingRequest(input, { repoRoot } = {}) {
   }
   const initializeDevelopmentOs = appMode === "create"
     || (appMode === "existing" && input.initializeDevelopmentOs === true);
+  const automationMode = input.automationMode === "codex" ? "codex" : "manual";
 
   const ideaEnabled = Boolean(input.ideaEnabled && String(input.ideaTitle || "").trim());
   const priority = ALLOWED_PRIORITIES.has(input.ideaPriority) ? input.ideaPriority : "P2";
@@ -76,7 +81,8 @@ export function normalizeOnboardingRequest(input, { repoRoot } = {}) {
         title: boundedText(input.ideaTitle, "عنوان ایده", 3, 180),
         description: boundedText(input.ideaDescription, "شرح ایده", 10, 2400),
         source: boundedText(input.ideaSource || "راه‌اندازی یک‌کلیکی محلی", "منبع ایده", 2, 200),
-        priority
+        priority,
+        autopilotAuthorized: automationMode === "codex"
       }
     : null;
 
@@ -93,6 +99,9 @@ export function normalizeOnboardingRequest(input, { repoRoot } = {}) {
     applicationFolder,
     applicationPath,
     initializeDevelopmentOs,
+    automationMode,
+    installCodexCli: automationMode === "codex" && input.installCodexCli !== false,
+    authenticateCodex: automationMode === "codex" && input.authenticateCodex !== false,
     idea,
     installDependencies: input.installDependencies !== false,
     initializeGit: input.initializeGit !== false,
@@ -106,10 +115,11 @@ export function normalizeOnboardingRequest(input, { repoRoot } = {}) {
 }
 
 export async function inspectOnboardingEnvironment(repoRoot) {
-  const [gitVersion, gitName, gitEmail] = await Promise.all([
+  const [gitVersion, gitName, gitEmail, codex] = await Promise.all([
     captureOptional("git", ["--version"]),
     captureOptional("git", ["config", "--global", "user.name"]),
-    captureOptional("git", ["config", "--global", "user.email"])
+    captureOptional("git", ["config", "--global", "user.email"]),
+    inspectCodexReadiness({ cwd: repoRoot })
   ]);
   return {
     platform: process.platform,
@@ -120,14 +130,18 @@ export async function inspectOnboardingEnvironment(repoRoot) {
     gitAvailable: Boolean(gitVersion),
     gitVersion,
     gitName,
-    gitEmail
+    gitEmail,
+    codex
   };
 }
 
 export async function runOnboarding(request, {
   repoRoot,
   onProgress = () => {},
-  skipDependencyInstall = false
+  skipDependencyInstall = false,
+  inspectCodex = inspectCodexReadiness,
+  executeCodex = captureCodexCommand,
+  configureExecutors = configureDevelopmentExecutors
 } = {}) {
   const answers = normalizeOnboardingRequest(request, { repoRoot });
   await fs.mkdir(answers.workspaceParent, { recursive: true });
@@ -182,10 +196,21 @@ export async function runOnboarding(request, {
       requested: answers.initializeDevelopmentOs,
       initialized: false,
       validated: false,
-      status: answers.appMode === "skip" ? "skipped-no-application" : "pending"
+      status: answers.appMode === "skip" ? "skipped-no-application" : "pending",
+      executorsConfigured: false,
+      executorsEnabled: false
+    },
+    automation: {
+      mode: answers.automationMode,
+      provider: answers.automationMode === "codex" ? "codex" : null,
+      status: answers.automationMode === "codex" ? "checking" : "manual",
+      codex: null,
+      continuousOrchestrator: false
     },
     git: { operations: "skipped", application: "skipped" }
   };
+
+  let codexReadiness = null;
 
   await step(onProgress, "dependencies", async (log) => {
     if (skipDependencyInstall || !answers.installDependencies) {
@@ -247,6 +272,38 @@ export async function runOnboarding(request, {
     log("پوشهٔ کد محصول با فایل‌های پایه ساخته شد.");
   });
 
+  await step(onProgress, "codex", async (log) => {
+    if (answers.automationMode !== "codex") {
+      report.automation.status = "manual";
+      log("ساخت خودکار انتخاب نشده است؛ اتصال کدکس تغییری نمی‌کند.");
+      return;
+    }
+    codexReadiness = await inspectCodex({ cwd: repoRoot });
+    log(codexReadiness.message);
+    if (!codexReadiness.executableUsable && answers.installCodexCli) {
+      log("در حال نصب رسمی ابزار خط فرمان کدکس از بستهٔ منتشرشدهٔ اوپن‌ای‌آی…");
+      await runNpm(["install", "--global", "@openai/codex"], { cwd: repoRoot, onLine: log });
+      codexReadiness = await inspectCodex({ cwd: repoRoot });
+      log(codexReadiness.message);
+    }
+    if (codexReadiness.status === "login-required" && answers.authenticateCodex) {
+      log("مرورگر برای ورود امن به کدکس باز می‌شود؛ اطلاعات ورود در پروژه ذخیره نخواهد شد.");
+      const login = await executeCodex(codexReadiness.executable, ["login"], {
+        cwd: repoRoot,
+        timeoutMs: 10 * 60 * 1000
+      });
+      if (!login.ok) throw new Error(`ورود کدکس کامل نشد: ${login.error || login.stderr || "وضعیت نامشخص"}`);
+      codexReadiness = await inspectCodex({ cwd: repoRoot });
+      log(codexReadiness.message);
+    }
+    report.automation.codex = publicCodexReadiness(codexReadiness);
+    if (!codexReadiness.canAutomate) {
+      throw new Error(`حالت ساخت خودکار بدون کدکس آماده شروع نمی‌شود: ${codexReadiness.message}`);
+    }
+    report.automation.status = "provider-ready";
+    log("ورود معتبر تأیید شد. نوع اشتراک از خط فرمان قابل خواندن نیست و دسترسی عملی هنگام نخستین اجرای واقعی سنجیده می‌شود.");
+  });
+
   await step(onProgress, "development", async (log) => {
     if (!answers.applicationPath) {
       report.development.status = "skipped-no-application";
@@ -272,6 +329,19 @@ export async function runOnboarding(request, {
     report.development.validated = true;
     report.development.status = "ready";
     log(`سامانهٔ عملیات توسعه با ${validation.checkedFiles} فایل مدیریت‌شده آماده و معتبر است.`);
+    if (answers.automationMode === "codex") {
+      const configured = await configureExecutors(answers.applicationPath, {
+        provider: "codex",
+        role: "all",
+        enable: true,
+        dryRun: false,
+        resolveCommand: async () => codexReadiness.executable
+      });
+      report.development.executorsConfigured = true;
+      report.development.executorsEnabled = configured.enabled;
+      report.automation.status = "executors-ready";
+      log(`${configured.selectedRoles.length} نقش مهندسی به اجراگر کدکس متصل و فعال شدند.`);
+    }
   });
 
   await step(onProgress, "idea", async (log) => {
@@ -297,6 +367,36 @@ export async function runOnboarding(request, {
     await runCli(repoRoot, ["operate", answers.operationsPath, "--apply"], log);
     report.initialCycleApplied = true;
   });
+
+  if (answers.operationsPath) {
+    const automationDirectory = path.join(answers.operationsPath, ".product-ops", "runtime", "automation");
+    const automationStatus = buildAutomationStatus(report);
+    const automationErrors = validatePublishedSchema("automation-status.schema.json", automationStatus);
+    if (automationErrors.length > 0) {
+      throw new Error(`وضعیت خودکارسازی معتبر نیست: ${automationErrors.join("؛ ")}`);
+    }
+    await fs.mkdir(automationDirectory, { recursive: true });
+    await fs.writeFile(
+      path.join(automationDirectory, "status.json"),
+      `${JSON.stringify(automationStatus, null, 2)}\n`,
+      "utf8"
+    );
+    if (answers.automationMode === "codex" && answers.applicationPath && report.development.executorsEnabled) {
+      const link = {
+        schemaVersion: "1.0.0",
+        applicationRelativePath: path.relative(answers.operationsPath, answers.applicationPath).replaceAll("\\", "/"),
+        provider: "codex",
+        productExecutorsEnabled: true,
+        engineeringExecutorsEnabled: true,
+        autoStart: true,
+        autoApproveInitialIdea: true,
+        createdAt: new Date().toISOString()
+      };
+      const linkErrors = validatePublishedSchema("automation-link.schema.json", link);
+      if (linkErrors.length) throw new Error(`پیوند خودکارسازی معتبر نیست: ${linkErrors.join("؛ ")}`);
+      await fs.writeFile(path.join(automationDirectory, "link.json"), `${JSON.stringify(link, null, 2)}\n`, "utf8");
+    }
+  }
 
   await step(onProgress, "git", async (log) => {
     if (!answers.initializeGit) {
@@ -474,6 +574,41 @@ async function assertSafeDestination(target, label, resumableMarker) {
   const entries = await fs.readdir(target);
   if (entries.length > 0) throw new Error(`${label} از قبل وجود دارد و خالی نیست؛ مسیر دیگری انتخاب کنید.`);
   return false;
+}
+
+function publicCodexReadiness(value) {
+  if (!value) return null;
+  return {
+    status: value.status,
+    installed: value.installed,
+    executableUsable: value.executableUsable,
+    authenticated: value.authenticated,
+    authenticationMode: value.authenticationMode,
+    version: value.version,
+    entitlementVerified: false,
+    canAutomate: value.canAutomate,
+    message: value.message
+  };
+}
+
+function buildAutomationStatus(report) {
+  const enabled = report.automation.mode === "codex" && report.development.executorsEnabled;
+  return {
+    schemaVersion: "1.0.0",
+    updatedAt: new Date().toISOString(),
+    mode: report.automation.mode,
+    provider: report.automation.provider,
+    status: enabled ? "executors-ready" : report.automation.status,
+    codex: report.automation.codex,
+    productCycle: report.initialCycleApplied ? "initialized" : "waiting-for-idea",
+    developmentSystem: report.development.status,
+    executorsEnabled: report.development.executorsEnabled,
+    continuousOrchestrator: enabled,
+    currentCapability: enabled
+      ? "چرخهٔ پیوستهٔ محصول و توسعه فعال است؛ ایده‌های مجاز خودکار تحلیل، پیاده‌سازی، راستی‌آزمایی و گزارش می‌شوند."
+      : "چرخهٔ خودکار فعال نیست.",
+    nextCapability: enabled ? "ثبت بازخورد بعدی و آغاز خودکار چرخهٔ اصلاح" : "اتصال کدکس و فعال‌سازی اجراگرها"
+  };
 }
 
 async function validateApplicationResumeMarker(applicationPath) {

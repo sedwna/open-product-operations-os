@@ -31,6 +31,7 @@ export async function ingestRecord(root, input, { dryRun = true, now = new Date(
     fingerprint,
     status: duplicate ? "duplicate" : "proposed",
     duplicateOf: duplicate?.intakeId ?? null,
+    autopilotAuthorized: input.autopilotAuthorized === true,
     createdAt: utcTimestamp(now)
   };
   const errors = validatePublishedSchema("intake-record.schema.json", record);

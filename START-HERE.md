@@ -9,6 +9,9 @@
 [Launch in one click](#the-easiest-path) · [Create manually](#1-create-the-project) · [Run the first cycle](#3-run-the-first-cycle) ·
 [Open the dashboard](#4-open-the-control-tower) · [Connect development](#development-integration)
 
+For the governed path from an idea to continuously claimed engineering work, read the
+[Autonomous Product Factory architecture](docs/automation/README.md).
+
 </div>
 
 ---

@@ -10,7 +10,12 @@ import { loadDevelopmentConfig, validateDevelopmentConfig } from "./config.js";
 const WORKSTREAM_SCHEMA = "engineering/schemas/engineering-workstream-run.schema.json";
 const CODEX_EXECUTABLE = "codex";
 const DEFAULT_TIMEOUT_MS = 1_800_000;
-const SAFE_ENVIRONMENT_NAMES = new Set(["CI", "LANG", "LC_ALL", "NO_COLOR", "TZ"]);
+const CODEX_SESSION_ENVIRONMENT = Object.freeze([
+  "APPDATA", "CODEX_HOME", "HOME", "LOCALAPPDATA", "USERPROFILE"
+]);
+const SAFE_ENVIRONMENT_NAMES = new Set([
+  "CI", "LANG", "LC_ALL", "NO_COLOR", "TZ", ...CODEX_SESSION_ENVIRONMENT
+]);
 
 export const EXECUTOR_ISOLATION_WARNING =
   "external-required is a contract, not a host sandbox: run every executor in a dedicated container, VM, or isolated hosted worker; do not grant production credentials.";
@@ -41,7 +46,7 @@ export async function configureDevelopmentExecutors(
   for (const executor of selected) {
     const actorId = config.roles.find((candidate) => candidate.id === executor.roleId)?.actorId;
     const preset = provider === "codex"
-      ? codexPreset(actorId)
+      ? codexPreset(actorId, executor.roleId)
       : commandPreset(executable, commandArguments);
     Object.assign(executor, {
       enabled: false,
@@ -50,7 +55,7 @@ export async function configureDevelopmentExecutors(
       arguments: preset.arguments,
       workingDirectory,
       timeoutMs: Number(timeoutMs),
-      environmentAllowlist: [],
+      environmentAllowlist: preset.environmentAllowlist,
       isolation: "external-required"
     });
   }
@@ -176,9 +181,12 @@ function validateSetupOptions({ provider, role, executable, commandArguments, wo
   if (provider === "command" && (!executable || executable.trim() === "")) {
     throw new Error("The command provider requires --executable.");
   }
-  if (provider === "command" && isShellExecutable(executable)) {
-    throw new Error("The command provider cannot use a shell interpreter as its executable.");
-  }
+    if (provider === "command" && isShellExecutable(executable)) {
+      throw new Error("The command provider cannot use a shell interpreter as its executable.");
+    }
+    if (provider === "command" && /\.(?:cmd|bat)$/i.test(executable)) {
+      throw new Error("The command provider cannot use Windows batch executables; choose a native executable or a direct Node script.");
+    }
   if (provider === "codex" && (executable !== undefined || commandArguments.length > 0)) {
     throw new Error("The Codex provider owns its executable and arguments; do not pass command overrides.");
   }
@@ -207,32 +215,40 @@ function selectExecutors(config, role) {
   return [executor];
 }
 
-function codexPreset(actorId) {
+function codexPreset(actorId, roleId) {
   if (!actorId) throw new Error("The selected Codex executor role has no producer actor.");
+  const verifier = roleId === "ENG-15";
   const prompt = [
     "Read the JSON workstream input at {inputFile}.",
     "Implement only the assigned workstream in the current repository and obey its writeBoundary and policy.",
     "Run relevant verification and return only one JSON object conforming to engineering-workstream-run.schema.json.",
     `Set producerActorId exactly to ${JSON.stringify(actorId)}; copy planId, workstreamId, and ownerRole from the input.`,
     "Report only commands and evidence you actually produced.",
+    "Do not create or switch Git branches and do not create commits; the orchestrator owns Git history.",
+    "Set implementationRevision to pending; the orchestrator seals it to the verified content digest after all workstreams finish.",
+    verifier ? "Act as an independent read-only verifier: do not edit files, reproduce relevant checks, inspect tracked and untracked implementation files, and return blocked or failed if material claims are not supported. On Windows, run Node test files with node --test tests\\*.test.js rather than passing the tests directory." : "Make only changes that are necessary for the assigned engineering boundary.",
     "Do not deploy to production, use production credentials, or perform destructive database operations."
   ].join(" ");
   return {
     executable: CODEX_EXECUTABLE,
+    environmentAllowlist: [...CODEX_SESSION_ENVIRONMENT],
     arguments: [
       "exec",
       "--ephemeral",
+      "--ignore-user-config",
       "--sandbox",
-      "workspace-write",
+      verifier ? "read-only" : "workspace-write",
       "--output-schema",
       `{projectRoot}/${WORKSTREAM_SCHEMA}`,
+      "--output-last-message",
+      "{rawOutputFile}",
       prompt
     ]
   };
 }
 
 function commandPreset(executable, commandArguments) {
-  return { executable, arguments: [...commandArguments] };
+  return { executable, arguments: [...commandArguments], environmentAllowlist: [] };
 }
 
 function isShellExecutable(executable = "") {
@@ -247,15 +263,19 @@ function looksLikeCodexPreset(executor) {
 }
 
 async function checkCodexPreset(root, executor, errors, checks) {
-  const expectedPrefix = ["exec", "--ephemeral", "--sandbox", "workspace-write", "--output-schema"];
+  const expectedSandbox = executor.roleId === "ENG-15" ? "read-only" : "workspace-write";
+  const expectedPrefix = ["exec", "--ephemeral", "--ignore-user-config", "--sandbox", expectedSandbox, "--output-schema"];
   if (!expectedPrefix.every((value, index) => executor.arguments[index] === value)) {
-    errors.push(`${executor.roleId}: Codex preset must use codex exec --ephemeral --sandbox workspace-write --output-schema.`);
+    errors.push(`${executor.roleId}: Codex preset must use the role-appropriate Codex sandbox and output schema.`);
     return;
   }
-  if (executor.arguments[5] !== `{projectRoot}/${WORKSTREAM_SCHEMA}`) {
+  if (executor.arguments[6] !== `{projectRoot}/${WORKSTREAM_SCHEMA}`) {
     errors.push(`${executor.roleId}: Codex output schema must reference the packaged engineering workstream schema.`);
   }
-  const prompt = executor.arguments[6] ?? "";
+  if (executor.arguments[7] !== "--output-last-message" || executor.arguments[8] !== "{rawOutputFile}") {
+    errors.push(`${executor.roleId}: Codex preset must persist the final structured result separately from progress output.`);
+  }
+  const prompt = executor.arguments[9] ?? "";
   if (!prompt.includes("{inputFile}") || !prompt.includes("engineering-workstream-run.schema.json")) {
     errors.push(`${executor.roleId}: Codex prompt must read {inputFile} and require the engineering workstream result contract.`);
   }
@@ -293,7 +313,8 @@ function executableCandidates(executable, cwd, environment) {
     : [""];
   const withExtensions = (base) => {
     if (path.extname(base) || extensions.length === 1 && extensions[0] === "") return [base];
-    return [base, ...extensions.map((extension) => `${base}${extension.toLowerCase()}`), ...extensions.map((extension) => `${base}${extension.toUpperCase()}`)];
+    const nativeCandidates = [...extensions.map((extension) => `${base}${extension.toLowerCase()}`), ...extensions.map((extension) => `${base}${extension.toUpperCase()}`)];
+    return process.platform === "win32" ? [...nativeCandidates, base] : [base, ...nativeCandidates];
   };
   if (path.isAbsolute(executable)) return withExtensions(executable);
   if (executable.includes("/") || executable.includes("\\")) {

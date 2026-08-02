@@ -16,6 +16,7 @@
     "fingerprint": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "status": { "enum": ["proposed", "duplicate", "accepted", "rejected"] },
     "duplicateOf": { "type": ["string", "null"] },
+    "autopilotAuthorized": { "type": "boolean" },
     "createdAt": { "type": "string", "format": "date-time" }
   }
 }

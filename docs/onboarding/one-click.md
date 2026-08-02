@@ -39,8 +39,8 @@ The flow has five short screens:
 1. Choose the parent folder and names for the operations and application repositories.
 2. Describe the product, vision, target users, environments, and human product owner.
 3. Optionally record the first idea, its problem statement, source, and initial priority.
-4. Review Development Operations OS, dependency, Git, initial-commit, and writable-local-dashboard
-   options.
+4. Review Development Operations OS, Codex automation, dependency, Git, initial-commit, and
+   writable-local-dashboard options.
 5. Review the complete plan and start the bounded setup.
 
 Defaults are already selected for the common case. The user can create a new application folder,
@@ -49,9 +49,11 @@ connect an existing application folder, or postpone the code repository entirely
 A new application always receives the namespaced Development Operations OS files and is validated
 before onboarding completes. An existing application remains untouched unless the user explicitly
 selects Development Operations OS initialization. This opt-in adds only the namespaced engineering
-files; it does not stage or commit the existing repository. Specialist executors remain disabled.
-The live dashboard is read-only by default, and writable local mode is shown explicitly in the final
-review when selected.
+files; it does not stage or commit the existing repository. Specialist executors remain disabled
+unless the user explicitly selects Codex automation and the readiness checks pass.
+The wizard selects writable local mode for the common autonomous case. It remains loopback-only,
+uses a per-session request token, and is shown explicitly in the final review. The user can turn it
+off for an observation-only workspace.
 
 ## What happens after confirmation
 
@@ -60,6 +62,7 @@ The setup engine performs and reports each bounded step:
 ```text
 verify or install a local runtime
 → install locked project dependencies
+→ verify the Codex CLI and login; install or open login when explicitly selected
 → preview and create the operations repository
 → apply product configuration
 → create or connect the application repository
@@ -68,13 +71,19 @@ verify or install a local runtime
 → run the first product-operations cycle
 → initialize independent Git histories
 → validate the generated workspace
-→ open the live RTL product dashboard
+→ persist the Product/Development automation link
+→ open the live RTL product dashboard and start the resumable cycle
 ```
 
-Development Operations OS is initialized for a new application, but every specialist executor and
-the lower-level development adapter remain disabled. Creating a task board does not silently
-authorize a coding agent, external provider, credential, deployment, or write outside the chosen
-folders.
+Development Operations OS is initialized for a new application. In manual mode every specialist
+executor remains disabled. In Codex automation mode, the wizard distinguishes installation,
+executable health, and login status before configuring and enabling the bounded engineering
+executors. When the first idea was submitted with Codex automation selected, the dashboard starts
+the durable coordinator: product roles analyze it, engineering roles implement dependency-ready
+work, independent verifiers inspect the result, evidence returns to product, the workbook is
+updated through controlled receipts, and a Persian cycle report is produced. Creating a task board
+never authorizes deployment, production credentials, destructive data work, spending, external
+publication, or writes outside the chosen folders.
 
 ## Runtime and privacy contract
 
@@ -84,8 +93,9 @@ folders.
 - Release archives contain the exact production dependencies resolved from the published lockfile.
   The launcher binds them to the lockfile hash and automatically performs a locked, lifecycle-script-
   free repair if the dependency directory is absent, incomplete, or stale.
-- It does not modify the system-wide runtime, request administrator access, or install a package
-  manager globally.
+- It does not modify the system-wide Node.js runtime or request administrator access. If Codex
+  automation is explicitly selected and no usable CLI exists, it may install the official
+  `@openai/codex` package with npm at user scope; the review screen discloses this before execution.
 - The onboarding and dashboard servers bind only to a loopback address.
 - The session rejects credentials and private material in form values.
 - Existing non-empty folders are never overwritten. Only folders containing the resumable

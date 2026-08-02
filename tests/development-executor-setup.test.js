@@ -32,14 +32,17 @@ test("Codex preset is dry-run-first, schema-bound, credential-free, and disabled
   const executor = proposed.executors.find((candidate) => candidate.roleId === "ENG-04");
   assert.equal(executor.enabled, false);
   assert.equal(executor.executable, "codex");
-  assert.deepEqual(executor.environmentAllowlist, []);
-  assert.equal(executor.isolation, "external-required");
-  assert.deepEqual(executor.arguments.slice(0, 6), [
-    "exec", "--ephemeral", "--sandbox", "workspace-write", "--output-schema",
-    "{projectRoot}/engineering/schemas/engineering-workstream-run.schema.json"
+  assert.deepEqual(executor.environmentAllowlist, [
+    "APPDATA", "CODEX_HOME", "HOME", "LOCALAPPDATA", "USERPROFILE"
   ]);
-  assert.match(executor.arguments[6], /Read the JSON workstream input at \{inputFile\}/);
-  assert.match(executor.arguments[6], /engineering-workstream-run\.schema\.json/);
+  assert.equal(executor.isolation, "external-required");
+  assert.deepEqual(executor.arguments.slice(0, 9), [
+    "exec", "--ephemeral", "--ignore-user-config", "--sandbox", "workspace-write", "--output-schema",
+    "{projectRoot}/engineering/schemas/engineering-workstream-run.schema.json", "--output-last-message",
+    "{rawOutputFile}"
+  ]);
+  assert.match(executor.arguments[9], /Read the JSON workstream input at \{inputFile\}/);
+  assert.match(executor.arguments[9], /engineering-workstream-run\.schema\.json/);
   assert.doesNotMatch(JSON.stringify(executor), /api[_-]?key|password|secret/i);
 });
 
@@ -116,6 +119,18 @@ test("command provider rejects shell interpreters even though process spawning i
       arguments: ["{inputFile}"]
     }),
     /cannot use a shell interpreter/
+  );
+});
+
+test("command provider rejects Windows batch executables", async (t) => {
+  const root = await developmentRoot(t);
+  await assert.rejects(
+    configureDevelopmentExecutors(root, {
+      provider: "command",
+      executable: "custom-runner.cmd",
+      arguments: ["{inputFile}"]
+    }),
+    /cannot use Windows batch executables/
   );
 });
 

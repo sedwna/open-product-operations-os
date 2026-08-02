@@ -1,10 +1,16 @@
 import { spawn } from "node:child_process";
+import crypto from "node:crypto";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { applyWrites, planWrites } from "../file-writer.js";
 import { assertNoLinkTraversal, resolveInside } from "../paths.js";
 import { assertNoCredentialMaterial } from "../runtime/security.js";
 import { assertContract, json, readContract, safeContractId } from "./contracts.js";
 import { loadDevelopmentConfig, validateDevelopmentConfig } from "./config.js";
+import { resolveExecutable } from "./executor-setup.js";
+import { writeCodexCompatibleSchema } from "../codex/structured-output-schema.js";
+import { effectiveCodexSandboxArguments } from "../codex/sandbox-profile.js";
+export { effectiveCodexSandboxArguments } from "../codex/sandbox-profile.js";
 
 const MAX_EXECUTOR_OUTPUT_BYTES = 1024 * 1024;
 
@@ -43,6 +49,9 @@ export async function runEngineeringWorkstream(
   const runId = `${planId}-${workstreamId}`;
   const inputFile = `.development-os/runs/${runId}-input.json`;
   const resultFile = `.development-os/runs/${runId}-result.json`;
+  const attemptId = crypto.randomUUID();
+  const rawOutputFile = `.development-os/runs/${runId}-${attemptId}.raw.json`;
+  const providerSchemaFile = `.development-os/runs/${runId}-${attemptId}-schema.json`;
   const payload = {
     schemaVersion: "1.0.0",
     planId,
@@ -58,21 +67,56 @@ export async function runEngineeringWorkstream(
     returnContract: { schema: "engineering-workstream-run.schema.json", transport: "stdout-json" }
   };
   assertNoCredentialMaterial("Engineering workstream payload", payload);
-  const argumentsList = executor.arguments.map((argument) => String(argument)
+  const canonicalSchemaReference = "{projectRoot}/engineering/schemas/engineering-workstream-run.schema.json";
+  const usesCodexSchema = executor.arguments.some((argument) => argument === canonicalSchemaReference || argument.includes("{providerSchemaFile}"));
+  if (usesCodexSchema && !dryRun) {
+    await writeCodexCompatibleSchema(
+      path.join(root, "engineering", "schemas", "engineering-workstream-run.schema.json"),
+      path.join(root, providerSchemaFile),
+      async (file, value) => writeExclusiveOrEqual(root, path.relative(root, file), json(value))
+    );
+  }
+  let argumentsList = executor.arguments.map((argument) => String(argument)
+    .replaceAll(canonicalSchemaReference, path.resolve(root, providerSchemaFile))
+    .replaceAll("{providerSchemaFile}", path.resolve(root, providerSchemaFile))
     .replaceAll("{inputFile}", path.resolve(root, inputFile))
     .replaceAll("{projectRoot}", path.resolve(root))
+    .replaceAll("{rawOutputFile}", path.resolve(root, rawOutputFile))
     .replaceAll("{planId}", planId)
     .replaceAll("{workstreamId}", workstreamId));
+  if (usesCodexSchema) {
+    const promptIndex = argumentsList.length - 1;
+    argumentsList[promptIndex] = `${argumentsList[promptIndex]} Product-agent execution limits such as "no repository edits for this run" apply to the historical product-analysis role, not to this approved engineering execution. The development request writeBoundary is the authoritative repository-write permission for this workstream; durable product scope, environment, security, and production constraints still apply.`;
+    if (workstream.ownerRole === "ENG-15") {
+      argumentsList[promptIndex] += " On Windows, run Node test files with node --test tests\\*.test.js rather than passing the tests directory. You have tool-execution access only so you can reproduce verification; do not modify any file. The orchestrator compares repository content before and after this run and rejects verification if anything changes.";
+    }
+    argumentsList = effectiveCodexSandboxArguments(argumentsList);
+  }
   if (dryRun) return { dryRun, runId, inputFile, resultFile, payload, executable: executor.executable, arguments: argumentsList, workingDirectory };
   await writeExclusiveOrEqual(root, inputFile, json(payload));
-  const execution = await execute(executor.executable, argumentsList, {
-    cwd: workingDirectory,
-    timeoutMs: executor.timeoutMs,
-    environmentAllowlist: executor.environmentAllowlist,
-    spawnProcess
-  });
+  const usesRawOutput = executor.arguments.some((argument) => argument.includes("{rawOutputFile}"));
+  const verifierDigestBefore = workstream.ownerRole === "ENG-15" ? await verifierWorkspaceDigest(root) : null;
+  let execution;
+  let resultText;
+  try {
+    const executable = spawnProcess === spawn
+      ? await resolveExecutable(executor.executable, { cwd: workingDirectory })
+      : executor.executable;
+    execution = await execute(executable, argumentsList, {
+      cwd: workingDirectory,
+      timeoutMs: executor.timeoutMs,
+      environmentAllowlist: executor.environmentAllowlist,
+      spawnProcess
+    });
+    if (verifierDigestBefore && await verifierWorkspaceDigest(root) !== verifierDigestBefore) {
+      throw new Error("Independent engineering verifier modified repository content; verification must remain read-only.");
+    }
+    resultText = usesRawOutput ? await fs.readFile(path.join(root, rawOutputFile), "utf8") : execution.stdout;
+  } finally {
+    await fs.rm(path.join(root, rawOutputFile), { force: true });
+  }
   let result;
-  try { result = JSON.parse(execution.stdout.trim()); }
+  try { result = JSON.parse(resultText.trim()); }
   catch (error) { throw new Error(`Engineering executor did not return valid JSON: ${error.message}`); }
   assertContract(result, "engineering-workstream-run.schema.json", "Engineering workstream result");
   const actor = config.roles.find((role) => role.id === workstream.ownerRole)?.actorId;
@@ -82,8 +126,31 @@ export async function runEngineeringWorkstream(
   if (result.ownerRole !== workstream.ownerRole) mismatches.push("ownerRole");
   if (result.producerActorId !== actor) mismatches.push("producerActorId");
   if (mismatches.length) throw new Error(`Engineering executor result mismatches dispatched ${mismatches.join(", ")}.`);
-  await writeExclusiveOrEqual(root, resultFile, json(result));
-  return { dryRun: false, runId, inputFile, resultFile, payload, result, stderr: execution.stderr };
+  const storedResultFile = result.status === "completed"
+    ? resultFile
+    : `.development-os/runs/${runId}-attempt-${attemptId}-result.json`;
+  await writeExclusiveOrEqual(root, storedResultFile, json(result));
+  return { dryRun: false, runId, inputFile, resultFile: storedResultFile, payload, result, stderr: execution.stderr };
+}
+
+async function verifierWorkspaceDigest(root) {
+  const hash = crypto.createHash("sha256");
+  async function visit(directory, relative = "") {
+    const entries = await fs.readdir(directory, { withFileTypes: true });
+    for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+      const childRelative = relative ? `${relative}/${entry.name}` : entry.name;
+      if (childRelative === ".git" || childRelative.startsWith(".git/")
+          || childRelative === ".development-os/runs" || childRelative.startsWith(".development-os/runs/")) continue;
+      const absolute = path.join(directory, entry.name);
+      hash.update(childRelative).update("\0");
+      if (entry.isDirectory()) await visit(absolute, childRelative);
+      else if (entry.isFile()) hash.update(await fs.readFile(absolute));
+      else hash.update("non-regular-entry");
+      hash.update("\0");
+    }
+  }
+  await visit(root);
+  return hash.digest("hex");
 }
 
 async function assertDependenciesComplete(root, plan, config, dependencies) {
@@ -118,13 +185,14 @@ async function writeExclusiveOrEqual(root, relative, content) {
   await applyWrites(path.resolve(root), operations);
 }
 
-function execute(executable, args, { cwd, timeoutMs, environmentAllowlist, spawnProcess }) {
+async function execute(executable, args, { cwd, timeoutMs, environmentAllowlist, spawnProcess }) {
+  const environment = {};
+  for (const name of ["PATH", "Path", "PATHEXT", "SystemRoot", "TEMP", "TMP", ...environmentAllowlist]) {
+    if (process.env[name] !== undefined) environment[name] = process.env[name];
+  }
+  const command = await windowsCommand(executable, args);
   return new Promise((resolve, reject) => {
-    const environment = {};
-    for (const name of ["PATH", "Path", "PATHEXT", "SystemRoot", "TEMP", "TMP", ...environmentAllowlist]) {
-      if (process.env[name] !== undefined) environment[name] = process.env[name];
-    }
-    const child = spawnProcess(executable, args, {
+    const child = spawnProcess(command.executable, command.args, {
       cwd,
       env: environment,
       shell: false,
@@ -187,4 +255,22 @@ function execute(executable, args, { cwd, timeoutMs, environmentAllowlist, spawn
       }
     });
   });
+}
+
+async function windowsCommand(executable, args) {
+  if (process.platform !== "win32" || !/\.(?:cmd|bat)$/i.test(executable)) return { executable, args };
+  const isCodexShim = path.basename(executable).toLowerCase() === "codex.cmd" && args[0] === "exec";
+  if (!isCodexShim) {
+    throw new Error("Windows batch executors are not supported because their arguments cross a command-interpreter boundary.");
+  }
+  const javascriptLauncher = path.join(path.dirname(executable), "node_modules", "@openai", "codex", "bin", "codex.js");
+  try { await fs.access(javascriptLauncher); }
+  catch {
+    throw new Error("The Codex command shim was found, but its shell-free JavaScript launcher could not be resolved. Install the official Codex application or reinstall @openai/codex.");
+  }
+  const bundledNode = path.join(path.dirname(executable), "node.exe");
+  let nodeExecutable = process.execPath;
+  try { await fs.access(bundledNode); nodeExecutable = bundledNode; }
+  catch { /* The current trusted Node runtime executes the official launcher. */ }
+  return { executable: nodeExecutable, args: [javascriptLauncher, ...args] };
 }

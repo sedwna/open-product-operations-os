@@ -365,11 +365,15 @@ export function validateWriteManifest(manifest, config, relativePath = "write ma
         )}.`
       );
     }
+    const insert = row.operation === "insert";
+    if (insert && (row.preconditions.$record !== "absent" || Object.keys(row.preconditions).length !== 1)) {
+      errors.push(`${label} insert requires the exact precondition {"$record":"absent"}.`);
+    }
     for (const field of Object.keys(row.changes)) {
       if (!allowed.has(field) || prohibited.has(field) || protectedFields.has(field)) {
         errors.push(`${label} change to field "${field}" is not authorized.`);
       }
-      if (!(field in row.preconditions)) {
+      if (!insert && !(field in row.preconditions)) {
         errors.push(`${label} change to field "${field}" requires an old-value precondition.`);
       }
     }
