@@ -9,6 +9,15 @@ export async function loadTaskboard(root) {
   return { ...parsed, byId };
 }
 
+export function visibleTaskboardRecords(records) {
+  const hasRealCycle = records.some((task) => task.event_id !== "EVT-00000000-001");
+  if (!hasRealCycle) return records;
+  return records.filter((task) => !(
+    task.event_id === "EVT-00000000-001"
+    && task.title === "Complete the first discovery record"
+  ));
+}
+
 export function taskDependencies(task) {
   return splitReferences(task.dependency_ids);
 }

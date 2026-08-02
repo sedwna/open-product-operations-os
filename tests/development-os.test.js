@@ -12,7 +12,7 @@ import { initializeDevelopmentOs } from "../src/development/init.js";
 import { planDevelopmentRequest } from "../src/development/planner.js";
 import { completeDevelopmentResult } from "../src/development/result.js";
 import { validateDevelopmentOs } from "../src/development/validation.js";
-import { runEngineeringWorkstream } from "../src/development/runner.js";
+import { effectiveCodexSandboxArguments, runEngineeringWorkstream } from "../src/development/runner.js";
 import { buildDevelopmentDashboard } from "../src/development/dashboard.js";
 import { TASKBOARD_COLUMNS } from "../src/constants.js";
 import { main as developmentMain } from "../src/development-cli.js";
@@ -190,6 +190,23 @@ test("failed engineering attempts are retained without poisoning a safe retry", 
   const completed = await runEngineeringWorkstream(root, plan.planId, "WS-01", { dryRun: false });
   assert.equal(completed.result.status, "completed");
   assert.equal(completed.resultFile, `.development-os/runs/${plan.planId}-WS-01-result.json`);
+});
+
+test("engineering honors an explicit full-access host profile while verifier writes remain separately guarded", () => {
+  const implementation = ["exec", "--sandbox", "workspace-write", "prompt"];
+  assert.deepEqual(
+    effectiveCodexSandboxArguments(implementation, { CODEX_PERMISSION_PROFILE: ":danger-full-access" }),
+    ["exec", "--sandbox", "danger-full-access", "prompt"]
+  );
+  assert.deepEqual(
+    effectiveCodexSandboxArguments(implementation, { CODEX_PERMISSION_PROFILE: ":read-only" }),
+    implementation
+  );
+  const verification = ["exec", "--sandbox", "read-only", "prompt"];
+  assert.deepEqual(
+    effectiveCodexSandboxArguments(verification, { CODEX_PERMISSION_PROFILE: ":danger-full-access" }),
+    ["exec", "--sandbox", "danger-full-access", "prompt"]
+  );
 });
 
 test("Product Operations and Development OS synchronize independently through digested contracts", async (t) => {

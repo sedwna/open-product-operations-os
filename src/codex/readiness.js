@@ -80,8 +80,16 @@ export async function findCodexExecutables({ cwd = process.cwd(), environment = 
 export async function captureCodexCommand(
   executable,
   args,
-  { cwd = process.cwd(), environment = process.env, timeoutMs = DEFAULT_TIMEOUT_MS } = {}
+  {
+    cwd = process.cwd(),
+    environment = process.env,
+    timeoutMs = DEFAULT_TIMEOUT_MS,
+    maxOutputBytes = MAX_OUTPUT_BYTES
+  } = {}
 ) {
+  const outputLimit = Number.isSafeInteger(maxOutputBytes) && maxOutputBytes >= 1024
+    ? maxOutputBytes
+    : MAX_OUTPUT_BYTES;
   let command;
   try { command = await windowsCommand(executable, args); }
   catch (error) { return { ok: false, code: null, stdout: "", stderr: "", error: error.message }; }
@@ -111,9 +119,9 @@ export async function captureCodexCommand(
     }
     const consume = (chunk, channel) => {
       const current = channel === "stdout" ? stdout : stderr;
-      if (Buffer.byteLength(current, "utf8") + chunk.length > MAX_OUTPUT_BYTES) {
+      if (Buffer.byteLength(current, "utf8") + chunk.length > outputLimit) {
         child.kill();
-        finish({ ok: false, code: null, stdout, stderr, error: `${channel} exceeded the readiness output limit` });
+        finish({ ok: false, code: null, stdout, stderr, error: `${channel} exceeded the configured output limit` });
         return;
       }
       if (channel === "stdout") stdout += chunk.toString("utf8");

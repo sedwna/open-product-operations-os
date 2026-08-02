@@ -11,7 +11,7 @@ import { readJsonOptional } from "../runtime/io.js";
 import { dependencyState, loadTaskboard, replaceTaskboard, selectRunnableTasks } from "../runtime/taskboard.js";
 import { runEngineeringDelivery } from "./engineering.js";
 import { runProductAgent } from "./product-agent.js";
-import { materializeCycleWorkbook } from "./workbook.js";
+import { materializeCycleWorkbook, materializeWriterCheckpoint } from "./workbook.js";
 import {
   acquireAutopilotLease,
   appendAutopilotEvent,
@@ -59,6 +59,7 @@ export async function runPendingAutopilotCycle(
       return { status: "idle" };
     }
 
+    await recoverInterruptedTasks(root, intake.eventId, now());
     const cycleId = cycleIdFor(intake.eventId);
     await prepareProductBranch(root, cycleId);
     await writeAutopilotState(root, {
@@ -157,11 +158,16 @@ export async function runPendingAutopilotCycle(
         }
         run = await recordEngineeringProductRun(root, config, runnable, delivery, now());
       } else {
+        const operationalArtifacts = runnable.owner_role === config.separation.writerRole
+          ? await prepareWriterCheckpoint(root, config, { cycleId, intake, priorRuns, now: now() })
+          : null;
         const executed = await executeProductAgent(root, config, runnable, {
           intake,
           priorRuns,
           cycleHistory,
           cycleId,
+          applicationRoot: link.applicationRoot,
+          operationalArtifacts,
           now: now()
         });
         run = executed.result;
@@ -211,6 +217,26 @@ export async function runPendingAutopilotCycle(
   } finally {
     await releaseAutopilotLease(activeLease).catch(() => {});
   }
+}
+
+async function prepareWriterCheckpoint(root, config, { cycleId, intake, priorRuns, now }) {
+  const qaRun = priorRuns.find((run) => run.roleId === "RB-09" && run.status === "completed");
+  if (!qaRun) throw new Error("Controlled writer checkpoint requires a completed product QA run.");
+  return materializeWriterCheckpoint(root, config, { cycleId, intake, qaRun, now });
+}
+
+async function recoverInterruptedTasks(root, eventId, now) {
+  const loaded = await loadTaskboard(root);
+  const interrupted = loaded.records.filter((task) => task.event_id === eventId && task.status === "in_progress");
+  if (!interrupted.length) return;
+  const interruptedIds = new Set(interrupted.map((task) => task.task_id));
+  const recovered = loaded.records.map((task) => interruptedIds.has(task.task_id) ? {
+    ...task,
+    status: "ready",
+    blocked_reason: "Recovered after the prior coordinator process ended before sealing the task result.",
+    updated_at: now.toISOString()
+  } : task);
+  await replaceTaskboard(root, loaded.headers, recovered, { dryRun: false });
 }
 
 async function resetInProgressTask(root, taskId, message, now) {
@@ -340,17 +366,17 @@ async function recordEngineeringProductRun(root, config, task, delivery, now) {
     producerActorId: role.actorId,
     status: "completed",
     summary: `Engineering completed ${delivery.changedComponents.length} changed component(s) and returned independently verified evidence.`,
-    findings: delivery.changedComponents.map((item) => `Changed: ${item}`),
+    findings: boundedUnique(delivery.changedComponents.map((item) => `Changed: ${item}`)),
     recommendations: ["Product QA and independent product verification should assess the returned implementation against the acceptance contract."],
-    acceptanceCriteria: delivery.request.acceptanceCriteria.map(({ statement, verification }) => ({ statement, verification })),
-    impacts: delivery.request.impacts,
-    constraints: delivery.request.constraints,
-    nonFunctionalRequirements: delivery.request.nonFunctionalRequirements,
-    evidence: unique([
+    acceptanceCriteria: delivery.request.acceptanceCriteria.slice(0, 30).map(({ statement, verification }) => ({ statement, verification })),
+    impacts: boundedUnique(delivery.request.impacts),
+    constraints: boundedUnique(delivery.request.constraints),
+    nonFunctionalRequirements: delivery.request.nonFunctionalRequirements.slice(0, 30),
+    evidence: boundedUnique([
       ...(delivery.productEvidenceRefs ?? []),
       delivery.productReceipt?.storedAt
     ]),
-    knownRisks: delivery.result?.knownRisks ?? [],
+    knownRisks: boundedUnique(delivery.result?.knownRisks ?? []),
     completedAt: now.toISOString()
   };
   const errors = validatePublishedSchema("product-agent-run.schema.json", result);
@@ -509,6 +535,7 @@ function safeId(value) {
   return safe.slice(0, 100);
 }
 function unique(values) { return [...new Set(values.filter(Boolean))]; }
+export function boundedUnique(values, limit = 30) { return unique(values).slice(0, limit); }
 function isManagedProductPath(file) {
   return file.startsWith(".product-ops/") || file === "taskboard/tasks.csv" || file.startsWith("product-intake/") || file.startsWith("workbook/");
 }

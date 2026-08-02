@@ -8,6 +8,7 @@ import { runControlTower } from "./control-tower.js";
 import { ingestRecord } from "./intake.js";
 import { startAutopilotLoop } from "../autopilot/orchestrator.js";
 import { patchAutopilotState, readAutomationLink, readAutopilotState } from "../autopilot/state.js";
+import { dependencyState, loadTaskboard, replaceTaskboard } from "./taskboard.js";
 
 const MAX_BODY_BYTES = 64 * 1024;
 
@@ -102,6 +103,7 @@ async function handleRequest(root, { writable, csrfToken, request, response, aut
     if (["/api/autopilot/start", "/api/autopilot/resume", "/api/autopilot/retry"].includes(url.pathname)) {
       if (!autopilot) throw httpError(409, "Autopilot is not configured for this workspace.");
       const current = await readAutopilotState(root);
+      if (url.pathname.endsWith("/retry")) await resetRetryableBlockedTask(root, current);
       const result = await patchAutopilotState(root, {
         status: "idle",
         attempt: url.pathname.endsWith("/retry") ? 0 : current.attempt,
@@ -125,6 +127,23 @@ async function handleRequest(root, { writable, csrfToken, request, response, aut
     }
   }
   sendJson(response, 404, { error: "Dashboard route not found." });
+}
+
+async function resetRetryableBlockedTask(root, state) {
+  if (!state.activeEventId) return null;
+  const { headers, records, byId } = await loadTaskboard(root);
+  const current = records.find((task) => task.task_id === state.currentTaskId && task.status === "blocked");
+  const retryable = current ?? records.find((task) => task.event_id === state.activeEventId
+    && task.status === "blocked" && dependencyState(task, byId).satisfied);
+  if (!retryable) return null;
+  const updated = records.map((task) => task.task_id === retryable.task_id ? {
+    ...task,
+    status: "ready",
+    blocked_reason: `Retry requested after: ${String(task.blocked_reason ?? "blocked result").slice(0, 500)}`,
+    updated_at: new Date().toISOString()
+  } : task);
+  await replaceTaskboard(root, headers, updated, { dryRun: false });
+  return retryable.task_id;
 }
 
 function assertMutationAllowed({ writable, csrfToken, request }) {

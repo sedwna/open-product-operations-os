@@ -1,17 +1,18 @@
 import { loadApprovals } from "./approvals.js";
-import { loadTaskboard } from "./taskboard.js";
+import { loadTaskboard, visibleTaskboardRecords } from "./taskboard.js";
 
 export async function calculateMetrics(root, { now = new Date() } = {}) {
   const [{ records: tasks }, approvals] = await Promise.all([
     loadTaskboard(root),
     loadApprovals(root)
   ]);
-  const byStatus = countBy(tasks, "status");
-  const byOwner = countBy(tasks, "owner_role");
-  const byPriority = countBy(tasks, "priority");
+  const visibleTasks = visibleTaskboardRecords(tasks);
+  const byStatus = countBy(visibleTasks, "status");
+  const byOwner = countBy(visibleTasks, "owner_role");
+  const byPriority = countBy(visibleTasks, "priority");
   const completed = byStatus.done ?? 0;
-  const withEvidence = tasks.filter((task) => String(task.evidence_refs ?? "").trim() !== "").length;
-  const overdue = tasks.filter((task) => {
+  const withEvidence = visibleTasks.filter((task) => String(task.evidence_refs ?? "").trim() !== "").length;
+  const overdue = visibleTasks.filter((task) => {
     if (!task.due_at || ["done", "cancelled"].includes(task.status)) return false;
     const due = Date.parse(task.due_at);
     return Number.isFinite(due) && due < now.getTime();
@@ -19,7 +20,7 @@ export async function calculateMetrics(root, { now = new Date() } = {}) {
   return {
     generatedAt: now.toISOString(),
     totals: {
-      tasks: tasks.length,
+      tasks: visibleTasks.length,
       completed,
       blocked: byStatus.blocked ?? 0,
       ready: byStatus.ready ?? 0,
@@ -27,8 +28,8 @@ export async function calculateMetrics(root, { now = new Date() } = {}) {
       pendingHumanApprovals: approvals.requests.filter((request) => request.status === "pending").length
     },
     ratios: {
-      completion: ratio(completed, tasks.length),
-      evidenceCoverage: ratio(withEvidence, tasks.length)
+      completion: ratio(completed, visibleTasks.length),
+      evidenceCoverage: ratio(withEvidence, visibleTasks.length)
     },
     byStatus,
     byOwner,

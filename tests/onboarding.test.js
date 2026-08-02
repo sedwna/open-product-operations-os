@@ -117,6 +117,13 @@ test("onboarding service creates operations, app, first cycle, and independent G
   assert.equal((await validateDevelopmentOs(result.applicationPath)).errors.length, 0);
   await assert.rejects(fs.access(path.join(result.applicationPath, ".product-ops-onboarding.json")));
   assert.ok(await fs.readFile(path.join(result.operationsPath, "product-intake", "first-idea.json"), "utf8"));
+  const intakeStore = JSON.parse(await fs.readFile(
+    path.join(result.operationsPath, ".product-ops", "runtime", "intake.json"),
+    "utf8"
+  ));
+  assert.equal(intakeStore.records.length, 1, "the wizard must record the first idea exactly once");
+  assert.equal(intakeStore.records[0].title, request(parent).ideaTitle);
+  assert.equal(intakeStore.records[0].status, "accepted");
   assert.equal(await gitHead(result.operationsPath), true);
   assert.equal(await gitHead(result.applicationPath), true);
   for (const step of ONBOARDING_STEPS) {

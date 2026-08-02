@@ -61,3 +61,17 @@ test("Codex readiness does not cross an arbitrary Windows batch boundary", { ski
   assert.equal(result.ok, false);
   assert.match(result.error, /refuses non-Codex Windows batch launchers/);
 });
+
+test("long-running Codex calls can opt into a larger bounded output budget", async () => {
+  const script = "process.stderr.write('x'.repeat(70 * 1024))";
+  const defaultLimit = await captureCodexCommand(process.execPath, ["-e", script], { timeoutMs: 10_000 });
+  assert.equal(defaultLimit.ok, false);
+  assert.match(defaultLimit.error, /configured output limit/);
+
+  const expandedLimit = await captureCodexCommand(process.execPath, ["-e", script], {
+    timeoutMs: 10_000,
+    maxOutputBytes: 128 * 1024
+  });
+  assert.equal(expandedLimit.ok, true, expandedLimit.error);
+  assert.equal(expandedLimit.stderr.length, 70 * 1024);
+});

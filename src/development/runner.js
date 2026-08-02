@@ -8,6 +8,9 @@ import { assertNoCredentialMaterial } from "../runtime/security.js";
 import { assertContract, json, readContract, safeContractId } from "./contracts.js";
 import { loadDevelopmentConfig, validateDevelopmentConfig } from "./config.js";
 import { resolveExecutable } from "./executor-setup.js";
+import { writeCodexCompatibleSchema } from "../codex/structured-output-schema.js";
+import { effectiveCodexSandboxArguments } from "../codex/sandbox-profile.js";
+export { effectiveCodexSandboxArguments } from "../codex/sandbox-profile.js";
 
 const MAX_EXECUTOR_OUTPUT_BYTES = 1024 * 1024;
 
@@ -48,6 +51,7 @@ export async function runEngineeringWorkstream(
   const resultFile = `.development-os/runs/${runId}-result.json`;
   const attemptId = crypto.randomUUID();
   const rawOutputFile = `.development-os/runs/${runId}-${attemptId}.raw.json`;
+  const providerSchemaFile = `.development-os/runs/${runId}-${attemptId}-schema.json`;
   const payload = {
     schemaVersion: "1.0.0",
     planId,
@@ -63,15 +67,35 @@ export async function runEngineeringWorkstream(
     returnContract: { schema: "engineering-workstream-run.schema.json", transport: "stdout-json" }
   };
   assertNoCredentialMaterial("Engineering workstream payload", payload);
-  const argumentsList = executor.arguments.map((argument) => String(argument)
+  const canonicalSchemaReference = "{projectRoot}/engineering/schemas/engineering-workstream-run.schema.json";
+  const usesCodexSchema = executor.arguments.some((argument) => argument === canonicalSchemaReference || argument.includes("{providerSchemaFile}"));
+  if (usesCodexSchema && !dryRun) {
+    await writeCodexCompatibleSchema(
+      path.join(root, "engineering", "schemas", "engineering-workstream-run.schema.json"),
+      path.join(root, providerSchemaFile),
+      async (file, value) => writeExclusiveOrEqual(root, path.relative(root, file), json(value))
+    );
+  }
+  let argumentsList = executor.arguments.map((argument) => String(argument)
+    .replaceAll(canonicalSchemaReference, path.resolve(root, providerSchemaFile))
+    .replaceAll("{providerSchemaFile}", path.resolve(root, providerSchemaFile))
     .replaceAll("{inputFile}", path.resolve(root, inputFile))
     .replaceAll("{projectRoot}", path.resolve(root))
     .replaceAll("{rawOutputFile}", path.resolve(root, rawOutputFile))
     .replaceAll("{planId}", planId)
     .replaceAll("{workstreamId}", workstreamId));
+  if (usesCodexSchema) {
+    const promptIndex = argumentsList.length - 1;
+    argumentsList[promptIndex] = `${argumentsList[promptIndex]} Product-agent execution limits such as "no repository edits for this run" apply to the historical product-analysis role, not to this approved engineering execution. The development request writeBoundary is the authoritative repository-write permission for this workstream; durable product scope, environment, security, and production constraints still apply.`;
+    if (workstream.ownerRole === "ENG-15") {
+      argumentsList[promptIndex] += " On Windows, run Node test files with node --test tests\\*.test.js rather than passing the tests directory. You have tool-execution access only so you can reproduce verification; do not modify any file. The orchestrator compares repository content before and after this run and rejects verification if anything changes.";
+    }
+    argumentsList = effectiveCodexSandboxArguments(argumentsList);
+  }
   if (dryRun) return { dryRun, runId, inputFile, resultFile, payload, executable: executor.executable, arguments: argumentsList, workingDirectory };
   await writeExclusiveOrEqual(root, inputFile, json(payload));
   const usesRawOutput = executor.arguments.some((argument) => argument.includes("{rawOutputFile}"));
+  const verifierDigestBefore = workstream.ownerRole === "ENG-15" ? await verifierWorkspaceDigest(root) : null;
   let execution;
   let resultText;
   try {
@@ -84,6 +108,9 @@ export async function runEngineeringWorkstream(
       environmentAllowlist: executor.environmentAllowlist,
       spawnProcess
     });
+    if (verifierDigestBefore && await verifierWorkspaceDigest(root) !== verifierDigestBefore) {
+      throw new Error("Independent engineering verifier modified repository content; verification must remain read-only.");
+    }
     resultText = usesRawOutput ? await fs.readFile(path.join(root, rawOutputFile), "utf8") : execution.stdout;
   } finally {
     await fs.rm(path.join(root, rawOutputFile), { force: true });
@@ -104,6 +131,26 @@ export async function runEngineeringWorkstream(
     : `.development-os/runs/${runId}-attempt-${attemptId}-result.json`;
   await writeExclusiveOrEqual(root, storedResultFile, json(result));
   return { dryRun: false, runId, inputFile, resultFile: storedResultFile, payload, result, stderr: execution.stderr };
+}
+
+async function verifierWorkspaceDigest(root) {
+  const hash = crypto.createHash("sha256");
+  async function visit(directory, relative = "") {
+    const entries = await fs.readdir(directory, { withFileTypes: true });
+    for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+      const childRelative = relative ? `${relative}/${entry.name}` : entry.name;
+      if (childRelative === ".git" || childRelative.startsWith(".git/")
+          || childRelative === ".development-os/runs" || childRelative.startsWith(".development-os/runs/")) continue;
+      const absolute = path.join(directory, entry.name);
+      hash.update(childRelative).update("\0");
+      if (entry.isDirectory()) await visit(absolute, childRelative);
+      else if (entry.isFile()) hash.update(await fs.readFile(absolute));
+      else hash.update("non-regular-entry");
+      hash.update("\0");
+    }
+  }
+  await visit(root);
+  return hash.digest("hex");
 }
 
 async function assertDependenciesComplete(root, plan, config, dependencies) {

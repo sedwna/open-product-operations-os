@@ -36,7 +36,7 @@ export async function runEngineeringDelivery(
     return { status: "waiting_for_human", approval };
   }
   const developmentConfig = await loadDevelopmentConfig(applicationRoot);
-  const request = await buildDevelopmentRequest(productRoot, developmentConfig, productConfig, task, {
+  let request = await buildDevelopmentRequest(productRoot, developmentConfig, productConfig, task, {
     applicationRoot,
     intake,
     productRuns,
@@ -47,6 +47,7 @@ export async function runEngineeringDelivery(
   const requestDirectory = path.join(productRoot, ".product-ops", "runtime", "autopilot", "requests");
   await fs.mkdir(requestDirectory, { recursive: true });
   const requestFile = path.join(requestDirectory, `${request.requestId}.json`);
+  request = await reuseExportedDevelopmentRequest(productRoot, request);
   await writeJson(requestFile, request);
   const resumed = await resumeCompletedDelivery(productRoot, applicationRoot, developmentConfig, request, branch);
   if (resumed) return resumed;
@@ -60,9 +61,11 @@ export async function runEngineeringDelivery(
     const previous = await loadExistingWorkstreamRun(applicationRoot, planned.plan, workstream, developmentConfig);
     if (previous) {
       runs.set(workstream.id, previous);
-      await writeEngineeringTaskboard(applicationRoot, planned.plan, runs);
-      continue;
     }
+  }
+  await writeEngineeringTaskboard(applicationRoot, planned.plan, runs);
+  for (const workstream of dependencyOrderedWorkstreams(planned.plan.workstreams)) {
+    if (runs.has(workstream.id)) continue;
     await writeEngineeringTaskboard(applicationRoot, planned.plan, runs, { active: workstream.id });
     const execution = await executeWorkstream(applicationRoot, planned.plan.planId, workstream.id, { dryRun: false });
     if (execution.result?.status !== "completed") {
@@ -112,6 +115,51 @@ export async function runEngineeringDelivery(
   };
 }
 
+export function dependencyOrderedWorkstreams(workstreams) {
+  const byId = new Map(workstreams.map((workstream) => [workstream.id, workstream]));
+  if (byId.size !== workstreams.length) throw new Error("Engineering workstreams must have unique IDs.");
+  for (const workstream of workstreams) {
+    for (const dependency of workstream.dependencies ?? []) {
+      if (!byId.has(dependency)) throw new Error(`Engineering workstream ${workstream.id} depends on unknown ${dependency}.`);
+    }
+  }
+  const ordered = [];
+  const completed = new Set();
+  while (ordered.length < workstreams.length) {
+    const ready = workstreams.find((workstream) => !completed.has(workstream.id)
+      && (workstream.dependencies ?? []).every((dependency) => completed.has(dependency)));
+    if (!ready) throw new Error("Engineering workstream dependency graph contains a cycle.");
+    ordered.push(ready);
+    completed.add(ready.id);
+  }
+  return ordered;
+}
+
+async function reuseExportedDevelopmentRequest(productRoot, candidate) {
+  const exportedFile = path.join(
+    productRoot,
+    ".product-ops", "runtime", "development", "contracts", "outbox",
+    `${candidate.requestId}.json`
+  );
+  const exported = await readJsonOptional(exportedFile);
+  if (!exported) return candidate;
+  const errors = validatePublishedSchema("development-request.schema.json", exported);
+  if (errors.length) {
+    throw new Error(`Previously exported development request is invalid:\n- ${errors.join("\n- ")}`);
+  }
+  const identityMatches = exported.requestId === candidate.requestId
+    && exported.productTaskId === candidate.productTaskId
+    && exported.title === candidate.title
+    && exported.problem === candidate.problem
+    && exported.approval?.reference === candidate.approval?.reference
+    && exported.approval?.actorId === candidate.approval?.actorId
+    && JSON.stringify(exported.writeBoundary?.repositories) === JSON.stringify(candidate.writeBoundary?.repositories);
+  if (!identityMatches) {
+    throw new Error(`Development request ${candidate.requestId} was already exported for a different task, product, or approval.`);
+  }
+  return exported;
+}
+
 async function ensureDevelopmentApproval(root, config, task, { autoApprove, now, context }) {
   let store = await loadApprovals(root);
   let approval = store.requests.find((candidate) => candidate.taskId === task.task_id && candidate.gate === "development-export");
@@ -145,7 +193,7 @@ async function buildDevelopmentRequest(productRoot, developmentConfig, productCo
   }
   const recommendations = productRuns.flatMap((run) => run.recommendations ?? []);
   const constraints = unique([
-    ...productRuns.flatMap((run) => run.constraints ?? []),
+    ...productRuns.flatMap((run) => run.constraints ?? []).filter(isProductConstraint),
     "No production credentials or production-derived customer data",
     "Production deployment requires a separate attributed human approval",
     "Database and infrastructure changes must be reversible"
@@ -452,6 +500,14 @@ function safeId(value) {
 
 function unique(values) { return [...new Set(values.filter(Boolean))]; }
 function uniqueObjects(values, key) { const seen = new Set(); return values.filter((value) => { const id = key(value); if (seen.has(id)) return false; seen.add(id); return true; }); }
+function isProductConstraint(value) {
+  const normalized = String(value ?? "").normalize("NFKC").toLowerCase();
+  if (/\brb-\d{2}\b/.test(normalized)) return false;
+  if (/no (?:direct )?repository (?:edit|edits|write|writes)/.test(normalized)) return false;
+  if (/for this run/.test(normalized) && /(implementation|qa|verification|credential|repository)/.test(normalized)) return false;
+  if (/no user research/.test(normalized) && /(evidence|evidenced|available|supplied)/.test(normalized)) return false;
+  return true;
+}
 function sha256(value) { return crypto.createHash("sha256").update(value).digest("hex"); }
 async function writeJson(file, value) { await fs.mkdir(path.dirname(file), { recursive: true }); await fs.writeFile(file, `${JSON.stringify(value, null, 2)}\n`, "utf8"); }
 

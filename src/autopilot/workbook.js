@@ -143,6 +143,55 @@ export async function materializeCycleWorkbook(root, config, { cycleId, intake, 
   };
 }
 
+export async function materializeWriterCheckpoint(root, config, { cycleId, intake, qaRun, now }) {
+  const timestamp = now.toISOString();
+  const suffix = safeId(cycleId).replace(/^CYCLE-EVT-/, "");
+  const checkpointId = `LIN-WRITER-${suffix}`;
+  const evidenceReference = `.product-ops/runtime/autopilot/product-runs/${qaRun.taskId}-result.json`;
+  const item = record("lineage", { lineage_edge_id: checkpointId }, {
+    event_id: intake.eventId,
+    from_id: qaRun.taskId,
+    from_type: "product_qa_run",
+    relationship: "recorded_by_controlled_writer",
+    to_id: cycleId,
+    to_type: "operational_checkpoint",
+    canonical_reference: evidenceReference,
+    created_at: timestamp,
+    created_by_role: "RB-10"
+  });
+  let manifest = buildInsertManifest(config, item.sheetKey, intake.eventId, item.key, item.changes, timestamp, `${cycleId}-writer-checkpoint`);
+  const directory = path.join(root, ".product-ops", "runtime", "autopilot", "manifests");
+  await fs.mkdir(directory, { recursive: true });
+  const manifestFile = path.join(directory, `${manifest.manifestId}.json`);
+  const existing = await readJsonOptional(manifestFile);
+  if (existing) {
+    const row = existing.scope?.rows?.[0];
+    const reusable = existing.manifestId === manifest.manifestId
+      && existing.eventId === intake.eventId
+      && existing.writer?.role === "RB-10"
+      && existing.target?.file === manifest.target.file
+      && row?.key?.lineage_edge_id === checkpointId
+      && row?.changes?.canonical_reference === evidenceReference;
+    if (!reusable) throw new Error(`Writer checkpoint manifest already exists for a different cycle boundary: ${manifestFile}`);
+    manifest = existing;
+  } else {
+    await writeJsonEqual(manifestFile, manifest);
+  }
+  const preview = await applyLocalWrite(root, manifest, config, { dryRun: true });
+  const receipt = await applyLocalWrite(root, manifest, config, { dryRun: false, approvedPlanHash: preview.planHash });
+  return {
+    manifest: path.relative(root, manifestFile).replaceAll("\\", "/"),
+    receipt: receipt.receiptFile,
+    target: manifest.target.file,
+    checkpointId
+  };
+}
+
+async function readJsonOptional(file) {
+  try { return JSON.parse(await fs.readFile(file, "utf8")); }
+  catch (error) { if (error.code === "ENOENT") return null; throw error; }
+}
+
 function buildInsertManifest(config, sheetKey, eventId, key, changes, timestamp, cycleId) {
   const sheet = config.workbook.sheets.find((candidate) => candidate.key === sheetKey);
   if (!sheet) throw new Error(`Unknown workbook sheet ${sheetKey}.`);

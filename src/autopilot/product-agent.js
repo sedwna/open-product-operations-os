@@ -1,6 +1,9 @@
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { captureCodexCommand, inspectCodexReadiness } from "../codex/readiness.js";
+import { writeCodexCompatibleSchema } from "../codex/structured-output-schema.js";
+import { effectiveCodexSandboxArguments } from "../codex/sandbox-profile.js";
 import { assertNoLinkTraversal, resolveInside } from "../paths.js";
 import { validatePublishedSchema } from "../schema-validation.js";
 import { assertNoCredentialMaterial } from "../runtime/security.js";
@@ -11,7 +14,7 @@ export async function runProductAgent(
   root,
   config,
   task,
-  { intake, priorRuns = [], cycleHistory = [], cycleId, execute = executeCodexProductAgent, now = new Date() } = {}
+  { intake, priorRuns = [], cycleHistory = [], cycleId, applicationRoot = null, operationalArtifacts = null, execute = executeCodexProductAgent, now = new Date() } = {}
 ) {
   const role = config.agents.find((candidate) => candidate.id === task.owner_role);
   if (!role) throw new Error(`Product task ${task.task_id} has no configured role ${task.owner_role}.`);
@@ -22,11 +25,25 @@ export async function runProductAgent(
   const runDirectory = resolveInside(absoluteRoot, PRODUCT_RUN_ROOT, "Product agent run root");
   await assertNoLinkTraversal(absoluteRoot, runDirectory, "Product agent run root");
   await fs.mkdir(runDirectory, { recursive: true });
-  const inputFile = path.join(runDirectory, `${task.task_id}-input.json`);
-  const outputFile = path.join(runDirectory, `${task.task_id}-result.json`);
+  const canonicalOutputFile = path.join(runDirectory, `${task.task_id}-result.json`);
+  const sealedResult = await readCompletedResult(canonicalOutputFile, task, role);
+  if (sealedResult) {
+    return {
+      result: sealedResult,
+      inputFile: null,
+      outputFile: path.relative(absoluteRoot, canonicalOutputFile).replaceAll("\\", "/")
+    };
+  }
+  const attemptId = crypto.randomUUID();
+  const attemptPrefix = `${task.task_id}-attempt-${attemptId}`;
+  const inputFile = path.join(runDirectory, `${attemptPrefix}-input.json`);
+  const attemptOutputFile = path.join(runDirectory, `${attemptPrefix}-result.json`);
+  const providerSchemaFile = path.join(runDirectory, `${attemptPrefix}-schema.json`);
   const payload = {
     schemaVersion: "1.0.0",
     cycleId,
+    linkedApplication: applicationRoot ? { root: path.resolve(applicationRoot) } : null,
+    operationalArtifacts,
     project: config.project,
     task,
     role: {
@@ -50,13 +67,20 @@ export async function runProductAgent(
   };
   assertNoCredentialMaterial("Product agent input", payload);
   await writeExclusiveOrEqual(inputFile, payload);
+  await writeCodexCompatibleSchema(
+    path.join(absoluteRoot, "schemas", "product-agent-run.schema.json"),
+    providerSchemaFile,
+    writeExclusiveOrEqual
+  );
   const result = await execute({
     root: absoluteRoot,
     inputFile,
-    outputFile,
-    schemaFile: path.join(absoluteRoot, "schemas", "product-agent-run.schema.json"),
+    outputFile: attemptOutputFile,
+    schemaFile: providerSchemaFile,
     task,
     role,
+    applicationRoot,
+    operationalArtifacts,
     now
   });
   const errors = validatePublishedSchema("product-agent-run.schema.json", result);
@@ -68,6 +92,7 @@ export async function runProductAgent(
   if (result.producerActorId !== role.actorId) mismatches.push("producerActorId");
   if (mismatches.length) throw new Error(`Product agent result mismatches dispatched ${mismatches.join(", ")}.`);
   assertNoCredentialMaterial("Product agent result", result);
+  const outputFile = result.status === "completed" ? canonicalOutputFile : attemptOutputFile;
   await writeExclusiveOrEqual(outputFile, result);
   return {
     result,
@@ -76,8 +101,28 @@ export async function runProductAgent(
   };
 }
 
-export async function executeCodexProductAgent({ root, inputFile, outputFile, schemaFile, task, role }) {
-  const readiness = await inspectCodexReadiness({ cwd: root });
+async function readCompletedResult(file, task, role) {
+  let result;
+  try {
+    result = JSON.parse(await fs.readFile(file, "utf8"));
+  } catch (error) {
+    if (error.code === "ENOENT") return null;
+    throw new Error(`Sealed product agent result is unreadable: ${file}: ${error.message}`);
+  }
+  if (result.status !== "completed") return null;
+  const errors = validatePublishedSchema("product-agent-run.schema.json", result);
+  if (errors.length) throw new Error(`Sealed product agent result is invalid:\n- ${errors.join("\n- ")}`);
+  const matches = result.taskId === task.task_id && result.eventId === task.event_id &&
+    result.roleId === role.id && result.producerActorId === role.actorId;
+  if (!matches) throw new Error(`Sealed product agent result does not match dispatched task ${task.task_id}.`);
+  assertNoCredentialMaterial("Sealed product agent result", result);
+  return result;
+}
+
+export async function executeCodexProductAgent({ root, inputFile, outputFile, schemaFile, task, role, applicationRoot, operationalArtifacts }) {
+  const verificationRole = ["RB-09", "RB-12"].includes(role.id) && applicationRoot;
+  const workingRoot = verificationRole ? path.resolve(applicationRoot) : root;
+  const readiness = await inspectCodexReadiness({ cwd: workingRoot });
   if (!readiness.canAutomate) throw new Error(`Codex product executor is not ready: ${readiness.message}`);
   const prompt = [
     `Read the product-role input JSON at ${JSON.stringify(inputFile)}.`,
@@ -85,19 +130,27 @@ export async function executeCodexProductAgent({ root, inputFile, outputFile, sc
     "Return only one JSON object conforming to product-agent-run.schema.json.",
     `Set taskId to ${JSON.stringify(task.task_id)}, eventId to ${JSON.stringify(task.event_id)}, roleId to ${JSON.stringify(role.id)}, and producerActorId to ${JSON.stringify(role.actorId)}.`,
     "Separate evidence-backed findings from recommendations. Preserve uncertainty and never invent user research, metrics, implementation completion, or approvals.",
+    "In constraints, report only durable product, delivery, environment, compliance, or scope constraints. Do not copy this product role's temporary no-write, no-implementation, or no-self-approval execution limits into product constraints.",
     "Keep the result concise and prioritize the highest-value evidence, risks, requirements, and acceptance criteria.",
     "Inspect repository-local evidence referenced by prior runs before making QA, readiness, or verification claims.",
+    operationalArtifacts ? `Inspect the controlled operational manifest at ${JSON.stringify(path.join(root, operationalArtifacts.manifest))} and its canonical receipt at ${JSON.stringify(path.join(root, operationalArtifacts.receipt))}. These content-addressed JSON artifacts are the authoritative manifest and receipt for this local checkpoint; verify their dry-run plan, bounded target, read-back, replay, backup, and hashes directly. receipt.manifestSha256 is defined as SHA-256 of canonical JSON: preserve array order, recursively sort object keys lexicographically, and serialize with no insignificant whitespace. Do not compare manifestSha256 with the bytes of the pretty-printed manifest file. The receipt planHash and replayWrites fields are outputs of the required dry-run-first and validated replay controls.` : "",
+    verificationRole ? `The linked application repository is the current working directory ${JSON.stringify(workingRoot)}. Product evidence paths in the input are relative to ${JSON.stringify(root)}. Reproduce the relevant application checks; on Windows run Node tests with node --test tests\\*.test.js rather than passing the tests directory. Do not modify any file.` : "",
     "Include practical acceptance criteria, impacted engineering domains, non-functional requirements, constraints, evidence references, and known risks when relevant."
   ].join(" ");
   const rawOutputFile = `${outputFile}.${process.pid}.raw`;
+  const applicationDigestBefore = verificationRole ? await readOnlyWorkspaceDigest(workingRoot) : null;
   let execution;
   try {
-    execution = await captureCodexCommand(readiness.executable, [
+    const argumentsList = effectiveCodexSandboxArguments([
       "exec", "--ephemeral", "--ignore-user-config", "--sandbox", "read-only", "--output-schema", schemaFile,
       "--output-last-message", rawOutputFile, prompt
-    ], { cwd: root, timeoutMs: 30 * 60 * 1000 });
+    ]);
+    execution = await captureCodexCommand(readiness.executable, argumentsList, { cwd: workingRoot, timeoutMs: 30 * 60 * 1000, maxOutputBytes: 4 * 1024 * 1024 });
     if (!execution.ok) {
-      throw new Error(`Codex product executor failed: ${execution.error || execution.stderr || execution.stdout}`.slice(0, 2000));
+      throw new Error(`Codex product executor failed: ${boundedFailureDetails(execution.error || execution.stderr || execution.stdout)}`);
+    }
+    if (applicationDigestBefore && await readOnlyWorkspaceDigest(workingRoot) !== applicationDigestBefore) {
+      throw new Error(`Product verification role ${role.id} modified the linked application; verification must remain read-only.`);
     }
     const value = await fs.readFile(rawOutputFile, "utf8");
     try { return JSON.parse(value.trim()); }
@@ -105,6 +158,33 @@ export async function executeCodexProductAgent({ root, inputFile, outputFile, sc
   } finally {
     await fs.rm(rawOutputFile, { force: true });
   }
+}
+
+async function readOnlyWorkspaceDigest(root) {
+  const hash = crypto.createHash("sha256");
+  async function visit(directory, relative = "") {
+    const entries = await fs.readdir(directory, { withFileTypes: true });
+    for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
+      const childRelative = relative ? `${relative}/${entry.name}` : entry.name;
+      if (childRelative === ".git" || childRelative.startsWith(".git/")) continue;
+      const absolute = path.join(directory, entry.name);
+      hash.update(childRelative).update("\0");
+      if (entry.isDirectory()) await visit(absolute, childRelative);
+      else if (entry.isFile()) hash.update(await fs.readFile(absolute));
+      else hash.update("non-regular-entry");
+      hash.update("\0");
+    }
+  }
+  await visit(root);
+  return hash.digest("hex");
+}
+
+function boundedFailureDetails(value, limit = 1800) {
+  const detail = String(value ?? "Unknown Codex execution failure.");
+  if (detail.length <= limit) return detail;
+  const tailLength = Math.floor(limit * 0.78);
+  const headLength = limit - tailLength - 45;
+  return `${detail.slice(-tailLength)}\n...[earlier executor output omitted]...\n${detail.slice(0, headLength)}`;
 }
 
 async function writeExclusiveOrEqual(file, value) {

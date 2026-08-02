@@ -114,7 +114,7 @@ export async function acquireAutopilotLease(root, { ttlMs = 24 * 60 * 60 * 1000,
     } catch (error) {
       if (error.code !== "EEXIST") throw error;
       const existing = await readJson(target).catch(() => null);
-      if (existing?.expiresAt && Date.parse(existing.expiresAt) > now.getTime()) {
+      if (existing?.expiresAt && Date.parse(existing.expiresAt) > now.getTime() && processIsAlive(existing.pid)) {
         return null;
       }
       const stale = `${target}.stale.${crypto.randomUUID()}.json`;
@@ -123,6 +123,16 @@ export async function acquireAutopilotLease(root, { ttlMs = 24 * 60 * 60 * 1000,
     }
   }
   return null;
+}
+
+function processIsAlive(pid) {
+  if (!Number.isSafeInteger(pid) || pid <= 0) return false;
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    return error.code === "EPERM";
+  }
 }
 
 export async function renewAutopilotLease(lease, { ttlMs = 24 * 60 * 60 * 1000, now = new Date() } = {}) {

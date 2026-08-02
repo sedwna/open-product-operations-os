@@ -11,7 +11,7 @@ import { run } from "../src/cli.js";
 import { decideApproval, loadApprovals } from "../src/runtime/approvals.js";
 import { configureProject } from "../src/runtime/configure.js";
 import { runControlTower } from "../src/runtime/control-tower.js";
-import { buildDashboard, exportMetrics } from "../src/runtime/dashboard.js";
+import { buildDashboard, exportMetrics, loadEngineeringProgress } from "../src/runtime/dashboard.js";
 import { startDashboardServer } from "../src/runtime/dashboard-server.js";
 import { runDevelopmentTask } from "../src/runtime/development-runner.js";
 import { ingestRecord } from "../src/runtime/intake.js";
@@ -27,6 +27,25 @@ async function initializedProject(t, name = "runtime-product") {
   assert.equal(await run(["init", target], output.io), 0);
   return { parent, target, output };
 }
+
+test("dashboard summarizes the linked engineering taskboard", async (t) => {
+  const root = await makeTempDirectory("product-ops-engineering-progress-");
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const directory = path.join(root, "engineering", "taskboard");
+  await fs.mkdir(directory, { recursive: true });
+  await fs.writeFile(path.join(directory, "workstreams.csv"), stringifyCsv([
+    ["workstream_id", "request_id", "owner_role", "domain", "title", "status", "dependency_ids", "evidence_refs", "updated_at"],
+    ["WS-01", "DEVREQ-1", "ENG-01", "coordination", "Coordinate", "completed", "", "", "2026-08-02T10:00:00Z"],
+    ["WS-02", "DEVREQ-1", "ENG-02", "architecture", "Architect", "in_progress", "WS-01", "", "2026-08-02T10:01:00Z"],
+    ["WS-03", "DEVREQ-1", "ENG-03", "frontend", "Build", "ready", "WS-02", "", "2026-08-02T10:02:00Z"]
+  ]), "utf8");
+
+  const progress = await loadEngineeringProgress(root);
+  assert.equal(progress.total, 3);
+  assert.equal(progress.completed, 1);
+  assert.equal(progress.active[0].id, "WS-02");
+  assert.equal(progress.ready, 1);
+});
 
 test("control tower selects ready tasks and routes normalized intake", async (t) => {
   const { target, output } = await initializedProject(t);
@@ -226,6 +245,8 @@ test("dashboard, metrics, and setup wizard generate local RTL artifacts", async 
   assert.match(dashboard, /برج کنترل/);
   assert.match(dashboard, /مرکز خودکارسازی/);
   assert.match(dashboard, /continuousOrchestrator/);
+  assert.match(dashboard, /engineering\.completed/);
+  assert.match(dashboard, /dataset\.action='intake'/);
   assert.match(dashboard, /window\.__PRODUCT_OPS__/);
   assert.match(dashboard, /prefers-reduced-motion/);
   assert.equal((await readJson(path.join(target, ".product-ops/runtime/metrics.json"))).totals.tasks, 1);
@@ -261,6 +282,8 @@ test("writable dashboard records bounded intake with its local authorization tok
   assert.match(page.headers.get("content-security-policy"), /script-src 'self' 'nonce-[A-Za-z0-9_-]+'/);
   assert.doesNotMatch(page.headers.get("content-security-policy"), /script-src[^;]*unsafe-inline/);
   const html = await page.text();
+  assert.match(html, /const form=event\.currentTarget/);
+  assert.doesNotMatch(html, /event\.currentTarget\.reset/);
   const token = html.match(/name="product-ops-csrf" content="([^"]+)"/)[1];
   const response = await fetch(`${dashboard.url}/api/intake`, {
     method: "POST",
