@@ -21,8 +21,8 @@
   "properties": {
     "schemaVersion": { "const": "1.0.0" },
     "updatedAt": { "type": "string", "format": "date-time" },
-    "mode": { "enum": ["manual", "codex"] },
-    "provider": { "type": ["string", "null"], "enum": ["codex", null] },
+    "mode": { "enum": ["manual", "auto", "codex", "claude"] },
+    "provider": { "type": ["string", "null"], "enum": ["codex", "claude", null] },
     "status": {
       "enum": ["manual", "checking", "provider-ready", "executors-ready"]
     },
@@ -51,6 +51,30 @@
             "authenticationMode": {
               "type": ["string", "null"],
               "enum": ["chatgpt", "api-key", "access-token", "authenticated", null]
+            },
+            "version": { "type": ["string", "null"], "maxLength": 160 },
+            "entitlementVerified": { "const": false },
+            "canAutomate": { "type": "boolean" },
+            "message": { "type": "string", "minLength": 1, "maxLength": 500 }
+          }
+        }
+      ]
+    },
+    "claude": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "installed", "executableUsable", "authenticated", "authenticationMode", "version", "entitlementVerified", "canAutomate", "message"],
+          "properties": {
+            "status": { "enum": ["not-installed", "not-executable", "login-required", "ready"] },
+            "installed": { "type": "boolean" },
+            "executableUsable": { "type": "boolean" },
+            "authenticated": { "type": "boolean" },
+            "authenticationMode": {
+              "type": ["string", "null"],
+              "enum": ["claude-subscription", "api-key", "bedrock", "vertex", "foundry", "authenticated", null]
             },
             "version": { "type": ["string", "null"], "maxLength": 160 },
             "entitlementVerified": { "const": false },

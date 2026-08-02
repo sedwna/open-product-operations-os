@@ -10,6 +10,7 @@ import { loadDevelopmentConfig, validateDevelopmentConfig } from "./config.js";
 import { resolveExecutable } from "./executor-setup.js";
 import { writeCodexCompatibleSchema } from "../codex/structured-output-schema.js";
 import { effectiveCodexSandboxArguments } from "../codex/sandbox-profile.js";
+import { resolveClaudeCommand } from "../claude/readiness.js";
 export { effectiveCodexSandboxArguments } from "../codex/sandbox-profile.js";
 
 const MAX_EXECUTOR_OUTPUT_BYTES = 1024 * 1024;
@@ -68,29 +69,42 @@ export async function runEngineeringWorkstream(
   };
   assertNoCredentialMaterial("Engineering workstream payload", payload);
   const canonicalSchemaReference = "{projectRoot}/engineering/schemas/engineering-workstream-run.schema.json";
-  const usesCodexSchema = executor.arguments.some((argument) => argument === canonicalSchemaReference || argument.includes("{providerSchemaFile}"));
-  if (usesCodexSchema && !dryRun) {
+  const usesCodexPreset = looksLikeCodexExecutor(executor);
+  const usesClaudePreset = looksLikeClaudeExecutor(executor);
+  const usesProviderSchema = executor.arguments.some((argument) =>
+    argument === canonicalSchemaReference
+    || argument.includes("{providerSchemaFile}")
+    || argument.includes("{providerSchemaJson}")
+  );
+  if (usesProviderSchema && !dryRun) {
     await writeCodexCompatibleSchema(
       path.join(root, "engineering", "schemas", "engineering-workstream-run.schema.json"),
       path.join(root, providerSchemaFile),
       async (file, value) => writeExclusiveOrEqual(root, path.relative(root, file), json(value))
     );
   }
+  const providerSchemaJson = usesProviderSchema
+    ? JSON.stringify(JSON.parse(await fs.readFile(
+        path.join(root, dryRun ? "engineering/schemas/engineering-workstream-run.schema.json" : providerSchemaFile),
+        "utf8"
+      )))
+    : "";
   let argumentsList = executor.arguments.map((argument) => String(argument)
     .replaceAll(canonicalSchemaReference, path.resolve(root, providerSchemaFile))
     .replaceAll("{providerSchemaFile}", path.resolve(root, providerSchemaFile))
+    .replaceAll("{providerSchemaJson}", providerSchemaJson)
     .replaceAll("{inputFile}", path.resolve(root, inputFile))
     .replaceAll("{projectRoot}", path.resolve(root))
     .replaceAll("{rawOutputFile}", path.resolve(root, rawOutputFile))
     .replaceAll("{planId}", planId)
     .replaceAll("{workstreamId}", workstreamId));
-  if (usesCodexSchema) {
-    const promptIndex = argumentsList.length - 1;
+  if (usesCodexPreset || usesClaudePreset) {
+    const promptIndex = usesCodexPreset ? argumentsList.length - 1 : argumentsList.indexOf("-p") + 1;
     argumentsList[promptIndex] = `${argumentsList[promptIndex]} Product-agent execution limits such as "no repository edits for this run" apply to the historical product-analysis role, not to this approved engineering execution. The development request writeBoundary is the authoritative repository-write permission for this workstream; durable product scope, environment, security, and production constraints still apply.`;
     if (workstream.ownerRole === "ENG-15") {
       argumentsList[promptIndex] += " On Windows, run Node test files with node --test tests\\*.test.js rather than passing the tests directory. You have tool-execution access only so you can reproduce verification; do not modify any file. The orchestrator compares repository content before and after this run and rejects verification if anything changes.";
     }
-    argumentsList = effectiveCodexSandboxArguments(argumentsList);
+    if (usesCodexPreset) argumentsList = effectiveCodexSandboxArguments(argumentsList);
   }
   if (dryRun) return { dryRun, runId, inputFile, resultFile, payload, executable: executor.executable, arguments: argumentsList, workingDirectory };
   await writeExclusiveOrEqual(root, inputFile, json(payload));
@@ -116,7 +130,7 @@ export async function runEngineeringWorkstream(
     await fs.rm(path.join(root, rawOutputFile), { force: true });
   }
   let result;
-  try { result = JSON.parse(resultText.trim()); }
+  try { result = usesClaudePreset ? extractClaudeStructuredOutput(resultText) : JSON.parse(resultText.trim()); }
   catch (error) { throw new Error(`Engineering executor did not return valid JSON: ${error.message}`); }
   assertContract(result, "engineering-workstream-run.schema.json", "Engineering workstream result");
   const actor = config.roles.find((role) => role.id === workstream.ownerRole)?.actorId;
@@ -131,6 +145,14 @@ export async function runEngineeringWorkstream(
     : `.development-os/runs/${runId}-attempt-${attemptId}-result.json`;
   await writeExclusiveOrEqual(root, storedResultFile, json(result));
   return { dryRun: false, runId, inputFile, resultFile: storedResultFile, payload, result, stderr: execution.stderr };
+}
+
+export function extractClaudeStructuredOutput(value) {
+  const envelope = JSON.parse(String(value ?? "").trim());
+  if (!envelope || typeof envelope !== "object" || !envelope.structured_output || typeof envelope.structured_output !== "object") {
+    throw new Error("Claude output envelope is missing structured_output.");
+  }
+  return envelope.structured_output;
 }
 
 async function verifierWorkspaceDigest(root) {
@@ -259,11 +281,16 @@ async function execute(executable, args, { cwd, timeoutMs, environmentAllowlist,
 
 async function windowsCommand(executable, args) {
   if (process.platform !== "win32" || !/\.(?:cmd|bat)$/i.test(executable)) return { executable, args };
-  const isCodexShim = path.basename(executable).toLowerCase() === "codex.cmd" && args[0] === "exec";
-  if (!isCodexShim) {
+  const name = path.basename(executable).toLowerCase();
+  const isCodexShim = name === "codex.cmd" && args[0] === "exec";
+  const isClaudeShim = name === "claude.cmd" && args.includes("-p");
+  if (!isCodexShim && !isClaudeShim) {
     throw new Error("Windows batch executors are not supported because their arguments cross a command-interpreter boundary.");
   }
-  const javascriptLauncher = path.join(path.dirname(executable), "node_modules", "@openai", "codex", "bin", "codex.js");
+  if (isClaudeShim) return resolveClaudeCommand(executable, args);
+  const javascriptLauncher = isCodexShim
+    ? path.join(path.dirname(executable), "node_modules", "@openai", "codex", "bin", "codex.js")
+    : null;
   try { await fs.access(javascriptLauncher); }
   catch {
     throw new Error("The Codex command shim was found, but its shell-free JavaScript launcher could not be resolved. Install the official Codex application or reinstall @openai/codex.");
@@ -273,4 +300,14 @@ async function windowsCommand(executable, args) {
   try { await fs.access(bundledNode); nodeExecutable = bundledNode; }
   catch { /* The current trusted Node runtime executes the official launcher. */ }
   return { executable: nodeExecutable, args: [javascriptLauncher, ...args] };
+}
+
+function looksLikeCodexExecutor(executor) {
+  return ["codex", "codex.exe", "codex.cmd"].includes(path.basename(executor.executable).toLowerCase())
+    && executor.arguments[0] === "exec";
+}
+
+function looksLikeClaudeExecutor(executor) {
+  return ["claude", "claude.exe", "claude.cmd"].includes(path.basename(executor.executable).toLowerCase())
+    && executor.arguments.includes("--json-schema");
 }

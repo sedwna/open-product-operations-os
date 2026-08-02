@@ -9,12 +9,17 @@ import { loadDevelopmentConfig, validateDevelopmentConfig } from "./config.js";
 
 const WORKSTREAM_SCHEMA = "engineering/schemas/engineering-workstream-run.schema.json";
 const CODEX_EXECUTABLE = "codex";
+const CLAUDE_EXECUTABLE = "claude";
 const DEFAULT_TIMEOUT_MS = 1_800_000;
 const CODEX_SESSION_ENVIRONMENT = Object.freeze([
   "APPDATA", "CODEX_HOME", "HOME", "LOCALAPPDATA", "USERPROFILE"
 ]);
+const CLAUDE_SESSION_ENVIRONMENT = Object.freeze([
+  "APPDATA", "CLAUDE_CONFIG_DIR", "HOME", "LOCALAPPDATA", "USERPROFILE"
+]);
 const SAFE_ENVIRONMENT_NAMES = new Set([
-  "CI", "LANG", "LC_ALL", "NO_COLOR", "TZ", ...CODEX_SESSION_ENVIRONMENT
+  "CI", "LANG", "LC_ALL", "NO_COLOR", "TZ", ...CODEX_SESSION_ENVIRONMENT,
+  ...CLAUDE_SESSION_ENVIRONMENT
 ]);
 
 export const EXECUTOR_ISOLATION_WARNING =
@@ -47,7 +52,9 @@ export async function configureDevelopmentExecutors(
     const actorId = config.roles.find((candidate) => candidate.id === executor.roleId)?.actorId;
     const preset = provider === "codex"
       ? codexPreset(actorId, executor.roleId)
-      : commandPreset(executable, commandArguments);
+      : provider === "claude"
+        ? claudePreset(actorId, executor.roleId)
+        : commandPreset(executable, commandArguments);
     Object.assign(executor, {
       enabled: false,
       implementation: "command-runner",
@@ -158,6 +165,9 @@ export async function doctorDevelopmentExecutors(
     if (looksLikeCodexPreset(executor)) {
       await checkCodexPreset(absoluteRoot, executor, errors, checks);
     }
+    if (looksLikeClaudePreset(executor)) {
+      await checkClaudePreset(absoluteRoot, executor, errors, checks);
+    }
   }
 
   return {
@@ -172,8 +182,8 @@ export async function doctorDevelopmentExecutors(
 }
 
 function validateSetupOptions({ provider, role, executable, commandArguments, workingDirectory, timeoutMs }) {
-  if (!['codex', 'command'].includes(provider)) {
-    throw new Error('Executor provider must be "codex" or "command".');
+  if (!["codex", "claude", "command"].includes(provider)) {
+    throw new Error('Executor provider must be "codex", "claude", or "command".');
   }
   if (role !== "all" && !/^ENG-(?:0[1-9]|1[0-5])$/.test(role)) {
     throw new Error('Executor role must be "all" or a canonical role from ENG-01 through ENG-15.');
@@ -187,8 +197,8 @@ function validateSetupOptions({ provider, role, executable, commandArguments, wo
     if (provider === "command" && /\.(?:cmd|bat)$/i.test(executable)) {
       throw new Error("The command provider cannot use Windows batch executables; choose a native executable or a direct Node script.");
     }
-  if (provider === "codex" && (executable !== undefined || commandArguments.length > 0)) {
-    throw new Error("The Codex provider owns its executable and arguments; do not pass command overrides.");
+  if (["codex", "claude"].includes(provider) && (executable !== undefined || commandArguments.length > 0)) {
+    throw new Error(`The ${provider === "codex" ? "Codex" : "Claude"} provider owns its executable and arguments; do not pass command overrides.`);
   }
   if (!Array.isArray(commandArguments) || commandArguments.some((argument) => typeof argument !== "string")) {
     throw new Error("Executor arguments must be strings.");
@@ -247,6 +257,44 @@ function codexPreset(actorId, roleId) {
   };
 }
 
+function claudePreset(actorId, roleId) {
+  if (!actorId) throw new Error("The selected Claude executor role has no producer actor.");
+  const verifier = roleId === "ENG-15";
+  const prompt = [
+    "Read the JSON workstream input at {inputFile}.",
+    "Implement only the assigned workstream in the current repository and obey its writeBoundary and policy.",
+    "Return a result conforming to engineering-workstream-run.schema.json.",
+    `Set producerActorId exactly to ${JSON.stringify(actorId)}; copy planId, workstreamId, and ownerRole from the input.`,
+    "Report only commands and evidence you actually produced.",
+    "Do not create or switch Git branches and do not create commits; the orchestrator owns Git history.",
+    "Set implementationRevision to pending; the orchestrator seals it to the verified content digest after all workstreams finish.",
+    verifier ? "Act as an independent read-only verifier: do not edit files, reproduce relevant checks, inspect tracked and untracked implementation files, and return blocked or failed if material claims are not supported. On Windows, run Node test files with node --test tests\\*.test.js rather than passing the tests directory." : "Make only changes that are necessary for the assigned engineering boundary.",
+    "Do not deploy to production, use production credentials, or perform destructive database operations."
+  ].join(" ");
+  return {
+    executable: CLAUDE_EXECUTABLE,
+    environmentAllowlist: [...CLAUDE_SESSION_ENVIRONMENT],
+    arguments: [
+      "--bare",
+      "-p",
+      prompt,
+      "--output-format",
+      "json",
+      "--json-schema",
+      "{providerSchemaJson}",
+      "--no-session-persistence",
+      "--permission-mode",
+      verifier ? "dontAsk" : "acceptEdits",
+      "--tools",
+      verifier ? "Read,Glob,Grep,Bash" : "Read,Glob,Grep,Edit,Write,Bash",
+      "--allowedTools",
+      verifier
+        ? "Read,Glob,Grep,Bash(git status *),Bash(git diff *),Bash(node --test *),Bash(npm test *),Bash(npm run *)"
+        : "Read,Glob,Grep,Edit,Write,Bash"
+    ]
+  };
+}
+
 function commandPreset(executable, commandArguments) {
   return { executable, arguments: [...commandArguments], environmentAllowlist: [] };
 }
@@ -260,6 +308,12 @@ function looksLikeCodexPreset(executor) {
   const executable = path.basename(executor.executable).toLowerCase();
   return ["codex", "codex.exe", "codex.cmd"].includes(executable)
     && executor.arguments[0] === "exec";
+}
+
+function looksLikeClaudePreset(executor) {
+  const executable = path.basename(executor.executable).toLowerCase();
+  return ["claude", "claude.exe", "claude.cmd"].includes(executable)
+    && executor.arguments.includes("--json-schema");
 }
 
 async function checkCodexPreset(root, executor, errors, checks) {
@@ -289,6 +343,32 @@ async function checkCodexPreset(root, executor, errors, checks) {
     checks.push(`${executor.roleId}: Codex output schema is readable`);
   } catch (error) {
     errors.push(`${executor.roleId}: Codex output schema is unavailable or invalid (${error.message}).`);
+  }
+}
+
+async function checkClaudePreset(root, executor, errors, checks) {
+  const verifier = executor.roleId === "ENG-15";
+  const expectedMode = verifier ? "dontAsk" : "acceptEdits";
+  const required = ["--bare", "-p", "--output-format", "json", "--json-schema", "{providerSchemaJson}", "--no-session-persistence", "--permission-mode", expectedMode];
+  if (!required.every((value) => executor.arguments.includes(value))) {
+    errors.push(`${executor.roleId}: Claude preset must use bare non-persistent print mode, structured output, and the role-appropriate permission mode.`);
+  }
+  const prompt = executor.arguments[executor.arguments.indexOf("-p") + 1] ?? "";
+  if (!prompt.includes("{inputFile}") || !prompt.includes("engineering-workstream-run.schema.json")) {
+    errors.push(`${executor.roleId}: Claude prompt must read {inputFile} and require the engineering workstream result contract.`);
+  }
+  const allowedTools = executor.arguments[executor.arguments.indexOf("--allowedTools") + 1] ?? "";
+  if (verifier && /\b(?:Edit|Write)\b/.test(allowedTools)) {
+    errors.push(`${executor.roleId}: Claude verifier must not receive editing tools.`);
+  }
+  try {
+    const schemaPath = resolveInside(root, WORKSTREAM_SCHEMA, `${executor.roleId} output schema`);
+    await assertNoLinkTraversal(root, schemaPath, `${executor.roleId} output schema`);
+    const schema = JSON.parse(await fs.readFile(schemaPath, "utf8"));
+    if (schema.title !== "Engineering Workstream Run") throw new Error("unexpected schema title");
+    checks.push(`${executor.roleId}: Claude structured-output schema is readable`);
+  } catch (error) {
+    errors.push(`${executor.roleId}: Claude structured-output schema is unavailable or invalid (${error.message}).`);
   }
 }
 

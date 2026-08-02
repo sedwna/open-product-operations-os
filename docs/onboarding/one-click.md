@@ -39,7 +39,7 @@ The flow has five short screens:
 1. Choose the parent folder and names for the operations and application repositories.
 2. Describe the product, vision, target users, environments, and human product owner.
 3. Optionally record the first idea, its problem statement, source, and initial priority.
-4. Review Development Operations OS, Codex automation, dependency, Git, initial-commit, and
+4. Review Development Operations OS, Codex or Claude Code automation, dependency, Git, initial-commit, and
    writable-local-dashboard options.
 5. Review the complete plan and start the bounded setup.
 
@@ -50,7 +50,7 @@ A new application always receives the namespaced Development Operations OS files
 before onboarding completes. An existing application remains untouched unless the user explicitly
 selects Development Operations OS initialization. This opt-in adds only the namespaced engineering
 files; it does not stage or commit the existing repository. Specialist executors remain disabled
-unless the user explicitly selects Codex automation and the readiness checks pass.
+unless the user explicitly enables automation and the selected provider readiness checks pass.
 The wizard selects writable local mode for the common autonomous case. It remains loopback-only,
 uses a per-session request token, and is shown explicitly in the final review. The user can turn it
 off for an observation-only workspace.
@@ -62,7 +62,8 @@ The setup engine performs and reports each bounded step:
 ```text
 verify or install a local runtime
 → install locked project dependencies
-→ verify the Codex CLI and login; install or open login when explicitly selected
+→ inspect Codex and Claude Code; select the requested or best authenticated provider
+→ install the selected official CLI or open its login flow when explicitly authorized
 → preview and create the operations repository
 → apply product configuration
 → create or connect the application repository
@@ -76,9 +77,11 @@ verify or install a local runtime
 ```
 
 Development Operations OS is initialized for a new application. In manual mode every specialist
-executor remains disabled. In Codex automation mode, the wizard distinguishes installation,
-executable health, and login status before configuring and enabling the bounded engineering
-executors. When the first idea was submitted with Codex automation selected, the dashboard starts
+executor remains disabled. In automation mode, the wizard distinguishes installation, executable
+health, and login status for Codex and Claude Code before configuring and enabling the bounded
+product and engineering executors. Automatic selection prefers a provider that is already
+authenticated, then one that is executable, and uses Codex only as the final tie-breaker. When the
+first idea was submitted with automation selected, the dashboard starts
 the durable coordinator: product roles analyze it, engineering roles implement dependency-ready
 work, independent verifiers inspect the result, evidence returns to product, the workbook is
 updated through controlled receipts, and a Persian cycle report is produced. Creating a task board
@@ -93,9 +96,10 @@ publication, or writes outside the chosen folders.
 - Release archives contain the exact production dependencies resolved from the published lockfile.
   The launcher binds them to the lockfile hash and automatically performs a locked, lifecycle-script-
   free repair if the dependency directory is absent, incomplete, or stale.
-- It does not modify the system-wide Node.js runtime or request administrator access. If Codex
-  automation is explicitly selected and no usable CLI exists, it may install the official
-  `@openai/codex` package with npm at user scope; the review screen discloses this before execution.
+- It does not modify the system-wide Node.js runtime or request administrator access. If automation
+  is explicitly selected and no usable CLI exists, it may install only the selected official
+  `@openai/codex` or `@anthropic-ai/claude-code` package with npm; the review screen discloses this
+  before execution.
 - The onboarding and dashboard servers bind only to a loopback address.
 - The session rejects credentials and private material in form values.
 - Existing non-empty folders are never overwritten. Only folders containing the resumable

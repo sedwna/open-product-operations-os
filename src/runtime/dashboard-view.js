@@ -177,8 +177,10 @@ function gateRow(label, passed, value) {
 }
 
 function automationPanel(automation = {}, autopilot = {}, writable = false) {
-  const codex = automation.codex ?? {};
-  const providerReady = Boolean(codex.canAutomate);
+  const providerId = automation.provider === "claude" ? "claude" : "codex";
+  const provider = automation[providerId] ?? {};
+  const providerName = providerId === "claude" ? "کلاد کد" : "کدکس";
+  const providerReady = Boolean(provider.canAutomate);
   const executorsReady = Boolean(automation.executorsEnabled);
   const schedulerReady = Boolean(automation.continuousOrchestrator);
   const status = automationStatusLabel(automation.status);
@@ -186,8 +188,8 @@ function automationPanel(automation = {}, autopilot = {}, writable = false) {
   const events = (autopilot.events ?? []).slice(-8).reverse();
   const report = autopilot.latestReport ?? null;
   return `<div class="automation-grid">
-    <article class="panel automation-summary"><div class="panel-head"><div><span class="kicker">وضعیت واقعی</span><h2>${escapeHtml(status)}</h2></div><span class="automation-light ${executorsReady ? "ready" : "waiting"}"></span></div><p>${escapeHtml(automation.currentCapability || "وضعیت ثبت نشده است.")}</p><div class="automation-path">${automationStep("چرخهٔ محصول", automation.productCycle === "initialized", "ایده به وظایف وابسته و نقش‌محور تبدیل می‌شود")}${automationStep("موتور کدکس", providerReady, codex.message || "اتصال بررسی نشده است")}${automationStep("عامل‌های محصول", providerReady && schedulerReady, schedulerReady ? "تحلیل، قرارداد، کنترل کیفیت و گزارش را انجام می‌دهند" : "منتظر فعال‌شدن هماهنگ‌کننده‌اند")}${automationStep("عامل‌های توسعه", executorsReady, executorsReady ? "پانزده مرز مهندسی وابسته به اثر کار فعال‌اند" : "هنوز فعال نشده‌اند")}${automationStep("همگام‌سازی قرارداد و دفترکار", schedulerReady, schedulerReady ? "نتیجه و شواهد دوطرفه ثبت می‌شوند" : "هنوز نیازمند فرمان صریح است")}</div></article>
-    <article class="panel automation-details"><div class="panel-head"><div><span class="kicker">موتور هوشمند</span><h2>کدکس</h2></div><span class="status-pill">${escapeHtml(codex.authenticationMode || "بدون اتصال")}</span></div>${detailRow("نصب", codex.installed ? "پیدا شد" : "پیدا نشد")}${detailRow("اجرای خط فرمان", codex.executableUsable ? "سالم" : "آماده نیست")}${detailRow("ورود", codex.authenticated ? "معتبر" : "نیازمند ورود")}${detailRow("نسخه", codex.version || "نامشخص")}${detailRow("اشتراک", "نوع اشتراک از خط فرمان خوانده نمی‌شود")}</article>
+    <article class="panel automation-summary"><div class="panel-head"><div><span class="kicker">وضعیت واقعی</span><h2>${escapeHtml(status)}</h2></div><span class="automation-light ${executorsReady ? "ready" : "waiting"}"></span></div><p>${escapeHtml(automation.currentCapability || "وضعیت ثبت نشده است.")}</p><div class="automation-path">${automationStep("چرخهٔ محصول", automation.productCycle === "initialized", "ایده به وظایف وابسته و نقش‌محور تبدیل می‌شود")}${automationStep(`موتور ${providerName}`, providerReady, provider.message || "اتصال بررسی نشده است")}${automationStep("عامل‌های محصول", providerReady && schedulerReady, schedulerReady ? "تحلیل، قرارداد، کنترل کیفیت و گزارش را انجام می‌دهند" : "منتظر فعال‌شدن هماهنگ‌کننده‌اند")}${automationStep("عامل‌های توسعه", executorsReady, executorsReady ? "پانزده مرز مهندسی وابسته به اثر کار فعال‌اند" : "هنوز فعال نشده‌اند")}${automationStep("همگام‌سازی قرارداد و دفترکار", schedulerReady, schedulerReady ? "نتیجه و شواهد دوطرفه ثبت می‌شوند" : "هنوز نیازمند فرمان صریح است")}</div></article>
+    <article class="panel automation-details"><div class="panel-head"><div><span class="kicker">موتور هوشمند</span><h2>${providerName}</h2></div><span class="status-pill">${escapeHtml(provider.authenticationMode || "بدون اتصال")}</span></div>${detailRow("نصب", provider.installed ? "پیدا شد" : "پیدا نشد")}${detailRow("اجرای خط فرمان", provider.executableUsable ? "سالم" : "آماده نیست")}${detailRow("ورود", provider.authenticated ? "معتبر" : "نیازمند ورود")}${detailRow("نسخه", provider.version || "نامشخص")}${detailRow("اشتراک", "نوع اشتراک از خط فرمان خوانده نمی‌شود")}</article>
     <article class="panel automation-next"><span class="kicker">قدم بعدی سامانه</span><h2>چرخهٔ بعدی بازخورد</h2><p>${escapeHtml(automation.nextCapability || "ثبت بازخورد و آغاز چرخهٔ بعدی")}</p><div class="notice-line">انتشار زنده، عملیات مخرب و دسترسی به دادهٔ واقعی همچنان به تأیید جداگانه نیاز دارند.</div></article>
     <article class="panel autopilot-live"><div class="panel-head"><div><span class="kicker">اجرای زنده</span><h2 id="autopilot-status">${escapeHtml(autopilotStatusLabel(cycle.status))}</h2></div><span class="status-pill" id="autopilot-phase">${escapeHtml(cycle.phase || "idle")}</span></div><div class="autopilot-now"><div><small>نقش فعال</small><strong id="autopilot-role">${escapeHtml(cycle.currentRoleId || "—")}</strong></div><div><small>کار فعال</small><strong id="autopilot-task">${escapeHtml(cycle.currentTaskId || "—")}</strong></div><div><small>تلاش</small><strong id="autopilot-attempt">${toPersianNumber(cycle.attempt ?? 0)}</strong></div></div><p class="autopilot-error" id="autopilot-error">${escapeHtml(cycle.lastError || "")}</p><div class="autopilot-actions"><button class="primary-button" id="autopilot-start" ${writable ? "" : "disabled"}>شروع یا ادامه</button><button class="secondary-button" id="autopilot-pause" ${writable ? "" : "disabled"}>توقف امن</button><button class="secondary-button" id="autopilot-retry" ${writable ? "" : "disabled"}>تلاش دوباره</button></div><div class="autopilot-events" id="autopilot-events">${renderAutopilotEvents(events)}</div></article>
     ${autopilotReport(report)}
@@ -228,7 +230,7 @@ function automationStatusLabel(status) {
     "not-configured": "خودکارسازی پیکربندی نشده",
     manual: "اجرای دستی و کنترل‌شده",
     checking: "در حال بررسی اتصال",
-    "provider-ready": "کدکس آمادهٔ اتصال است",
+    "provider-ready": "موتور هوشمند آمادهٔ اتصال است",
     "executors-ready": "اجراگرهای توسعه آماده‌اند"
   })[status] ?? "وضعیت ناشناخته";
 }

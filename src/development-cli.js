@@ -19,7 +19,7 @@ Usage:
   development-os plan <target> --request <json-file> [--apply]
   development-os complete <target> --result <json-file> [--apply]
   development-os execute <target> --plan <plan-id> --workstream <workstream-id> [--apply]
-  development-os executor-setup <target> --provider <codex|command> --role <ENG-01|all> [options] [--enable] [--apply]
+  development-os executor-setup <target> --provider <codex|claude|command> --role <ENG-01|all> [options] [--enable] [--apply]
   development-os executor-doctor <target> [--role <ENG-01|all>]
   development-os dashboard <target> [--output <html-file>] [--apply]
   development-os status <target>
@@ -84,7 +84,7 @@ export async function main(argv = process.argv.slice(2), io = console) {
     return 0;
   }
   if (parsed.command === "executor-setup") {
-    if (!parsed.provider) throw new Error("executor-setup requires --provider <codex|command>.");
+    if (!parsed.provider) throw new Error("executor-setup requires --provider <codex|claude|command>.");
     if (!parsed.role) throw new Error("executor-setup requires --role <ENG-01|all>.");
     const result = await configureDevelopmentExecutors(target, {
       provider: parsed.provider,

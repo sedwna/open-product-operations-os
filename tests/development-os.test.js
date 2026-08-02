@@ -12,7 +12,7 @@ import { initializeDevelopmentOs } from "../src/development/init.js";
 import { planDevelopmentRequest } from "../src/development/planner.js";
 import { completeDevelopmentResult } from "../src/development/result.js";
 import { validateDevelopmentOs } from "../src/development/validation.js";
-import { effectiveCodexSandboxArguments, runEngineeringWorkstream } from "../src/development/runner.js";
+import { effectiveCodexSandboxArguments, extractClaudeStructuredOutput, runEngineeringWorkstream } from "../src/development/runner.js";
 import { buildDevelopmentDashboard } from "../src/development/dashboard.js";
 import { TASKBOARD_COLUMNS } from "../src/constants.js";
 import { main as developmentMain } from "../src/development-cli.js";
@@ -206,6 +206,20 @@ test("engineering honors an explicit full-access host profile while verifier wri
   assert.deepEqual(
     effectiveCodexSandboxArguments(verification, { CODEX_PERMISSION_PROFILE: ":danger-full-access" }),
     ["exec", "--sandbox", "danger-full-access", "prompt"]
+  );
+});
+
+test("Claude executor output extracts only the schema-validated structured result", () => {
+  const structured = { schemaVersion: "1.0.0", status: "completed" };
+  assert.deepEqual(extractClaudeStructuredOutput(JSON.stringify({
+    type: "result",
+    session_id: "redacted-session",
+    total_cost_usd: 0.01,
+    structured_output: structured
+  })), structured);
+  assert.throws(
+    () => extractClaudeStructuredOutput('{"result":"free-form only"}'),
+    /missing structured_output/
   );
 });
 

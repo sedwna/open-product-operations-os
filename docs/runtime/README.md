@@ -26,7 +26,7 @@ replace Git canonical state, semantic ownership, independent verification, or hu
 | **Provider outbox** | Apply bounded HTTPS operations and retain projected, hash-backed receipts | Disabled |
 | **Control tower** | Show tasks, decisions, intake, risks, roles, evidence, and readiness | Read-only |
 | **Setup and migration** | Configure a generated project and upgrade the operating contract safely | Plan only |
-| **Autonomous coordinator** | Claim dependency-ready product and engineering work, recover retries, return evidence, and write the cycle report | Enabled only by the one-click Codex automation link |
+| **Autonomous coordinator** | Claim dependency-ready product and engineering work, recover retries, return evidence, and write the cycle report | Enabled only by a verified one-click Codex or Claude Code automation link |
 
 Runtime state is stored under:
 
@@ -66,7 +66,7 @@ This additionally permits:
 - one bounded control-plane scheduling cycle;
 - start, cooperative pause, resume, and retry of the linked local autonomous cycle.
 
-When the workspace contains the one-click Codex automation link, the dashboard process also runs
+When the workspace contains a verified one-click automation link, the dashboard process also runs
 the continuous coordinator and can execute bounded development work in the separate application
 repository. It does **not** authorize provider calls, production deployment, destructive actions,
 production data, credentials, spending, or external publication.
@@ -85,7 +85,7 @@ connected.
 
 ## A typical cycle
 
-With one-click Codex automation, the normal path is simply:
+With one-click Codex or Claude Code automation, the normal path is simply:
 
 ```text
 1. Open the local dashboard.

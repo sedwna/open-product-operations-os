@@ -62,7 +62,7 @@ If a link is missing, the system does not silently call the work complete.
 | **23-tab product workbook** | Portable CSV records spanning idea, discovery, issues, tickets, evidence, QA, lineage, and readiness |
 | **Autonomous product factory** | A resumable idea → product analysis → engineering → product verification → report loop with live role and task visibility |
 | **Development adapter** | A bounded handoff to an engineering agent or team through the dedicated development role |
-| **Automation Center** | Live phase, role, task, event history, retry state, pause/resume controls, Codex readiness, and the latest cycle result |
+| **Automation Center** | Live phase, role, task, event history, retry state, pause/resume controls, Codex or Claude Code readiness, and the latest cycle result |
 | **Independent Development OS** | A 15-boundary engineering package for architecture, frontend, backend, database, data, infrastructure, network, security, QA, SRE, delivery, SEO, documentation, and verification |
 | **Controlled writers** | Precondition checks, authorization, complete read-back, replay protection, and guarded rollback |
 | **Provider boundary** | Disabled-by-default adapters for GitHub, GitLab, Jira, Linear, Azure DevOps, Sheets, Graph, and Airtable |
@@ -194,8 +194,10 @@ development-os validate ./my-application
 The graphical one-click path performs these initialization and validation commands automatically
 for a new application. Use the manual commands above when adding Development Operations OS later
 or when you prefer command-line control. In manual initialization specialist executors remain
-disabled until separately configured, tested, and authorized. In one-click Codex automation mode,
-readiness checks activate them and the linked local dashboard starts the continuous coordinator.
+disabled until separately configured, tested, and authorized. In one-click automation mode, the
+wizard can select Codex or Claude Code explicitly, or automatically choose the authenticated local
+provider. Readiness checks activate the matching product and engineering executors, and the linked
+local dashboard starts the continuous coordinator.
 
 The original command-runner adapter remains available as a lower-level bounded integration.
 

@@ -81,16 +81,18 @@ explicitly allowlisted variable names. It rejects obvious credential material in
 returns. It is not an operating-system sandbox; untrusted coding agents require an independently
 constrained worker, container, or virtual machine.
 
-On Windows, custom batch executors are rejected. If an official npm-installed `codex.cmd` shim is
-the only available Codex launcher, the runtime resolves its package-owned JavaScript entry point
-and starts it with the already trusted Node runtime; idea or task text never crosses `cmd.exe`.
+On Windows, custom batch executors are rejected. If an official npm-installed `codex.cmd` or
+`claude.cmd` shim is the only available launcher, the runtime resolves only its package-owned
+JavaScript entry point and starts it with the already trusted Node runtime; idea or task text never
+crosses `cmd.exe`.
 
 Development OS executors follow the same boundary. Configuration is disabled and dry-run-first;
 activation requires a passing read-only doctor. Product agents and the independent engineering
-verifier use ephemeral read-only Codex runs; implementation roles use ephemeral workspace-write
-runs. The preset ignores mutable user configuration while reusing external Codex authentication,
-writes the final schema-bound response separately from progress output, and never uses the
-danger-full-access bypass. Every returned result is attributed to the dispatched plan, workstream,
+verifier use read-only provider runs; implementation roles use bounded editing modes. The Codex
+preset is ephemeral and ignores mutable user configuration. The Claude Code preset is bare,
+non-persistent, schema-bound, and removes editing tools from its verifier. Both reuse only external
+provider authentication, bound both output channels, and never use an unrestricted permission
+bypass. Every returned result is attributed to the dispatched plan, workstream,
 role, and actor, and both output channels are bounded. External isolation remains a deployment
 requirement, not a claim made by this repository.
 

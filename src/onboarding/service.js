@@ -6,6 +6,7 @@ import path from "node:path";
 import { assertNoCredentialMaterial } from "../runtime/security.js";
 import { validatePublishedSchema } from "../schema-validation.js";
 import { captureCodexCommand, inspectCodexReadiness } from "../codex/readiness.js";
+import { captureClaudeCommand, inspectClaudeReadiness } from "../claude/readiness.js";
 import { configureDevelopmentExecutors } from "../development/executor-setup.js";
 import { initializeDevelopmentOs as initializeDevelopmentSystem } from "../development/init.js";
 import { validateDevelopmentOs } from "../development/validation.js";
@@ -20,10 +21,10 @@ const MAX_COMMAND_OUTPUT_BYTES = 1024 * 1024;
 
 export const ONBOARDING_STEPS = Object.freeze([
   { id: "dependencies", label: "آماده‌سازی موتور" },
-  { id: "codex", label: "بررسی موتور هوشمند کدکس" },
   { id: "operations", label: "ساخت فضای عملیات محصول" },
   { id: "configuration", label: "ثبت مشخصات محصول" },
   { id: "application", label: "آماده‌سازی مخزن کد" },
+  { id: "provider", label: "بررسی موتور هوشمند انتخاب‌شده" },
   { id: "development", label: "ساخت سامانهٔ عملیات توسعه" },
   { id: "idea", label: "ثبت ایدهٔ نخست" },
   { id: "cycle", label: "اجرای چرخهٔ نخست" },
@@ -71,7 +72,9 @@ export function normalizeOnboardingRequest(input, { repoRoot } = {}) {
   }
   const initializeDevelopmentOs = appMode === "create"
     || (appMode === "existing" && input.initializeDevelopmentOs === true);
-  const automationMode = input.automationMode === "codex" ? "codex" : "manual";
+  const automationMode = ["auto", "codex", "claude"].includes(input.automationMode)
+    ? input.automationMode
+    : "manual";
 
   const ideaEnabled = Boolean(input.ideaEnabled && String(input.ideaTitle || "").trim());
   const priority = ALLOWED_PRIORITIES.has(input.ideaPriority) ? input.ideaPriority : "P2";
@@ -82,7 +85,7 @@ export function normalizeOnboardingRequest(input, { repoRoot } = {}) {
         description: boundedText(input.ideaDescription, "شرح ایده", 10, 2400),
         source: boundedText(input.ideaSource || "راه‌اندازی یک‌کلیکی محلی", "منبع ایده", 2, 200),
         priority,
-        autopilotAuthorized: automationMode === "codex"
+        autopilotAuthorized: automationMode !== "manual"
       }
     : null;
 
@@ -100,8 +103,12 @@ export function normalizeOnboardingRequest(input, { repoRoot } = {}) {
     applicationPath,
     initializeDevelopmentOs,
     automationMode,
-    installCodexCli: automationMode === "codex" && input.installCodexCli !== false,
-    authenticateCodex: automationMode === "codex" && input.authenticateCodex !== false,
+    installProviderCli: automationMode !== "manual"
+      && input.installProviderCli !== false
+      && input.installCodexCli !== false,
+    authenticateProvider: automationMode !== "manual"
+      && input.authenticateProvider !== false
+      && input.authenticateCodex !== false,
     idea,
     installDependencies: input.installDependencies !== false,
     initializeGit: input.initializeGit !== false,
@@ -115,11 +122,12 @@ export function normalizeOnboardingRequest(input, { repoRoot } = {}) {
 }
 
 export async function inspectOnboardingEnvironment(repoRoot) {
-  const [gitVersion, gitName, gitEmail, codex] = await Promise.all([
+  const [gitVersion, gitName, gitEmail, codex, claude] = await Promise.all([
     captureOptional("git", ["--version"]),
     captureOptional("git", ["config", "--global", "user.name"]),
     captureOptional("git", ["config", "--global", "user.email"]),
-    inspectCodexReadiness({ cwd: repoRoot })
+    inspectCodexReadiness({ cwd: repoRoot }),
+    inspectClaudeReadiness({ cwd: repoRoot })
   ]);
   return {
     platform: process.platform,
@@ -131,7 +139,8 @@ export async function inspectOnboardingEnvironment(repoRoot) {
     gitVersion,
     gitName,
     gitEmail,
-    codex
+    codex,
+    claude
   };
 }
 
@@ -141,6 +150,8 @@ export async function runOnboarding(request, {
   skipDependencyInstall = false,
   inspectCodex = inspectCodexReadiness,
   executeCodex = captureCodexCommand,
+  inspectClaude = inspectClaudeReadiness,
+  executeClaude = captureClaudeCommand,
   configureExecutors = configureDevelopmentExecutors
 } = {}) {
   const answers = normalizeOnboardingRequest(request, { repoRoot });
@@ -202,15 +213,19 @@ export async function runOnboarding(request, {
     },
     automation: {
       mode: answers.automationMode,
-      provider: answers.automationMode === "codex" ? "codex" : null,
-      status: answers.automationMode === "codex" ? "checking" : "manual",
+      provider: ["codex", "claude"].includes(answers.automationMode) ? answers.automationMode : null,
+      status: answers.automationMode !== "manual" ? "checking" : "manual",
       codex: null,
+      claude: null,
       continuousOrchestrator: false
     },
     git: { operations: "skipped", application: "skipped" }
   };
 
   let codexReadiness = null;
+  let claudeReadiness = null;
+  let providerReadiness = null;
+  let selectedProvider = report.automation.provider;
 
   await step(onProgress, "dependencies", async (log) => {
     if (skipDependencyInstall || !answers.installDependencies) {
@@ -272,36 +287,56 @@ export async function runOnboarding(request, {
     log("پوشهٔ کد محصول با فایل‌های پایه ساخته شد.");
   });
 
-  await step(onProgress, "codex", async (log) => {
-    if (answers.automationMode !== "codex") {
+  await step(onProgress, "provider", async (log) => {
+    if (answers.automationMode === "manual") {
       report.automation.status = "manual";
-      log("ساخت خودکار انتخاب نشده است؛ اتصال کدکس تغییری نمی‌کند.");
+      log("ساخت خودکار انتخاب نشده است؛ هیچ موتور هوشمندی تغییر نمی‌کند.");
       return;
     }
-    codexReadiness = await inspectCodex({ cwd: repoRoot });
-    log(codexReadiness.message);
-    if (!codexReadiness.executableUsable && answers.installCodexCli) {
-      log("در حال نصب رسمی ابزار خط فرمان کدکس از بستهٔ منتشرشدهٔ اوپن‌ای‌آی…");
-      await runNpm(["install", "--global", "@openai/codex"], { cwd: repoRoot, onLine: log });
-      codexReadiness = await inspectCodex({ cwd: repoRoot });
-      log(codexReadiness.message);
+    [codexReadiness, claudeReadiness] = await Promise.all([
+      inspectCodex({ cwd: repoRoot }),
+      inspectClaude({ cwd: repoRoot })
+    ]);
+    report.automation.codex = publicProviderReadiness(codexReadiness);
+    report.automation.claude = publicProviderReadiness(claudeReadiness);
+    selectedProvider = answers.automationMode === "auto"
+      ? selectAutomationProvider({ codex: codexReadiness, claude: claudeReadiness })
+      : answers.automationMode;
+    report.automation.provider = selectedProvider;
+    providerReadiness = selectedProvider === "claude" ? claudeReadiness : codexReadiness;
+    log(`موتور انتخاب‌شده: ${providerLabel(selectedProvider)}. ${providerReadiness.message}`);
+    if (!providerReadiness.executableUsable && answers.installProviderCli) {
+      const packageName = selectedProvider === "claude" ? "@anthropic-ai/claude-code" : "@openai/codex";
+      log(`در حال نصب بستهٔ رسمی ${providerLabel(selectedProvider)}…`);
+      await runNpm(["install", "--global", packageName], { cwd: repoRoot, onLine: log });
+      providerReadiness = selectedProvider === "claude"
+        ? await inspectClaude({ cwd: repoRoot })
+        : await inspectCodex({ cwd: repoRoot });
+      log(providerReadiness.message);
     }
-    if (codexReadiness.status === "login-required" && answers.authenticateCodex) {
-      log("مرورگر برای ورود امن به کدکس باز می‌شود؛ اطلاعات ورود در پروژه ذخیره نخواهد شد.");
-      const login = await executeCodex(codexReadiness.executable, ["login"], {
+    if (providerReadiness.status === "login-required" && answers.authenticateProvider) {
+      log(`مرورگر برای ورود امن به ${providerLabel(selectedProvider)} باز می‌شود؛ اطلاعات ورود در پروژه ذخیره نخواهد شد.`);
+      const executeProvider = selectedProvider === "claude" ? executeClaude : executeCodex;
+      const loginArgs = selectedProvider === "claude" ? ["auth", "login"] : ["login"];
+      const login = await executeProvider(providerReadiness.executable, loginArgs, {
         cwd: repoRoot,
         timeoutMs: 10 * 60 * 1000
       });
-      if (!login.ok) throw new Error(`ورود کدکس کامل نشد: ${login.error || login.stderr || "وضعیت نامشخص"}`);
-      codexReadiness = await inspectCodex({ cwd: repoRoot });
-      log(codexReadiness.message);
+      if (!login.ok) throw new Error(`ورود ${providerLabel(selectedProvider)} کامل نشد: ${login.error || login.stderr || "وضعیت نامشخص"}`);
+      providerReadiness = selectedProvider === "claude"
+        ? await inspectClaude({ cwd: repoRoot })
+        : await inspectCodex({ cwd: repoRoot });
+      log(providerReadiness.message);
     }
-    report.automation.codex = publicCodexReadiness(codexReadiness);
-    if (!codexReadiness.canAutomate) {
-      throw new Error(`حالت ساخت خودکار بدون کدکس آماده شروع نمی‌شود: ${codexReadiness.message}`);
+    if (selectedProvider === "claude") claudeReadiness = providerReadiness;
+    else codexReadiness = providerReadiness;
+    report.automation.codex = publicProviderReadiness(codexReadiness);
+    report.automation.claude = publicProviderReadiness(claudeReadiness);
+    if (!providerReadiness.canAutomate) {
+      throw new Error(`حالت ساخت خودکار بدون ${providerLabel(selectedProvider)} آماده شروع نمی‌شود: ${providerReadiness.message}`);
     }
     report.automation.status = "provider-ready";
-    log("ورود معتبر تأیید شد. نوع اشتراک از خط فرمان قابل خواندن نیست و دسترسی عملی هنگام نخستین اجرای واقعی سنجیده می‌شود.");
+    log(`ورود معتبر ${providerLabel(selectedProvider)} تأیید شد. دسترسی عملی هنگام نخستین اجرای واقعی نیز سنجیده می‌شود.`);
   });
 
   await step(onProgress, "development", async (log) => {
@@ -329,18 +364,18 @@ export async function runOnboarding(request, {
     report.development.validated = true;
     report.development.status = "ready";
     log(`سامانهٔ عملیات توسعه با ${validation.checkedFiles} فایل مدیریت‌شده آماده و معتبر است.`);
-    if (answers.automationMode === "codex") {
+    if (answers.automationMode !== "manual") {
       const configured = await configureExecutors(answers.applicationPath, {
-        provider: "codex",
+        provider: selectedProvider,
         role: "all",
         enable: true,
         dryRun: false,
-        resolveCommand: async () => codexReadiness.executable
+        resolveCommand: async () => providerReadiness.executable
       });
       report.development.executorsConfigured = true;
       report.development.executorsEnabled = configured.enabled;
       report.automation.status = "executors-ready";
-      log(`${configured.selectedRoles.length} نقش مهندسی به اجراگر کدکس متصل و فعال شدند.`);
+      log(`${configured.selectedRoles.length} نقش مهندسی به اجراگر ${providerLabel(selectedProvider)} متصل و فعال شدند.`);
     }
   });
 
@@ -381,11 +416,11 @@ export async function runOnboarding(request, {
       `${JSON.stringify(automationStatus, null, 2)}\n`,
       "utf8"
     );
-    if (answers.automationMode === "codex" && answers.applicationPath && report.development.executorsEnabled) {
+    if (answers.automationMode !== "manual" && answers.applicationPath && report.development.executorsEnabled) {
       const link = {
         schemaVersion: "1.0.0",
         applicationRelativePath: path.relative(answers.operationsPath, answers.applicationPath).replaceAll("\\", "/"),
-        provider: "codex",
+        provider: selectedProvider,
         productExecutorsEnabled: true,
         engineeringExecutorsEnabled: true,
         autoStart: true,
@@ -576,7 +611,7 @@ async function assertSafeDestination(target, label, resumableMarker) {
   return false;
 }
 
-function publicCodexReadiness(value) {
+function publicProviderReadiness(value) {
   if (!value) return null;
   return {
     status: value.status,
@@ -592,7 +627,7 @@ function publicCodexReadiness(value) {
 }
 
 function buildAutomationStatus(report) {
-  const enabled = report.automation.mode === "codex" && report.development.executorsEnabled;
+  const enabled = report.automation.mode !== "manual" && report.development.executorsEnabled;
   return {
     schemaVersion: "1.0.0",
     updatedAt: new Date().toISOString(),
@@ -600,6 +635,7 @@ function buildAutomationStatus(report) {
     provider: report.automation.provider,
     status: enabled ? "executors-ready" : report.automation.status,
     codex: report.automation.codex,
+    claude: report.automation.claude,
     productCycle: report.initialCycleApplied ? "initialized" : "waiting-for-idea",
     developmentSystem: report.development.status,
     executorsEnabled: report.development.executorsEnabled,
@@ -607,8 +643,20 @@ function buildAutomationStatus(report) {
     currentCapability: enabled
       ? "چرخهٔ پیوستهٔ محصول و توسعه فعال است؛ ایده‌های مجاز خودکار تحلیل، پیاده‌سازی، راستی‌آزمایی و گزارش می‌شوند."
       : "چرخهٔ خودکار فعال نیست.",
-    nextCapability: enabled ? "ثبت بازخورد بعدی و آغاز خودکار چرخهٔ اصلاح" : "اتصال کدکس و فعال‌سازی اجراگرها"
+    nextCapability: enabled ? "ثبت بازخورد بعدی و آغاز خودکار چرخهٔ اصلاح" : "اتصال موتور هوشمند و فعال‌سازی اجراگرها"
   };
+}
+
+function selectAutomationProvider(readinessByProvider) {
+  return ["codex", "claude"].map((provider, index) => {
+    const value = readinessByProvider[provider];
+    const score = value?.canAutomate ? 30 : value?.executableUsable ? 20 : value?.installed ? 10 : 0;
+    return { provider, score, index };
+  }).sort((left, right) => right.score - left.score || left.index - right.index)[0].provider;
+}
+
+function providerLabel(provider) {
+  return provider === "claude" ? "کلاد کد" : "کدکس";
 }
 
 async function validateApplicationResumeMarker(applicationPath) {
