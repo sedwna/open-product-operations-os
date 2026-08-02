@@ -32,7 +32,9 @@ test("Codex preset is dry-run-first, schema-bound, credential-free, and disabled
   const executor = proposed.executors.find((candidate) => candidate.roleId === "ENG-04");
   assert.equal(executor.enabled, false);
   assert.equal(executor.executable, "codex");
-  assert.deepEqual(executor.environmentAllowlist, []);
+  assert.deepEqual(executor.environmentAllowlist, [
+    "APPDATA", "CODEX_HOME", "HOME", "LOCALAPPDATA", "USERPROFILE"
+  ]);
   assert.equal(executor.isolation, "external-required");
   assert.deepEqual(executor.arguments.slice(0, 6), [
     "exec", "--ephemeral", "--sandbox", "workspace-write", "--output-schema",

@@ -20,6 +20,7 @@ test("all public JSON schemas parse and declare Draft 2020-12", async () => {
   assert.deepEqual(files, [
     "agent-registry.schema.json",
     "approval-store.schema.json",
+    "automation-status.schema.json",
     "board-task.schema.json",
     "development-os-config.schema.json",
     "development-request.schema.json",

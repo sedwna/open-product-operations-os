@@ -4,6 +4,21 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+## 0.7.0 - 2026-08-02
+
+- Added a multi-state Codex readiness probe that distinguishes installation, executable health,
+  authentication, and actual automation readiness without persisting credentials.
+- Added explicit one-click Codex automation controls with official CLI installation, browser login,
+  and activation of all 15 bounded engineering executors only after readiness passes.
+- Added a credential-free automation status record and an RTL Automation Center that tells users
+  exactly what is configured, what can execute, and whether continuous task claiming is active.
+- Forwarded only the profile-location environment names required for Codex to reuse its external
+  authenticated session while retaining the external-isolation contract.
+- Documented the Autonomous Product Factory architecture, durable queue and lease model, automatic
+  Product-to-Development bridge, safety boundaries, and staged delivery plan.
+- Added regression coverage for unusable desktop aliases, missing login, authenticated providers,
+  guarded executor activation, and dashboard-visible orchestration boundaries.
+
 ## 0.6.2 - 2026-08-02
 
 - Returned safe, actionable validation errors from the graphical onboarding API instead of hiding

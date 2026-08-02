@@ -8,12 +8,25 @@ import { calculateMetrics } from "./metrics.js";
 import { loadTaskboard } from "./taskboard.js";
 
 export async function loadDashboardSnapshot(root, { now = new Date(), mode = "snapshot", writable = false } = {}) {
-  const [config, metrics, taskboard, approvals, intake] = await Promise.all([
+  const [config, metrics, taskboard, approvals, intake, automation] = await Promise.all([
     loadConfig(root),
     calculateMetrics(root, { now }),
     loadTaskboard(root),
     loadApprovals(root),
-    readJsonOptional(root, INTAKE_STORE_FILE, { records: [] })
+    readJsonOptional(root, INTAKE_STORE_FILE, { records: [] }),
+    readJsonOptional(root, ".product-ops/runtime/automation/status.json", {
+      schemaVersion: "1.0.0",
+      mode: "manual",
+      provider: null,
+      status: "not-configured",
+      codex: null,
+      productCycle: "unknown",
+      developmentSystem: "unknown",
+      executorsEnabled: false,
+      continuousOrchestrator: false,
+      currentCapability: "ساخت خودکار برای این پروژه پیکربندی نشده است.",
+      nextCapability: "اتصال یک اجراگر و راه‌اندازی زمان‌بند محلی"
+    })
   ]);
   const tasks = taskboard.records;
   const pendingApprovals = approvals.requests.filter((request) => request.status === "pending");
@@ -48,6 +61,7 @@ export async function loadDashboardSnapshot(root, { now = new Date(), mode = "sn
     tasks,
     approvals: approvals.requests,
     intake: intake.records ?? [],
+    automation,
     risks,
     roleActivity,
     readiness: {

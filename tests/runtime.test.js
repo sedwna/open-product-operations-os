@@ -224,6 +224,8 @@ test("dashboard, metrics, and setup wizard generate local RTL artifacts", async 
   const dashboard = await fs.readFile(path.join(target, ".product-ops/runtime/dashboard.html"), "utf8");
   assert.match(dashboard, /dir="rtl"/);
   assert.match(dashboard, /برج کنترل/);
+  assert.match(dashboard, /مرکز خودکارسازی/);
+  assert.match(dashboard, /continuousOrchestrator/);
   assert.match(dashboard, /window\.__PRODUCT_OPS__/);
   assert.match(dashboard, /prefers-reduced-motion/);
   assert.equal((await readJson(path.join(target, ".product-ops/runtime/metrics.json"))).totals.tasks, 1);

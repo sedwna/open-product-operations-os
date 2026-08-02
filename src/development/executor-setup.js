@@ -10,7 +10,12 @@ import { loadDevelopmentConfig, validateDevelopmentConfig } from "./config.js";
 const WORKSTREAM_SCHEMA = "engineering/schemas/engineering-workstream-run.schema.json";
 const CODEX_EXECUTABLE = "codex";
 const DEFAULT_TIMEOUT_MS = 1_800_000;
-const SAFE_ENVIRONMENT_NAMES = new Set(["CI", "LANG", "LC_ALL", "NO_COLOR", "TZ"]);
+const CODEX_SESSION_ENVIRONMENT = Object.freeze([
+  "APPDATA", "CODEX_HOME", "HOME", "LOCALAPPDATA", "USERPROFILE"
+]);
+const SAFE_ENVIRONMENT_NAMES = new Set([
+  "CI", "LANG", "LC_ALL", "NO_COLOR", "TZ", ...CODEX_SESSION_ENVIRONMENT
+]);
 
 export const EXECUTOR_ISOLATION_WARNING =
   "external-required is a contract, not a host sandbox: run every executor in a dedicated container, VM, or isolated hosted worker; do not grant production credentials.";
@@ -50,7 +55,7 @@ export async function configureDevelopmentExecutors(
       arguments: preset.arguments,
       workingDirectory,
       timeoutMs: Number(timeoutMs),
-      environmentAllowlist: [],
+      environmentAllowlist: preset.environmentAllowlist,
       isolation: "external-required"
     });
   }
@@ -219,6 +224,7 @@ function codexPreset(actorId) {
   ].join(" ");
   return {
     executable: CODEX_EXECUTABLE,
+    environmentAllowlist: [...CODEX_SESSION_ENVIRONMENT],
     arguments: [
       "exec",
       "--ephemeral",
@@ -232,7 +238,7 @@ function codexPreset(actorId) {
 }
 
 function commandPreset(executable, commandArguments) {
-  return { executable, arguments: [...commandArguments] };
+  return { executable, arguments: [...commandArguments], environmentAllowlist: [] };
 }
 
 function isShellExecutable(executable = "") {

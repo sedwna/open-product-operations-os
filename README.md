@@ -62,6 +62,7 @@ If a link is missing, the system does not silently call the work complete.
 | **23-tab product workbook** | Portable CSV records spanning idea, discovery, issues, tickets, evidence, QA, lineage, and readiness |
 | **Executable workflow** | A dry-run-first scheduler that routes intake, resolves dependencies, opens human gates, and dispatches eligible work |
 | **Development adapter** | A bounded handoff to an engineering agent or team through the dedicated development role |
+| **Automation Center** | Truthful Codex readiness, executor activation, and the current boundary between setup and continuous execution |
 | **Independent Development OS** | A 15-boundary engineering package for architecture, frontend, backend, database, data, infrastructure, network, security, QA, SRE, delivery, SEO, documentation, and verification |
 | **Controlled writers** | Precondition checks, authorization, complete read-back, replay protection, and guarded rollback |
 | **Provider boundary** | Disabled-by-default adapters for GitHub, GitLab, Jira, Linear, Azure DevOps, Sheets, Graph, and Airtable |
@@ -113,6 +114,11 @@ Release archives include the exact locked runtime dependencies; if they are miss
 launcher repairs them from the lockfile without running package lifecycle scripts.
 See the [one-click onboarding guide](docs/onboarding/one-click.md) for first-open notes, the safety
 contract, recovery, and distributable bundles.
+
+The [Autonomous Product Factory architecture](docs/automation/README.md) defines the path from
+visible Codex readiness to durable task claiming and synchronized product and engineering execution.
+The current implementation completes Stage 1 and explicitly shows when continuous scheduling is not
+yet active.
 
 ```text
 # Universal command-line fallback

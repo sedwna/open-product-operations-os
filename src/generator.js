@@ -17,6 +17,7 @@ const GOVERNANCE_TEMPLATES = [
 ];
 
 const SCHEMA_FILES = [
+  "automation-status.schema.json",
   "approval-store.schema.json",
   "agent-registry.schema.json",
   "board-task.schema.json",
