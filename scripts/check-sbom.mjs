@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import fs from "node:fs";
-import { normalizeSbomRoot } from "./sbom-contract.mjs";
+import { fillSbomLicensesFromLock, normalizeSbomRoot } from "./sbom-contract.mjs";
 import { npmInvocation, runProcess } from "./process-runner.mjs";
 
 const invocation = npmInvocation(["sbom", "--sbom-format", "cyclonedx"]);
@@ -14,7 +14,12 @@ if (result.status !== 0) {
 }
 
 const packageMetadata = JSON.parse(fs.readFileSync("package.json", "utf8"));
-const sbom = normalizeSbomRoot(JSON.parse(result.stdout), packageMetadata);
+const lockPath = fs.existsSync("package-lock.json") ? "package-lock.json" : "npm-shrinkwrap.json";
+const packageLock = JSON.parse(fs.readFileSync(lockPath, "utf8"));
+const sbom = fillSbomLicensesFromLock(
+  normalizeSbomRoot(JSON.parse(result.stdout), packageMetadata),
+  packageLock
+);
 assert.equal(sbom.bomFormat, "CycloneDX");
 assert.equal(sbom.metadata.component.name, packageMetadata.name);
 assert.equal(sbom.metadata.component.version, packageMetadata.version);

@@ -298,6 +298,12 @@ test("onboarding server is loopback-only, CSRF guarded, and completes a graphica
   assert.match(html, /dir="rtl"/);
   assert.match(html, /راه‌اندازی یک‌کلیکی/);
   assert.match(html, /prefers-reduced-motion/);
+  assert.match(html, /@font-face\{font-family:"Vazirmatn"/);
+  assert.match(html, /url\("\/assets\/vazirmatn\.woff2"\)/);
+  const font = await fetch(`${onboarding.url}/assets/vazirmatn.woff2`);
+  assert.equal(font.status, 200);
+  assert.equal(font.headers.get("content-type"), "font/woff2");
+  assert.equal(Buffer.from(await font.arrayBuffer()).subarray(0, 4).toString("ascii"), "wOF2");
 
   const withoutToken = await fetch(`${onboarding.url}/api/apply`, {
     method: "POST",
@@ -350,6 +356,7 @@ test("onboarding view escapes embedded values and launcher artifacts are integri
   assert.match(html, /name="writableDashboard" checked/);
   assert.match(html, /id="form-error" role="alert"/);
   assert.match(html, /id="retry"/);
+  assert.match(html, /font-family:"Vazirmatn"/);
   const browserScript = html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)?.[1];
   assert.ok(browserScript, "generated browser script is present");
   assert.doesNotThrow(() => new vm.Script(browserScript), "generated browser script parses");

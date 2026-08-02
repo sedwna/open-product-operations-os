@@ -9,6 +9,7 @@ import { renderOnboarding } from "./view.js";
 
 const MAX_BODY_BYTES = 64 * 1024;
 const MAX_LOG_LINES = 320;
+const VAZIRMATN_FONT = path.join("node_modules", "vazirmatn", "fonts", "webfonts", "Vazirmatn[wght].woff2");
 
 export async function startOnboardingServer(
   repoRoot,
@@ -67,6 +68,16 @@ async function handleRequest(context) {
     setSecurityHeaders(response, nonce);
     response.writeHead(200, { "content-type": "text/html; charset=utf-8" });
     response.end(renderOnboarding({ csrfToken, nonce, preflight }));
+    return;
+  }
+  if (request.method === "GET" && url.pathname === "/assets/vazirmatn.woff2") {
+    const font = await fs.readFile(path.join(root, VAZIRMATN_FONT));
+    response.writeHead(200, {
+      "content-type": "font/woff2",
+      "content-length": font.length,
+      "cache-control": "public, max-age=31536000, immutable"
+    });
+    response.end(font);
     return;
   }
   if (request.method === "GET" && url.pathname === "/health") {
