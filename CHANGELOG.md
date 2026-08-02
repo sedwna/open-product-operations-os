@@ -4,6 +4,14 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+## 0.6.2 - 2026-08-02
+
+- Returned safe, actionable validation errors from the graphical onboarding API instead of hiding
+  them behind a generic stop message.
+- Kept the wizard answers available when submission is rejected and added an in-page recovery path
+  for correcting and retrying failed setup runs.
+- Added regression coverage proving invalid answers do not start or poison an onboarding session.
+
 ## 0.6.1 - 2026-08-02
 
 - Fixed downloaded one-click bundles closing immediately because runtime dependencies were absent.

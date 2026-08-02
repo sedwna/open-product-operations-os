@@ -93,9 +93,10 @@ folders.
 
 ## Recovery
 
-If setup stops, read the final message in the launcher terminal. Fix the reported prerequisite and
-open the launcher again. A partially generated operations folder can resume only when its local
-onboarding marker proves that this wizard created it. User-created non-empty folders fail closed.
+If setup stops, the page shows the exact safe validation or execution error. Use **Back, correct,
+and try again** to return to the review screen without losing the answers. A partially generated
+operations folder can resume only when its local onboarding marker proves that this wizard created
+it. User-created non-empty folders fail closed.
 
 On Windows, run the adjacent `OpenProductOS.cmd` file when detailed diagnostics are needed; it keeps
 the terminal open after a failure. The executable also shows a persistent message when its
