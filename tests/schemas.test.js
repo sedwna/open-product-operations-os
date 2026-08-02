@@ -20,7 +20,9 @@ test("all public JSON schemas parse and declare Draft 2020-12", async () => {
   assert.deepEqual(files, [
     "agent-registry.schema.json",
     "approval-store.schema.json",
+    "automation-link.schema.json",
     "automation-status.schema.json",
+    "autopilot-state.schema.json",
     "board-task.schema.json",
     "development-os-config.schema.json",
     "development-request.schema.json",
@@ -32,6 +34,7 @@ test("all public JSON schemas parse and declare Draft 2020-12", async () => {
     "evidence-receipt.schema.json",
     "handoff.schema.json",
     "intake-record.schema.json",
+    "product-agent-run.schema.json",
     "project-config.schema.json",
     "provider-catalog.schema.json",
     "provider-outbox-item.schema.json",

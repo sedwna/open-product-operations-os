@@ -6,9 +6,10 @@ import { renderDashboard } from "./dashboard-view.js";
 import { readJsonOptional, writeJson } from "./io.js";
 import { calculateMetrics } from "./metrics.js";
 import { loadTaskboard } from "./taskboard.js";
+import { readAutopilotEvents, readAutopilotState } from "../autopilot/state.js";
 
 export async function loadDashboardSnapshot(root, { now = new Date(), mode = "snapshot", writable = false } = {}) {
-  const [config, metrics, taskboard, approvals, intake, automation] = await Promise.all([
+  const [config, metrics, taskboard, approvals, intake, automation, autopilotState, autopilotEvents] = await Promise.all([
     loadConfig(root),
     calculateMetrics(root, { now }),
     loadTaskboard(root),
@@ -26,9 +27,12 @@ export async function loadDashboardSnapshot(root, { now = new Date(), mode = "sn
       continuousOrchestrator: false,
       currentCapability: "ساخت خودکار برای این پروژه پیکربندی نشده است.",
       nextCapability: "اتصال یک اجراگر و راه‌اندازی زمان‌بند محلی"
-    })
+    }),
+    readAutopilotState(root),
+    readAutopilotEvents(root, 100)
   ]);
   const tasks = taskboard.records;
+  const latestAutopilotReport = await loadLatestAutopilotReport(root, autopilotState);
   const pendingApprovals = approvals.requests.filter((request) => request.status === "pending");
   const risks = collectRisks(tasks, pendingApprovals);
   const roleActivity = config.agents.map((agent) => {
@@ -62,6 +66,11 @@ export async function loadDashboardSnapshot(root, { now = new Date(), mode = "sn
     approvals: approvals.requests,
     intake: intake.records ?? [],
     automation,
+    autopilot: {
+      state: autopilotState,
+      events: autopilotEvents,
+      latestReport: latestAutopilotReport
+    },
     risks,
     roleActivity,
     readiness: {
@@ -74,6 +83,14 @@ export async function loadDashboardSnapshot(root, { now = new Date(), mode = "sn
       blockedTasks: metrics.totals.blocked
     }
   };
+}
+
+async function loadLatestAutopilotReport(root, state) {
+  const markdown = String(state?.latestReport ?? "").replaceAll("\\", "/");
+  const reportRoot = ".product-ops/runtime/autopilot/reports/";
+  if (!markdown.startsWith(reportRoot) || !markdown.endsWith(".md")) return null;
+  const json = `${markdown.slice(0, -3)}.json`;
+  return readJsonOptional(root, json, null);
 }
 
 export async function buildDashboard(

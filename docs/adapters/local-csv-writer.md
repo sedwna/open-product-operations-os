@@ -13,8 +13,10 @@ The caller must:
 5. retain the generated backup and receipt under `.product-ops/writes/<manifestId>/`.
 
 The adapter enforces configured owner and writer actors, protected-field denies, explicit
-environment policy, old-value preconditions, complete file read-back, and a zero-write replay
-check. Each manifest must use the exact canonical key fields for its sheet, row selectors cannot add
+environment policy, old-value preconditions for updates, explicit absent-record preconditions for
+inserts, complete file read-back, and a zero-write replay check. An insert uses
+`operation: "insert"` and the exact precondition `{ "$record": "absent" }`; an existing canonical
+key makes it fail closed. Each manifest must use the exact canonical key fields for its sheet, row selectors cannot add
 alternate keys, and duplicate canonical IDs are rejected before mutation. Existing hard-linked
 targets are rejected. The replacement and receipt are staged. For the target, the adapter moves the
 current file to a same-directory transaction quarantine, verifies its captured filesystem identity

@@ -168,8 +168,15 @@ test("onboarding Codex automation activates engineering executors only after rea
     "utf8"
   ));
   assert.equal(automation.status, "executors-ready");
-  assert.equal(automation.continuousOrchestrator, false);
-  assert.match(automation.currentCapability, /هنوز نیازمند فرمان صریح/);
+  assert.equal(automation.continuousOrchestrator, true);
+  assert.match(automation.currentCapability, /چرخهٔ پیوسته/);
+  const automationLink = JSON.parse(await fs.readFile(
+    path.join(result.operationsPath, ".product-ops", "runtime", "automation", "link.json"),
+    "utf8"
+  ));
+  assert.equal(automationLink.autoStart, true);
+  assert.equal(automationLink.productExecutorsEnabled, true);
+  assert.equal(automationLink.engineeringExecutorsEnabled, true);
   assert.doesNotMatch(JSON.stringify(automation), /api[_-]?key|password|secret/i);
 });
 
@@ -333,7 +340,7 @@ test("onboarding view escapes embedded values and launcher artifacts are integri
   assert.doesNotMatch(html, /<\/script><script>alert/);
   assert.match(html, /\\u003c\/script\\u003e/);
   assert.match(html, /name="initializeDevelopmentOs"/);
-  assert.doesNotMatch(html, /name="writableDashboard" checked/);
+  assert.match(html, /name="writableDashboard" checked/);
   assert.match(html, /id="form-error" role="alert"/);
   assert.match(html, /id="retry"/);
   const browserScript = html.match(/<script nonce="[^"]+">([\s\S]*?)<\/script>/)?.[1];

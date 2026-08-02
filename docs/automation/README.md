@@ -36,12 +36,13 @@ flowchart LR
     V --> D
 ```
 
-The intended runtime has four layers:
+The runtime has four layers:
 
 - **Canonical control plane:** versioned configuration, task boards, approvals, contracts, evidence,
   receipts, and Git history remain the durable source of truth.
-- **Local orchestration index:** SQLite will provide queues, leases, heartbeats, retry state, and fast
-  dashboard queries. It is reconstructable from canonical records and is not the source of truth.
+- **Local orchestration journal:** schema-validated state, an exclusive renewable lease, JSONL
+  events, immutable role outputs, retry counters, and reports live under `.product-ops/runtime/`.
+  The journal is reconstructable and does not replace the canonical task board or workbook.
 - **Execution plane:** provider adapters invoke Codex first, with a provider-neutral boundary for
   future executors. Every engineering role has a bounded workstream and attributed actor identity.
 - **Observation plane:** the local dashboard displays provider readiness, contract transfer, task
@@ -66,7 +67,7 @@ inside either project.
 
 ## Task ownership and claiming
 
-The continuous orchestrator will use an atomic lease rather than "first process to read a CSV".
+The continuous orchestrator uses an atomic lease rather than "first process to read a CSV".
 A claim contains the task or workstream identifier, actor identifier, run identifier, lease expiry,
 heartbeat time, attempt number, and canonical revision. Only dependency-ready work can be claimed.
 An expired lease is recoverable; a completed workstream is immutable and cannot be executed twice
@@ -106,34 +107,44 @@ The default execution sequence is:
 - Persist a credential-free automation status record.
 - Display the actual state and current limitation in the dashboard Automation Center.
 
-### Stage 2 — durable continuous orchestrator
+### Stage 2 — durable continuous orchestrator (implemented)
 
-- Add the reconstructable SQLite index, queue, leases, heartbeats, bounded concurrency, retries, and
-  crash recovery.
-- Add start, pause, drain, resume, and stop controls.
-- Stream factual run events to the dashboard.
+- Renewable exclusive lease, task claiming, bounded retries, stale-lease recovery, and resume from
+  immutable role/workstream outputs.
+- Local start, pause, resume, and retry controls. Pause is cooperative and takes effect after the
+  active bounded agent returns.
+- Factual phase, role, task, error, attempt, and event visibility in the dashboard.
 
-### Stage 3 — automatic Product-to-Development bridge
+### Stage 3 — automatic Product-to-Development bridge (implemented)
 
-- Generate development requests from eligible product cards.
-- Transfer and acknowledge contracts automatically.
-- Plan workstreams, update both task boards, and return verified results without manual file copying.
+- Schema-bound read-only product agents analyze the intake in dependency order.
+- Eligible `RB-13` work creates an approved hashed request, transfers it, generates a deterministic
+  engineering plan, and updates both task boards.
+- Completed engineering results and content-addressed evidence return without manual copying; later
+  product QA, verification, readiness, and report roles inspect the returned proof.
 
-### Stage 4 — production engineering loop
+### Stage 4 — complete local engineering loop (implemented)
 
-- Add isolated executor pools, branch/worktree allocation, testing and security gates, review,
-  database migration policy, observability, SEO, accessibility, performance, release evidence, and
-  CI provider adapters.
-- Keep production release behind explicit human authority.
+- All 15 engineering boundaries are selected from declared impact; one-click full-coverage requests
+  activate architecture, frontend, backend, clients, database, data/AI, platform/network, security,
+  QA, SRE, delivery, SEO, documentation, and independent verification.
+- Work runs in dependency order on a dedicated cycle branch. Final changes are rejected outside the
+  configured write boundary. `ENG-15` is read-only, and the coordinator seals accepted run records
+  to the final content digest before committing.
+- Product workbook records are inserted through dry-run hashes, absent-record preconditions,
+  complete read-back, replay-safe receipts, and rollback backups.
+- Production release, external publication, spending, credentials, destructive database work, and
+  production data remain behind separate human authority.
 
-### Stage 5 — reliability and scale
+### Stage 5 — reliability and scale (future)
 
 - Add resource budgets, rate and quota backoff, provider failover, audit export, signed provenance,
   multi-user coordination, and disaster-recovery drills.
 
 ## Current boundary
 
-Stage 1 connects authenticated Codex executors to engineering roles, but it intentionally reports
-`continuousOrchestrator: false`. Until Stage 2 is implemented, a configured executor does not claim
-work continuously and each workstream still requires an explicit execution command. This distinction
-is displayed in the dashboard so users are never told that building has started when it has not.
+The local single-owner cycle is implemented and reports `continuousOrchestrator: true` only when the
+Codex provider, product agents, engineering executors, Product/Development link, and dashboard loop
+are ready. The submitted local idea authorizes that bounded cycle; it does not authorize production.
+Multi-user distributed queues, remote worker pools, signed provenance, provider failover, hosted
+deployment, and unattended production changes are outside the current boundary.

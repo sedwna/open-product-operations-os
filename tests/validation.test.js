@@ -72,6 +72,39 @@ function buildSafeManifest(config, sheet) {
   };
 }
 
+test("controlled local writer inserts a new canonical row with absent-record precondition and replays safely", async (t) => {
+  const { target } = await initializedProject(t, "writer-insert");
+  const config = await readJson(path.join(target, CONFIG_FILE));
+  const sheet = config.workbook.sheets.find((entry) => entry.key === "events");
+  const actor = (role) => config.agents.find((agent) => agent.id === role).actorId;
+  const changes = {
+    event_type: "new_idea", title: "Synthetic inserted event", status: "closed", priority: "P2", risk: "medium",
+    source_id: "INT-SYNTHETIC", coordinator_role: "RB-01", coordinator_actor_id: actor("RB-01"),
+    semantic_owner_roles: "RB-02|RB-06", writer_role: "RB-10", verifier_role: "RB-12",
+    producer_actor_id: actor("RB-01"), verifier_actor_id: actor("RB-12"), opened_at: "2026-08-02T00:00:00Z",
+    closed_at: "2026-08-02T00:01:00Z"
+  };
+  const manifest = {
+    schemaVersion: "1.0.0", manifestId: "WFM-INSERT-001", eventId: "EVT-20260802-001", status: "authorized",
+    semanticOwner: { role: "RB-01", actorId: actor("RB-01") },
+    authorization: { ownerActorId: actor("RB-01"), authorizedByActorId: actor("RB-01"), authorizedAt: "2026-08-02T00:01:00Z", ownerConfirmed: true, humanProductionAuthorizationId: "not_applicable" },
+    writer: { role: "RB-10", actorId: actor("RB-10") },
+    target: { systemAlias: "local-test", environment: "local", file: sheet.file },
+    scope: { sheet: sheet.name, keyFields: ["event_id"], allowedFields: Object.keys(changes), prohibitedFields: ["event_id"], rows: [{ operation: "insert", key: { event_id: "EVT-20260802-001" }, preconditions: { $record: "absent" }, changes }] },
+    controls: { dryRunRequired: true, smallestBoundedRange: "one new event row", fullRecordReadbackRequired: true, secondReadPath: "local CSV reopen", replayMustWriteZero: true, rollbackPlan: "Restore the verified pre-write CSV backup for this bounded insert.", refuseIfEnvironmentAmbiguous: true, refuseIfPreconditionMismatch: true, secretValuesForbidden: true },
+    createdAt: "2026-08-02T00:01:00Z"
+  };
+  assert.deepEqual(validateWriteManifest(manifest, config), []);
+  const preview = await applyLocalWrite(target, manifest, config, { dryRun: true });
+  const applied = await applyLocalWrite(target, manifest, config, { dryRun: false, approvedPlanHash: preview.planHash });
+  assert.equal(applied.recordsChanged, 1);
+  const parsed = parseCsv(await fs.readFile(path.join(target, sheet.file), "utf8"));
+  assert.ok(parsed.some((row) => row[0] === "EVT-20260802-001"));
+  const replay = await applyLocalWrite(target, manifest, config, { dryRun: false, approvedPlanHash: preview.planHash });
+  assert.equal(replay.replay, true);
+  assert.equal(replay.plannedWrites, 0);
+});
+
 async function preparedWriter(t, name) {
   const { target } = await initializedProject(t, name);
   const config = await readJson(path.join(target, CONFIG_FILE));

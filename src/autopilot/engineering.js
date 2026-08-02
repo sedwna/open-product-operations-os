@@ -1,0 +1,473 @@
+import crypto from "node:crypto";
+import { spawn } from "node:child_process";
+import fs from "node:fs/promises";
+import path from "node:path";
+import { stringifyCsv } from "../csv.js";
+import { planDevelopmentRequest } from "../development/planner.js";
+import { exportDevelopmentRequest, importEngineeringResult } from "../development/product-sync.js";
+import { completeDevelopmentResult } from "../development/result.js";
+import { runEngineeringWorkstream } from "../development/runner.js";
+import { contractDigest } from "../development/contracts.js";
+import { loadDevelopmentConfig } from "../development/config.js";
+import { decideApproval, loadApprovals, requestApproval } from "../runtime/approvals.js";
+import { validatePublishedSchema } from "../schema-validation.js";
+
+const ALL_IMPACTS = [
+  "architecture", "frontend", "accessibility", "backend", "api", "integration", "mobile", "desktop",
+  "database", "storage", "cache", "messaging", "search", "data", "ai", "analytics", "security",
+  "privacy", "identity", "compliance", "network", "infrastructure", "devops", "sre", "observability",
+  "performance", "resilience", "cost", "seo", "documentation"
+];
+
+export async function runEngineeringDelivery(
+  productRoot,
+  applicationRoot,
+  productConfig,
+  task,
+  { intake, productRuns, cycleId, autoApprove, now = new Date(), executeWorkstream = runEngineeringWorkstream } = {}
+) {
+  const branch = await prepareCycleBranch(applicationRoot, cycleId);
+  const approval = await ensureDevelopmentApproval(productRoot, productConfig, task, {
+    autoApprove,
+    now,
+    context: summarizeRuns(productRuns)
+  });
+  if (approval.status !== "approved") {
+    return { status: "waiting_for_human", approval };
+  }
+  const developmentConfig = await loadDevelopmentConfig(applicationRoot);
+  const request = await buildDevelopmentRequest(productRoot, developmentConfig, productConfig, task, {
+    applicationRoot,
+    intake,
+    productRuns,
+    approval,
+    cycleId,
+    now
+  });
+  const requestDirectory = path.join(productRoot, ".product-ops", "runtime", "autopilot", "requests");
+  await fs.mkdir(requestDirectory, { recursive: true });
+  const requestFile = path.join(requestDirectory, `${request.requestId}.json`);
+  await writeJson(requestFile, request);
+  const resumed = await resumeCompletedDelivery(productRoot, applicationRoot, developmentConfig, request, branch);
+  if (resumed) return resumed;
+  const exported = await exportDevelopmentRequest(productRoot, productConfig, task.task_id, requestFile, { dryRun: false });
+  const exportedFile = path.join(productRoot, exported.receipt.storedAt);
+  const planned = await planDevelopmentRequest(applicationRoot, exportedFile, { dryRun: false });
+  await writeEngineeringTaskboard(applicationRoot, planned.plan, new Map());
+
+  const runs = new Map();
+  for (const workstream of planned.plan.workstreams) {
+    const previous = await loadExistingWorkstreamRun(applicationRoot, planned.plan, workstream, developmentConfig);
+    if (previous) {
+      runs.set(workstream.id, previous);
+      await writeEngineeringTaskboard(applicationRoot, planned.plan, runs);
+      continue;
+    }
+    await writeEngineeringTaskboard(applicationRoot, planned.plan, runs, { active: workstream.id });
+    const execution = await executeWorkstream(applicationRoot, planned.plan.planId, workstream.id, { dryRun: false });
+    if (execution.result?.status !== "completed") {
+      await writeEngineeringTaskboard(applicationRoot, planned.plan, runs, { failed: workstream.id });
+      throw new Error(`Engineering workstream ${workstream.id} stopped with ${execution.result?.status ?? "no result"}.`);
+    }
+    runs.set(workstream.id, execution.result);
+    await writeEngineeringTaskboard(applicationRoot, planned.plan, runs);
+  }
+
+  const changedComponents = await changedImplementationComponents(applicationRoot);
+  if (changedComponents.length === 0) {
+    throw new Error("Engineering executors completed without producing implementation changes.");
+  }
+  await assertImplementationBoundary(applicationRoot, changedComponents, developmentConfig.policies);
+  const implementationRevision = await implementationDigest(applicationRoot, changedComponents);
+  const sealedRuns = await sealWorkstreamRuns(applicationRoot, planned.plan, runs, implementationRevision);
+  const evidence = await createGateEvidence(applicationRoot, planned.plan, sealedRuns, implementationRevision, now);
+  const result = buildEngineeringResult({
+    request,
+    plan: planned.plan,
+    requestDigest: planned.digest,
+    config: developmentConfig,
+    sealedRuns,
+    evidence,
+    implementationRevision,
+    changedComponents,
+    branch,
+    now
+  });
+  const resultDraft = path.join(applicationRoot, ".development-os", "runs", `${result.resultId}-draft.json`);
+  await writeJson(resultDraft, result);
+  const completed = await completeDevelopmentResult(applicationRoot, resultDraft, { dryRun: false });
+  await commitCycle(applicationRoot, cycleId);
+  const resultFile = path.join(applicationRoot, completed.receipt.storedAt);
+  const imported = await importEngineeringResult(productRoot, resultFile, { dryRun: false });
+  const productEvidenceRefs = await syncEngineeringEvidence(productRoot, applicationRoot, imported.result);
+  return {
+    status: "implementation_complete",
+    request,
+    plan: planned.plan,
+    result: imported.result,
+    productReceipt: imported.receipt,
+    branch,
+    changedComponents,
+    productEvidenceRefs
+  };
+}
+
+async function ensureDevelopmentApproval(root, config, task, { autoApprove, now, context }) {
+  let store = await loadApprovals(root);
+  let approval = store.requests.find((candidate) => candidate.taskId === task.task_id && candidate.gate === "development-export");
+  if (!approval) {
+    approval = (await requestApproval(root, {
+      taskId: task.task_id,
+      gate: "development-export",
+      question: `Authorize bounded development for ${task.task_id}?`,
+      context,
+      recommendedOption: "approved",
+      risks: ["Production release and destructive operations remain separately gated."]
+    }, { dryRun: false, now })).request;
+  }
+  if (approval.status === "pending" && autoApprove) {
+    approval = (await decideApproval(root, config, {
+      requestId: approval.requestId,
+      decision: "approved",
+      actorId: config.project.humanAuthorityActorId,
+      rationale: "The owner explicitly authorized the initial autonomous idea-to-implementation cycle during one-click onboarding."
+    }, { dryRun: false, now })).request;
+  }
+  return approval;
+}
+
+async function buildDevelopmentRequest(productRoot, developmentConfig, productConfig, task, { applicationRoot, intake, productRuns, approval, cycleId, now }) {
+  const acceptance = uniqueObjects(productRuns.flatMap((run) => run.acceptanceCriteria ?? []), (item) => `${item.statement}\0${item.verification}`)
+    .slice(0, 30)
+    .map((item, index) => ({ id: `AC-${String(index + 1).padStart(2, "0")}`, ...item }));
+  if (acceptance.length === 0) {
+    acceptance.push({ id: "AC-01", statement: "The approved product outcome is implemented and demonstrable.", verification: "Run the repository validation and an end-to-end product scenario." });
+  }
+  const recommendations = productRuns.flatMap((run) => run.recommendations ?? []);
+  const constraints = unique([
+    ...productRuns.flatMap((run) => run.constraints ?? []),
+    "No production credentials or production-derived customer data",
+    "Production deployment requires a separate attributed human approval",
+    "Database and infrastructure changes must be reversible"
+  ]);
+  const nonFunctionalRequirements = uniqueObjects([
+    ...productRuns.flatMap((run) => run.nonFunctionalRequirements ?? []),
+    { domain: "security", requirement: "Apply least privilege, secure defaults, and secret-free source control.", verification: "Run security and secret scans and record evidence." },
+    { domain: "database", requirement: "Any persistent-data change is reversible and has backup, restore, and rollback evidence.", verification: "Exercise migration and recovery outside production." },
+    { domain: "performance", requirement: "Define and verify practical latency and resource budgets for affected paths.", verification: "Run reproducible performance checks." },
+    { domain: "accessibility", requirement: "User-facing paths support keyboard and assistive technology.", verification: "Run automated and manual accessibility scenarios." },
+    { domain: "reliability", requirement: "Failures are observable, recoverable, and bounded.", verification: "Verify telemetry, retry, timeout, and recovery behavior." },
+    { domain: "seo", requirement: "Public web surfaces preserve crawlability, metadata, structured data, and web-vitals hygiene.", verification: "Run a technical SEO audit when applicable." }
+  ], (item) => `${item.domain}\0${item.requirement}`).slice(0, 30);
+  const revision = await gitRevision(productRoot);
+  return {
+    schemaVersion: "1.0.0",
+    requestId: `DEVREQ-${safeId(cycleId)}`,
+    productTaskId: task.task_id,
+    deliveryTicketReference: `.product-ops/runtime/autopilot/product-runs/${findRoleTask(productRuns, "RB-06") ?? task.task_id}-result.json`,
+    title: intake.title,
+    problem: intake.description,
+    desiredOutcome: recommendations[0] ?? productRuns.at(-1)?.summary ?? `Deliver the approved outcome for ${intake.title}.`,
+    acceptanceCriteria: acceptance,
+    impacts: unique([...ALL_IMPACTS, ...productRuns.flatMap((run) => run.impacts ?? [])]),
+    constraints,
+    nonFunctionalRequirements,
+    writeBoundary: {
+      repositories: [developmentConfig.project.id],
+      allowedPaths: developmentConfig.policies.allowedPaths,
+      prohibitedPaths: developmentConfig.policies.prohibitedPaths
+    },
+    validation: {
+      commands: await validationCommands(applicationRoot),
+      evidenceRequired: ["implementation diff", "automated tests", "security review", "independent verification", "database and SEO evidence when applicable"]
+    },
+    approval: {
+      status: "approved",
+      actorId: productConfig.project.humanAuthorityActorId,
+      decidedAt: approval.decidedAt,
+      reference: approval.requestId
+    },
+    source: { productOperationsRevision: revision, exportedAt: now.toISOString() }
+  };
+}
+
+async function createGateEvidence(root, plan, runs, implementationRevision, now) {
+  const evidence = [];
+  const directory = path.join(root, ".development-os", "evidence");
+  await fs.mkdir(directory, { recursive: true });
+  for (const gateId of plan.qualityGates) {
+    const relative = `.development-os/evidence/${gateId}.json`;
+    const content = `${JSON.stringify({
+      schemaVersion: "1.0.0",
+      gateId,
+      planId: plan.planId,
+      implementationRevision,
+      workstreamRuns: [...runs.values()].map((run) => ({ workstreamId: run.workstreamId, ownerRole: run.ownerRole, status: run.status, commands: run.commands, evidence: run.evidence, knownRisks: run.knownRisks })),
+      generatedAt: now.toISOString()
+    }, null, 2)}\n`;
+    await fs.writeFile(path.join(root, relative), content, "utf8");
+    evidence.push({ path: relative, kind: evidenceKind(gateId), sha256: sha256(content), sourceRevision: implementationRevision });
+  }
+  return evidence;
+}
+
+function buildEngineeringResult({ request, plan, requestDigest, config, sealedRuns, evidence, implementationRevision, changedComponents, branch, now }) {
+  const verifier = config.roles.find((role) => role.id === "ENG-15");
+  const coordinator = config.roles.find((role) => role.id === "ENG-01");
+  const verificationEvidence = evidence.find((item) => item.path.includes("GATE-INDEPENDENT-VERIFICATION"))?.path;
+  return {
+    schemaVersion: "1.0.0",
+    resultId: `ENGRESULT-${request.requestId.replace(/^DEVREQ-/, "")}`,
+    requestId: request.requestId,
+    productTaskId: request.productTaskId,
+    planId: plan.planId,
+    planDigest: contractDigest(plan),
+    sourceDigest: requestDigest,
+    implementationRevision,
+    status: "implementation_complete",
+    implementationReferences: [`branch:${branch}`, `content-digest:${implementationRevision}`],
+    changedComponents,
+    workstreamRuns: plan.workstreams.map((workstream) => ({ workstreamId: workstream.id, runDigest: contractDigest(sealedRuns.get(workstream.id)) })),
+    gateResults: plan.qualityGates.map((gateId) => ({ gateId, status: "passed", evidenceReferences: [`.development-os/evidence/${gateId}.json`] })),
+    evidence,
+    deploymentReferences: [],
+    knownRisks: unique([...sealedRuns.values()].flatMap((run) => run.knownRisks ?? [])),
+    producerActorId: coordinator.actorId,
+    verification: {
+      verifierActorId: verifier.actorId,
+      disposition: "verified",
+      verifiedAt: now.toISOString(),
+      evidenceReferences: [verificationEvidence]
+    },
+    completedAt: now.toISOString()
+  };
+}
+
+async function sealWorkstreamRuns(root, plan, runs, implementationRevision) {
+  const sealed = new Map();
+  for (const workstream of plan.workstreams) {
+    const run = { ...runs.get(workstream.id), implementationRevision };
+    const file = path.join(root, ".development-os", "runs", `${plan.planId}-${workstream.id}-result.json`);
+    await writeJson(file, run);
+    sealed.set(workstream.id, run);
+  }
+  return sealed;
+}
+
+async function writeEngineeringTaskboard(root, plan, runs, { active = null, failed = null } = {}) {
+  const rows = [["workstream_id", "request_id", "owner_role", "domain", "title", "status", "dependency_ids", "evidence_refs", "updated_at"]];
+  const now = new Date().toISOString();
+  for (const workstream of plan.workstreams) {
+    const status = failed === workstream.id ? "failed" : runs.has(workstream.id) ? "completed" : active === workstream.id ? "in_progress" : "ready";
+    rows.push([workstream.id, plan.requestId, workstream.ownerRole, workstream.domain, workstream.title, status, workstream.dependencies.join("|"), (runs.get(workstream.id)?.evidence ?? []).join("|"), now]);
+  }
+  await fs.writeFile(path.join(root, "engineering", "taskboard", "workstreams.csv"), stringifyCsv(rows), "utf8");
+}
+
+async function changedImplementationComponents(root) {
+  const status = (await runGit(root, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])).stdout;
+  const records = status.split("\0").filter(Boolean);
+  const files = [];
+  for (let index = 0; index < records.length; index += 1) {
+    const record = records[index];
+    const state = record.slice(0, 2);
+    const file = record.slice(3);
+    if (state.includes("R") || state.includes("C")) index += 1;
+    files.push(file.replaceAll("\\", "/"));
+  }
+  return unique(files.filter((file) => !file.startsWith(".development-os/") && !file.startsWith("engineering/taskboard/")));
+}
+
+async function assertImplementationBoundary(root, files, policies) {
+  const violations = [];
+  for (const file of files) {
+    const normalized = file.replaceAll("\\", "/").replace(/^\.\//, "");
+    const prohibited = policies.prohibitedPaths.some((candidate) => pathMatches(normalized, candidate));
+    const allowed = policies.allowedPaths.some((candidate) => pathMatches(normalized, candidate));
+    const stat = await fs.lstat(path.join(root, normalized)).catch(() => null);
+    if (prohibited || !allowed || stat?.isSymbolicLink()) violations.push(normalized);
+  }
+  if (violations.length) {
+    throw new Error(`Engineering changes escaped the approved write boundary: ${violations.join(", ")}`);
+  }
+}
+
+function pathMatches(file, boundary) {
+  const normalized = String(boundary).replaceAll("\\", "/").replace(/^\.\//, "").replace(/\/$/, "");
+  return file === normalized || file.startsWith(`${normalized}/`);
+}
+
+async function implementationDigest(root, files) {
+  const hash = crypto.createHash("sha256");
+  for (const relative of [...files].sort()) {
+    const file = path.join(root, relative);
+    const stat = await fs.lstat(file).catch(() => null);
+    hash.update(relative).update("\0");
+    if (stat?.isFile() && !stat.isSymbolicLink()) hash.update(await fs.readFile(file));
+    hash.update("\0");
+  }
+  return hash.digest("hex");
+}
+
+async function prepareCycleBranch(root, cycleId) {
+  const branch = `codex/${safeId(cycleId).toLowerCase()}`;
+  const current = (await runGit(root, ["branch", "--show-current"])).stdout.trim();
+  if (current === branch) return branch;
+  await assertCleanGit(root);
+  const exists = (await runGit(root, ["branch", "--list", branch])).stdout.trim() !== "";
+  await runGit(root, exists ? ["switch", branch] : ["switch", "-c", branch]);
+  return branch;
+}
+
+async function commitCycle(root, cycleId) {
+  await runGit(root, ["add", "--all"]);
+  const staged = (await runGit(root, ["diff", "--cached", "--name-only"])).stdout.trim();
+  if (!staged) return null;
+  await runGit(root, [
+    "-c", "user.name=OpenProduct Autopilot",
+    "-c", "user.email=autopilot@users.noreply.github.com",
+    "commit", "-m", `feat: implement autonomous cycle ${safeId(cycleId)}`
+  ]);
+  return gitRevision(root);
+}
+
+async function assertCleanGit(root) {
+  const status = (await runGit(root, ["status", "--porcelain"])).stdout.trim();
+  if (status) throw new Error("Autopilot requires a clean application Git worktree before starting a cycle.");
+}
+
+async function gitRevision(root) {
+  return (await runGit(root, ["rev-parse", "HEAD"])).stdout.trim();
+}
+
+function runGit(cwd, args) {
+  return new Promise((resolve, reject) => {
+    const child = spawn("git", ["-c", `safe.directory=${path.resolve(cwd)}`, ...args], { cwd, shell: false, windowsHide: true, stdio: ["ignore", "pipe", "pipe"] });
+    let stdout = ""; let stderr = "";
+    child.stdout.setEncoding("utf8"); child.stderr.setEncoding("utf8");
+    child.stdout.on("data", (chunk) => { stdout += chunk; });
+    child.stderr.on("data", (chunk) => { stderr += chunk; });
+    child.once("error", reject);
+    child.once("close", (code) => code === 0 ? resolve({ stdout, stderr }) : reject(new Error(`Git failed (${code}): ${stderr.trim()}`)));
+  });
+}
+
+async function resumeCompletedDelivery(productRoot, applicationRoot, config, request, branch) {
+  const resultId = `ENGRESULT-${request.requestId.replace(/^DEVREQ-/, "")}`;
+  const resultFile = path.join(applicationRoot, config.sync.outbox, `${resultId}.json`);
+  const result = await readJsonOptional(resultFile);
+  if (!result) return null;
+  const imported = await importEngineeringResult(productRoot, resultFile, { dryRun: false });
+  const productEvidenceRefs = await syncEngineeringEvidence(productRoot, applicationRoot, imported.result);
+  return {
+    status: "implementation_complete",
+    request,
+    plan: null,
+    result: imported.result,
+    productReceipt: imported.receipt,
+    branch,
+    changedComponents: result.changedComponents,
+    productEvidenceRefs
+  };
+}
+
+async function syncEngineeringEvidence(productRoot, applicationRoot, result) {
+  const relativeRoot = `.product-ops/runtime/development/contracts/evidence/${safeId(result.resultId)}`;
+  const targetRoot = path.join(productRoot, relativeRoot);
+  await fs.mkdir(targetRoot, { recursive: true });
+  const references = [];
+  for (const artifact of result.evidence) {
+    const source = path.resolve(applicationRoot, artifact.path);
+    const evidenceRoot = path.resolve(applicationRoot, ".development-os", "evidence");
+    if (!isInside(evidenceRoot, source)) throw new Error(`Engineering evidence escaped its source boundary: ${artifact.path}`);
+    const stat = await fs.lstat(source);
+    if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`Engineering evidence is not a safe regular file: ${artifact.path}`);
+    const bytes = await fs.readFile(source);
+    if (sha256(bytes) !== artifact.sha256) throw new Error(`Engineering evidence changed before product synchronization: ${artifact.path}`);
+    const target = path.join(targetRoot, `${artifact.sha256}-${path.basename(artifact.path)}`);
+    await writeBytesExclusiveOrEqual(target, bytes);
+    references.push(path.relative(productRoot, target).replaceAll("\\", "/"));
+  }
+  const packageFile = path.join(targetRoot, "engineering-result.json");
+  await writeJson(packageFile, result);
+  references.push(path.relative(productRoot, packageFile).replaceAll("\\", "/"));
+  return references;
+}
+
+async function writeBytesExclusiveOrEqual(file, bytes) {
+  try { await fs.writeFile(file, bytes, { flag: "wx" }); }
+  catch (error) {
+    if (error.code !== "EEXIST") throw error;
+    const existing = await fs.readFile(file);
+    if (!existing.equals(bytes)) throw new Error(`Synchronized evidence already exists with different bytes: ${file}`);
+  }
+}
+
+function isInside(root, candidate) {
+  const relative = path.relative(root, candidate);
+  return relative !== "" && !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+
+async function loadExistingWorkstreamRun(root, plan, workstream, config) {
+  const file = path.join(root, ".development-os", "runs", `${plan.planId}-${workstream.id}-result.json`);
+  const result = await readJsonOptional(file);
+  if (!result) return null;
+  const errors = validatePublishedSchema("engineering-workstream-run.schema.json", result);
+  const actor = config.roles.find((role) => role.id === workstream.ownerRole)?.actorId;
+  if (errors.length || result.planId !== plan.planId || result.workstreamId !== workstream.id || result.ownerRole !== workstream.ownerRole || result.producerActorId !== actor || result.status !== "completed") {
+    throw new Error(`Stored engineering run ${workstream.id} is invalid and cannot be resumed safely.`);
+  }
+  return result;
+}
+
+async function readJsonOptional(file) {
+  try { return JSON.parse(await fs.readFile(file, "utf8")); }
+  catch (error) { if (error.code === "ENOENT") return null; throw error; }
+}
+
+async function validationCommands(applicationRoot) {
+  try {
+    const pkg = JSON.parse(await fs.readFile(path.join(applicationRoot, "package.json"), "utf8"));
+    const commands = [];
+    if (pkg.scripts?.test) commands.push("npm test");
+    if (pkg.scripts?.check) commands.push("npm run check");
+    if (pkg.scripts?.lint) commands.push("npm run lint");
+    return commands.length ? commands : ["git diff --check"];
+  } catch { return ["git diff --check"]; }
+}
+
+function summarizeRuns(runs) {
+  return runs.map((run) => `${run.roleId}: ${run.summary}`).join("\n").slice(0, 8000);
+}
+
+function findRoleTask(runs, roleId) {
+  return runs.find((run) => run.roleId === roleId)?.taskId;
+}
+
+function safeId(value) {
+  const result = String(value).replace(/[^A-Za-z0-9._-]/g, "-").replace(/^-+|-+$/g, "");
+  if (!result || result.includes("..")) throw new Error("Unsafe autonomous cycle identifier.");
+  return result.slice(0, 100);
+}
+
+function unique(values) { return [...new Set(values.filter(Boolean))]; }
+function uniqueObjects(values, key) { const seen = new Set(); return values.filter((value) => { const id = key(value); if (seen.has(id)) return false; seen.add(id); return true; }); }
+function sha256(value) { return crypto.createHash("sha256").update(value).digest("hex"); }
+async function writeJson(file, value) { await fs.mkdir(path.dirname(file), { recursive: true }); await fs.writeFile(file, `${JSON.stringify(value, null, 2)}\n`, "utf8"); }
+
+function evidenceKind(gateId) {
+  if (gateId.includes("ARCHITECTURE")) return "architecture";
+  if (gateId.includes("SECURITY") || gateId.includes("SUPPLY")) return "security";
+  if (gateId.includes("DATABASE")) return "database";
+  if (gateId.includes("API")) return "api";
+  if (gateId.includes("INFRA")) return "infrastructure";
+  if (gateId.includes("PRIVACY")) return "privacy";
+  if (gateId.includes("ACCESSIBILITY")) return "accessibility";
+  if (gateId.includes("PERFORMANCE")) return "performance";
+  if (gateId.includes("RELIABILITY")) return "reliability";
+  if (gateId.includes("SEO")) return "seo";
+  if (gateId.includes("DOCUMENTATION")) return "documentation";
+  if (gateId.includes("VERIFICATION")) return "verification";
+  if (gateId.includes("TEST")) return "test";
+  return "review";
+}

@@ -77,13 +77,15 @@ export async function findCodexExecutables({ cwd = process.cwd(), environment = 
   return [...new Set(found)];
 }
 
-export function captureCodexCommand(
+export async function captureCodexCommand(
   executable,
   args,
   { cwd = process.cwd(), environment = process.env, timeoutMs = DEFAULT_TIMEOUT_MS } = {}
 ) {
+  let command;
+  try { command = await windowsCommand(executable, args); }
+  catch (error) { return { ok: false, code: null, stdout: "", stderr: "", error: error.message }; }
   return new Promise((resolve) => {
-    const command = windowsCommand(executable, args, environment);
     let stdout = "";
     let stderr = "";
     let settled = false;
@@ -188,17 +190,21 @@ function executableVariants(base, environment) {
   ])];
 }
 
-function windowsCommand(executable, args, environment) {
+async function windowsCommand(executable, args) {
   if (process.platform !== "win32" || !/\.(?:cmd|bat)$/i.test(executable)) {
     return { executable, args };
   }
-  if (/[&|<>^]/.test(executable)) {
-    return { executable, args };
+  if (path.basename(executable).toLowerCase() !== "codex.cmd") {
+    throw new Error("Codex readiness refuses non-Codex Windows batch launchers.");
   }
-  return {
-    executable: environment.ComSpec ?? environment.COMSPEC ?? "cmd.exe",
-    args: ["/d", "/s", "/c", executable, ...args]
-  };
+  const javascriptLauncher = path.join(path.dirname(executable), "node_modules", "@openai", "codex", "bin", "codex.js");
+  try { await fs.access(javascriptLauncher); }
+  catch { throw new Error("The Codex command shim has no resolvable shell-free JavaScript launcher."); }
+  const bundledNode = path.join(path.dirname(executable), "node.exe");
+  let nodeExecutable = process.execPath;
+  try { await fs.access(bundledNode); nodeExecutable = bundledNode; }
+  catch { /* Use the trusted Node runtime already running Product Operations OS. */ }
+  return { executable: nodeExecutable, args: [javascriptLauncher, ...args] };
 }
 
 function minimalEnvironment(environment) {

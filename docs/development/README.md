@@ -108,12 +108,17 @@ development-os executor-setup ./my-application --provider codex --role all --ena
 The preset uses the supported non-interactive command shape:
 
 ```text
-codex exec --ephemeral --sandbox workspace-write --output-schema engineering/schemas/engineering-workstream-run.schema.json
+codex exec --ephemeral --ignore-user-config --sandbox workspace-write \
+  --output-schema engineering/schemas/engineering-workstream-run.schema.json \
+  --output-last-message .development-os/runs/result.raw.json
 ```
 
 Its prompt reads the generated `{inputFile}`, applies only the assigned workstream, and returns the
-`engineering-workstream-run` contract. The setup stores no credential and keeps the environment
-allowlist empty. Codex authentication stays outside `development-os.config.json`.
+`engineering-workstream-run` contract. Product agents and `ENG-15` use a read-only sandbox;
+implementation roles use workspace-write. The coordinator rejects final changes outside the
+configured allowed paths or inside prohibited paths and seals every accepted run to the final
+content digest. The setup stores no credential. Codex authentication stays outside
+`development-os.config.json`.
 
 For a locally installed adapter that already emits the same JSON contract on standard output:
 

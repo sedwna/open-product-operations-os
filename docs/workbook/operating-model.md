@@ -45,6 +45,11 @@ For every semantic row change:
 9. verify downstream links and rollups;
 10. request independent control.
 
+The autonomous cycle materializes its final trail through the same controlled writer. It does not
+append CSV text directly. New canonical rows require an absent-record precondition; existing rows
+retain field-level old-value preconditions. Both paths produce a dry-run hash, full read-back,
+replay-safe receipt, and rollback backup.
+
 ## QA atomic record
 
 A completed retest normally requires:

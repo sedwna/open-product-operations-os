@@ -65,7 +65,7 @@
       "enum": ["pending", "ready", "skipped-no-application", "skipped-existing-application"]
     },
     "executorsEnabled": { "type": "boolean" },
-    "continuousOrchestrator": { "const": false },
+    "continuousOrchestrator": { "type": "boolean" },
     "currentCapability": { "type": "string", "minLength": 1, "maxLength": 1000 },
     "nextCapability": { "type": "string", "minLength": 1, "maxLength": 1000 }
   }

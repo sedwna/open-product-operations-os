@@ -4,6 +4,33 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+## 0.8.0 - 2026-08-02
+
+- Implemented the complete resumable idea-to-product-to-engineering-to-product loop with an
+  exclusive renewable lease, durable events, bounded retries, cooperative pause/resume, and safe
+  recovery of interrupted tasks.
+- Added schema-bound, read-only Codex product agents for every product role outside the development
+  boundary, plus concise cross-cycle context for feedback and correction loops.
+- Added automatic hashed Product-to-Development export, dependency-ordered execution across all 15
+  engineering boundaries, final write-boundary enforcement, an `ENG-15` read-only verifier, sealed
+  workstream results, separate Git branches, and automatic commits.
+- Added content-addressed engineering evidence synchronization back into Product Operations so QA,
+  verification, readiness, and reporting roles can inspect the returned proof.
+- Added safe canonical-row insertion to the controlled local workbook writer and automatic cycle
+  materialization across events, ideas, discovery, issues, delivery, validation, evidence, quality,
+  readiness, and lineage tabs with dry-run hashes, read-back receipts, replay safety, and rollback
+  backups.
+- Added a live Automation Center with the active phase, role, task, retry/error state, event history,
+  local start, pause, resume, and retry controls, plus the durable final report in the dashboard.
+- Removed Windows command-interpreter exposure from Codex execution, rejected custom batch
+  executors, kept read-only dashboards non-mutating, and prevented concurrent manual/continuous
+  routing of the same task board.
+- Made one-click Codex onboarding create the Product/Development automation link, authorize only the
+  submitted local cycle, start the continuous coordinator, and keep production, destructive data,
+  spending, credentials, and external publication behind separate human gates.
+- Added end-to-end tests proving the autonomous cycle, workbook trail, Git history, durable report,
+  exclusive/stale lease behavior, schema validity, and generated-project validation.
+
 ## 0.7.0 - 2026-08-02
 
 - Added a multi-state Codex readiness probe that distinguishes installation, executable health,

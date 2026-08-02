@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { inspectCodexReadiness } from "../src/codex/readiness.js";
+import { captureCodexCommand, inspectCodexReadiness } from "../src/codex/readiness.js";
 
 test("Codex readiness distinguishes missing installation from a usable authenticated CLI", async () => {
   const missing = await inspectCodexReadiness({
@@ -54,4 +54,10 @@ test("Codex readiness never treats installation as authentication", async () => 
   assert.equal(result.executableUsable, true);
   assert.equal(result.authenticated, false);
   assert.equal(result.canAutomate, false);
+});
+
+test("Codex readiness does not cross an arbitrary Windows batch boundary", { skip: process.platform !== "win32" }, async () => {
+  const result = await captureCodexCommand("C:/tools/not-codex.cmd", ["argument & untrusted"]);
+  assert.equal(result.ok, false);
+  assert.match(result.error, /refuses non-Codex Windows batch launchers/);
 });

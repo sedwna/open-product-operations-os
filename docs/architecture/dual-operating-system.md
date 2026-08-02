@@ -29,10 +29,29 @@ RB-01..RB-13 boundaries        <=>          ENG-01..ENG-15 boundaries
 5. Engineering producers implement and capture gate evidence at an exact revision.
 6. A distinct `ENG-15` actor reproduces the material claims.
 7. Development emits a result tied to the original request digest and implementation revision.
-8. Product Operations validates and stores the result without inventing product acceptance.
+8. Product Operations validates and stores the result, copies verified evidence into its own
+   content-addressed evidence boundary, and runs downstream QA, verification, readiness, and report
+   roles without inventing product acceptance.
+9. Each repository keeps a separate cycle branch and commit. Neither repository becomes a subfolder
+   or mutable database of the other.
 
 Replay with identical contracts is idempotent. Content drift under an existing identity is
 rejected rather than silently overwriting history.
+
+```mermaid
+sequenceDiagram
+    participant O as Owner
+    participant P as Product OS
+    participant D as Development OS
+    O->>P: Idea or feedback
+    P->>P: Read-only role analysis + attributed gates
+    P->>D: Approved request + digest + receipt
+    D->>D: Dependency-ordered workstreams
+    D->>D: Read-only independent verification
+    D->>P: Sealed result + evidence + receipt
+    P->>P: QA + readiness + controlled workbook
+    P-->>O: Persian cycle report
+```
 
 ## Failure behavior
 

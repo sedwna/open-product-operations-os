@@ -1,0 +1,59 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-product-operations-os.local/schemas/product-agent-run.schema.json",
+  "title": "Product Agent Run",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "taskId", "eventId", "roleId", "producerActorId", "status", "summary", "findings", "recommendations", "acceptanceCriteria", "impacts", "constraints", "nonFunctionalRequirements", "evidence", "knownRisks", "completedAt"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "taskId": { "type": "string", "minLength": 3 },
+    "eventId": { "type": "string", "minLength": 3 },
+    "roleId": { "type": "string", "pattern": "^RB-(?:0[1-9]|1[0-3])$" },
+    "producerActorId": { "type": "string", "minLength": 2 },
+    "status": { "enum": ["completed", "blocked", "failed"] },
+    "summary": { "type": "string", "minLength": 5, "maxLength": 4000 },
+    "findings": { "$ref": "#/$defs/strings" },
+    "recommendations": { "$ref": "#/$defs/strings" },
+    "acceptanceCriteria": {
+      "type": "array",
+      "maxItems": 30,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["statement", "verification"],
+        "properties": {
+          "statement": { "type": "string", "minLength": 5, "maxLength": 1000 },
+          "verification": { "type": "string", "minLength": 3, "maxLength": 1000 }
+        }
+      }
+    },
+    "impacts": {
+      "type": "array",
+      "maxItems": 30,
+      "uniqueItems": true,
+      "items": { "enum": ["architecture", "frontend", "accessibility", "backend", "api", "integration", "mobile", "desktop", "database", "storage", "cache", "messaging", "search", "data", "ai", "analytics", "security", "privacy", "identity", "compliance", "network", "infrastructure", "devops", "sre", "observability", "performance", "resilience", "cost", "seo", "documentation"] }
+    },
+    "constraints": { "$ref": "#/$defs/strings" },
+    "nonFunctionalRequirements": {
+      "type": "array",
+      "maxItems": 30,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["domain", "requirement", "verification"],
+        "properties": {
+          "domain": { "type": "string", "minLength": 1, "maxLength": 100 },
+          "requirement": { "type": "string", "minLength": 3, "maxLength": 1000 },
+          "verification": { "type": "string", "minLength": 3, "maxLength": 1000 }
+        }
+      }
+    },
+    "evidence": { "$ref": "#/$defs/strings" },
+    "knownRisks": { "$ref": "#/$defs/strings" },
+    "completedAt": { "type": "string", "format": "date-time" }
+  },
+  "$defs": {
+    "strings": { "type": "array", "maxItems": 30, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 2000 } }
+  }
+}

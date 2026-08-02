@@ -60,9 +60,9 @@ If a link is missing, the system does not silently call the work complete.
 | **Interactive control tower** | A calm RTL workspace for tasks, decisions, intake, risks, evidence, roles, and release readiness |
 | **13 role boundaries** | Explicit authority for discovery, decisions, delivery, QA, writes, verification, release, and development |
 | **23-tab product workbook** | Portable CSV records spanning idea, discovery, issues, tickets, evidence, QA, lineage, and readiness |
-| **Executable workflow** | A dry-run-first scheduler that routes intake, resolves dependencies, opens human gates, and dispatches eligible work |
+| **Autonomous product factory** | A resumable idea → product analysis → engineering → product verification → report loop with live role and task visibility |
 | **Development adapter** | A bounded handoff to an engineering agent or team through the dedicated development role |
-| **Automation Center** | Truthful Codex readiness, executor activation, and the current boundary between setup and continuous execution |
+| **Automation Center** | Live phase, role, task, event history, retry state, pause/resume controls, Codex readiness, and the latest cycle result |
 | **Independent Development OS** | A 15-boundary engineering package for architecture, frontend, backend, database, data, infrastructure, network, security, QA, SRE, delivery, SEO, documentation, and verification |
 | **Controlled writers** | Precondition checks, authorization, complete read-back, replay protection, and guarded rollback |
 | **Provider boundary** | Disabled-by-default adapters for GitHub, GitLab, Jira, Linear, Azure DevOps, Sheets, Graph, and Airtable |
@@ -101,7 +101,7 @@ then open its launcher. Do not run a launcher from inside a compressed archive o
 executable away from its adjacent files. The graphical wizard asks for the folder names, product
 definition, and optional first idea. For a new application it initializes
 and validates both Product Operations OS and the independent Development Operations OS, creates
-separate Git histories, and opens the read-only live dashboard. Existing application repositories
+separate Git histories, and opens the writable loopback-only live dashboard. Existing application repositories
 receive Development Operations OS files only after explicit opt-in.
 
 | Windows | macOS | Linux |
@@ -115,10 +115,11 @@ launcher repairs them from the lockfile without running package lifecycle script
 See the [one-click onboarding guide](docs/onboarding/one-click.md) for first-open notes, the safety
 contract, recovery, and distributable bundles.
 
-The [Autonomous Product Factory architecture](docs/automation/README.md) defines the path from
-visible Codex readiness to durable task claiming and synchronized product and engineering execution.
-The current implementation completes Stage 1 and explicitly shows when continuous scheduling is not
-yet active.
+The [Autonomous Product Factory architecture](docs/automation/README.md) documents the implemented
+continuous loop: read-only product agents, dependency-ordered engineering workstreams, durable
+leases and retries, content-addressed evidence return, controlled workbook insertion, product
+verification, reports, and separate Git branches. Production release and destructive actions remain
+separately gated.
 
 ```text
 # Universal command-line fallback
@@ -156,16 +157,14 @@ node ./src/cli.js operate ./my-product
 
 ```mermaid
 flowchart LR
-    A[Signal] --> B[Control plane]
-    B --> C[Owned task chain]
-    C --> D{Human gate?}
-    D -- Yes --> E[Attributed decision]
-    D -- No --> F[Role execution]
-    E --> F
-    F --> G[Development / QA / writer]
-    G --> H[Evidence + read-back]
-    H --> I[Independent verification]
-    I --> J[Readiness + release]
+    A["Owner idea or feedback"] --> B["Read-only product agents"]
+    B --> C["Approved, hashed development request"]
+    C --> D["Dependency-ordered engineering agents"]
+    D --> E["Read-only independent verifier"]
+    E --> F["Content-addressed evidence return"]
+    F --> G["Product QA and readiness"]
+    G --> H["Controlled workbook + cycle report"]
+    H --> A
 ```
 
 The repository is intentionally layered:
@@ -194,8 +193,9 @@ development-os validate ./my-application
 
 The graphical one-click path performs these initialization and validation commands automatically
 for a new application. Use the manual commands above when adding Development Operations OS later
-or when you prefer command-line control. Specialist executors remain disabled until separately
-configured, tested, and authorized.
+or when you prefer command-line control. In manual initialization specialist executors remain
+disabled until separately configured, tested, and authorized. In one-click Codex automation mode,
+readiness checks activate them and the linked local dashboard starts the continuous coordinator.
 
 The original command-runner adapter remains available as a lower-level bounded integration.
 

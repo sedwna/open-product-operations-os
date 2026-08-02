@@ -81,7 +81,8 @@ export function normalizeOnboardingRequest(input, { repoRoot } = {}) {
         title: boundedText(input.ideaTitle, "عنوان ایده", 3, 180),
         description: boundedText(input.ideaDescription, "شرح ایده", 10, 2400),
         source: boundedText(input.ideaSource || "راه‌اندازی یک‌کلیکی محلی", "منبع ایده", 2, 200),
-        priority
+        priority,
+        autopilotAuthorized: automationMode === "codex"
       }
     : null;
 
@@ -380,6 +381,21 @@ export async function runOnboarding(request, {
       `${JSON.stringify(automationStatus, null, 2)}\n`,
       "utf8"
     );
+    if (answers.automationMode === "codex" && answers.applicationPath && report.development.executorsEnabled) {
+      const link = {
+        schemaVersion: "1.0.0",
+        applicationRelativePath: path.relative(answers.operationsPath, answers.applicationPath).replaceAll("\\", "/"),
+        provider: "codex",
+        productExecutorsEnabled: true,
+        engineeringExecutorsEnabled: true,
+        autoStart: true,
+        autoApproveInitialIdea: true,
+        createdAt: new Date().toISOString()
+      };
+      const linkErrors = validatePublishedSchema("automation-link.schema.json", link);
+      if (linkErrors.length) throw new Error(`پیوند خودکارسازی معتبر نیست: ${linkErrors.join("؛ ")}`);
+      await fs.writeFile(path.join(automationDirectory, "link.json"), `${JSON.stringify(link, null, 2)}\n`, "utf8");
+    }
   }
 
   await step(onProgress, "git", async (log) => {
@@ -587,11 +603,11 @@ function buildAutomationStatus(report) {
     productCycle: report.initialCycleApplied ? "initialized" : "waiting-for-idea",
     developmentSystem: report.development.status,
     executorsEnabled: report.development.executorsEnabled,
-    continuousOrchestrator: false,
+    continuousOrchestrator: enabled,
     currentCapability: enabled
-      ? "نقش‌های توسعه به کدکس متصل‌اند؛ اجرای هر جریان کاری هنوز نیازمند فرمان صریح است."
+      ? "چرخهٔ پیوستهٔ محصول و توسعه فعال است؛ ایده‌های مجاز خودکار تحلیل، پیاده‌سازی، راستی‌آزمایی و گزارش می‌شوند."
       : "چرخهٔ خودکار فعال نیست.",
-    nextCapability: "زمان‌بند محلی، ادعای وظیفه با اجاره، همگام‌سازی خودکار قراردادها و بازیابی اجرا"
+    nextCapability: enabled ? "ثبت بازخورد بعدی و آغاز خودکار چرخهٔ اصلاح" : "اتصال کدکس و فعال‌سازی اجراگرها"
   };
 }
 

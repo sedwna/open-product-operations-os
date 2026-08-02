@@ -471,7 +471,7 @@ function buildWritePlanFromText(
     ...manifest.scope.allowedFields,
     ...manifest.scope.rows.flatMap((row) => [
       ...Object.keys(row.key),
-      ...Object.keys(row.preconditions),
+      ...Object.keys(row.preconditions).filter((field) => field !== "$record"),
       ...Object.keys(row.changes)
     ])
   ]);
@@ -506,6 +506,24 @@ function buildWritePlanFromText(
             (field) => row[indexes.get(field)] === scalar(requested.key[field])
           )
       );
+    if (requested.operation === "insert") {
+      if (matchingRows.length !== 0) {
+        throw new Error(`Write target already contains requested insert key ${JSON.stringify(requested.key)}.`);
+      }
+      if (requested.preconditions.$record !== "absent" || Object.keys(requested.preconditions).length !== 1) {
+        throw new Error("Insert requires an explicit absent-record precondition.");
+      }
+      const inserted = headers.map(() => "");
+      for (const [field, value] of Object.entries({ ...requested.key, ...requested.changes })) {
+        inserted[indexes.get(field)] = scalar(value);
+      }
+      const rowIndex = rows.length;
+      rows.push(inserted);
+      for (const [field, value] of Object.entries({ ...requested.key, ...requested.changes })) {
+        changes.push({ rowIndex, field, from: "", to: scalar(value) });
+      }
+      continue;
+    }
     if (matchingRows.length !== 1) {
       throw new Error(
         `Write target must contain exactly one requested key ${JSON.stringify(requested.key)}; found ${matchingRows.length}.`

@@ -26,6 +26,7 @@ replace Git canonical state, semantic ownership, independent verification, or hu
 | **Provider outbox** | Apply bounded HTTPS operations and retain projected, hash-backed receipts | Disabled |
 | **Control tower** | Show tasks, decisions, intake, risks, roles, evidence, and readiness | Read-only |
 | **Setup and migration** | Configure a generated project and upgrade the operating contract safely | Plan only |
+| **Autonomous coordinator** | Claim dependency-ready product and engineering work, recover retries, return evidence, and write the cycle report | Enabled only by the one-click Codex automation link |
 
 Runtime state is stored under:
 
@@ -62,9 +63,13 @@ This additionally permits:
 
 - normalized intake creation;
 - attributed approval or rejection by the configured human authority actor;
-- one bounded control-plane scheduling cycle.
+- one bounded control-plane scheduling cycle;
+- start, cooperative pause, resume, and retry of the linked local autonomous cycle.
 
-It does **not** enable development execution, provider calls, deployment, or destructive actions.
+When the workspace contains the one-click Codex automation link, the dashboard process also runs
+the continuous coordinator and can execute bounded development work in the separate application
+repository. It does **not** authorize provider calls, production deployment, destructive actions,
+production data, credentials, spending, or external publication.
 The server accepts local loopback traffic only, rejects oversized or non-JSON writes, and requires a
 random authorization token from the active dashboard session.
 
@@ -79,6 +84,22 @@ detail views work locally, but mutation controls remain disabled because no runt
 connected.
 
 ## A typical cycle
+
+With one-click Codex automation, the normal path is simply:
+
+```text
+1. Open the local dashboard.
+2. Submit an idea or feedback.
+3. Watch the active product or engineering role in Automation Center.
+4. Read the generated report and inspect the workbook/evidence links.
+5. Submit a correction to begin the next linked cycle.
+```
+
+The coordinator stores state, events, role results, manifests, evidence, and reports under
+`.product-ops/runtime/autopilot/`. It retries a failed active task up to three times, resumes only
+from schema-valid immutable results, and requires a manual retry after the bounded limit.
+
+The lower-level manual path remains available:
 
 ```text
 # 1. Normalize a signal

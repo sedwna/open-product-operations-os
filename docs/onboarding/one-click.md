@@ -51,8 +51,9 @@ before onboarding completes. An existing application remains untouched unless th
 selects Development Operations OS initialization. This opt-in adds only the namespaced engineering
 files; it does not stage or commit the existing repository. Specialist executors remain disabled
 unless the user explicitly selects Codex automation and the readiness checks pass.
-The live dashboard is read-only by default, and writable local mode is shown explicitly in the final
-review when selected.
+The wizard selects writable local mode for the common autonomous case. It remains loopback-only,
+uses a per-session request token, and is shown explicitly in the final review. The user can turn it
+off for an observation-only workspace.
 
 ## What happens after confirmation
 
@@ -70,15 +71,19 @@ verify or install a local runtime
 → run the first product-operations cycle
 → initialize independent Git histories
 → validate the generated workspace
-→ open the live RTL product dashboard
+→ persist the Product/Development automation link
+→ open the live RTL product dashboard and start the resumable cycle
 ```
 
 Development Operations OS is initialized for a new application. In manual mode every specialist
 executor remains disabled. In Codex automation mode, the wizard distinguishes installation,
 executable health, and login status before configuring and enabling the bounded engineering
-executors. The dashboard still reports that continuous claiming is unavailable until the durable
-orchestrator stage is installed. Creating a task board never silently authorizes deployment,
-production credentials, or writes outside the chosen folders.
+executors. When the first idea was submitted with Codex automation selected, the dashboard starts
+the durable coordinator: product roles analyze it, engineering roles implement dependency-ready
+work, independent verifiers inspect the result, evidence returns to product, the workbook is
+updated through controlled receipts, and a Persian cycle report is produced. Creating a task board
+never authorizes deployment, production credentials, destructive data work, spending, external
+publication, or writes outside the chosen folders.
 
 ## Runtime and privacy contract
 

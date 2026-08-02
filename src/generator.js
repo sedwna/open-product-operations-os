@@ -17,6 +17,8 @@ const GOVERNANCE_TEMPLATES = [
 ];
 
 const SCHEMA_FILES = [
+  "autopilot-state.schema.json",
+  "automation-link.schema.json",
   "automation-status.schema.json",
   "approval-store.schema.json",
   "agent-registry.schema.json",
@@ -34,6 +36,7 @@ const SCHEMA_FILES = [
   "provider-catalog.schema.json",
   "provider-outbox-item.schema.json",
   "project-config.schema.json",
+  "product-agent-run.schema.json",
   "runtime-receipt.schema.json",
   "workbook-write-manifest.schema.json",
   "workbook-write-receipt.schema.json"
