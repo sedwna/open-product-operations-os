@@ -102,7 +102,8 @@ code{font-family:ui-monospace,Consolas,monospace;font-size:11.5px;opacity:.75}
 function script() {
   return `
 (function(){
-var nextId=1,waiting={},state=null,busy=false;
+var nextId=1,waiting={},state=null,busy=false,drafts={},poll=null;
+var LIVE_MS=10000,IDLE_MS=45000;
 function send(method,params){var id=nextId++;window.parent.postMessage({jsonrpc:"2.0",id:id,method:method,params:params||{}},"*");
   return new Promise(function(res,rej){waiting[id]={res:res,rej:rej};});}
 window.addEventListener("message",function(e){
@@ -111,7 +112,33 @@ window.addEventListener("message",function(e){
     if(m.error)w.rej(new Error(m.error.message||"host error"));else w.res(m.result);return;}
   if(m.method==="ui/notifications/tool-result"){adopt(m.params&&m.params.structuredContent);}
 });
-function adopt(data){if(data&&data.counts){state=data;render();}}
+function adopt(data){if(data&&data.counts){state=data;render();schedule();}}
+
+// A refresh rebuilds the interface, which would throw away a rationale the owner is halfway
+// through writing. Drafts are captured before the rebuild and put back after it.
+function captureDrafts(){
+  if(!state||!state.decisions)return;
+  state.decisions.items.forEach(function(item){
+    var box=document.getElementById("t-"+item.requestId);
+    if(box&&typeof box.value==="string"&&box.value!=="")drafts[item.requestId]=box.value;
+  });
+}
+function restoreDrafts(){
+  if(!state||!state.decisions)return;
+  state.decisions.items.forEach(function(item){
+    var box=document.getElementById("t-"+item.requestId);
+    if(box&&drafts[item.requestId])box.value=drafts[item.requestId];
+  });
+}
+/** Poll faster while something is moving or waiting on the owner, slower when nothing is. */
+function schedule(){
+  if(poll)clearTimeout(poll);
+  var live=state&&(state.decisions.pending>0
+    ||["running","waiting_for_human","failed","blocked"].indexOf(state.cycle.status)!==-1
+    ||state.counts.inProgress>0);
+  poll=setTimeout(function(){refresh(true);},live?LIVE_MS:IDLE_MS);
+  if(poll&&poll.unref)poll.unref();
+}
 function esc(s){return String(s==null?"":s).replace(/[&<>"]/g,function(c){
   return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c];});}
 // Record text arrives wrapped by the server so a model reports it instead of obeying it. A person
@@ -142,9 +169,11 @@ function render(){
     +'</ul></div></div>':"";
   var foot='<div class="row between"><span class="note">'+esc(s.project.name)+' · '+esc((s.generatedAt||"").slice(11,16))+'</span>'
     +'<button id="refresh">تازه‌سازی</button></div>';
+  captureDrafts();
   root.className="wrap";
   root.innerHTML=head+counts+gates+flowSection(s)+teamsSection(s)+risks+foot;
-  document.getElementById("refresh").onclick=refresh;
+  restoreDrafts();
+  document.getElementById("refresh").onclick=function(){refresh();};
   s.decisions.items.forEach(function(item){
     var yes=document.getElementById("y-"+item.requestId);
     var no=document.getElementById("n-"+item.requestId);
@@ -225,9 +254,15 @@ function taskStatusLabel(s,gate){
 }
 
 function call(name,args){return send("tools/call",{name:name,arguments:args||{}});}
-function refresh(){
-  if(busy)return;busy=true;var b=document.getElementById("refresh");if(b){b.disabled=true;b.textContent="…";}
-  call("product_ops_panel").then(function(r){adopt(r&&r.structuredContent);}).catch(fail).then(function(){busy=false;});
+function refresh(quiet){
+  if(busy){if(quiet)schedule();return;}
+  busy=true;
+  var b=document.getElementById("refresh");
+  if(b&&!quiet){b.disabled=true;b.textContent="…";}
+  call("product_ops_panel")
+    .then(function(r){adopt(r&&r.structuredContent);})
+    .catch(function(e){ if(quiet)schedule(); else fail(e); })
+    .then(function(){busy=false;});
 }
 /**
  * The product owner writes their own reasoning here and chooses. The source flag tells the server a
@@ -244,9 +279,11 @@ function submit(item,decision){
     return;
   }
   busy=true;
+  if(poll)clearTimeout(poll);
   var yes=document.getElementById("y-"+item.requestId),no=document.getElementById("n-"+item.requestId);
   if(yes)yes.disabled=true;if(no)no.disabled=true;
   if(note)note.textContent="در حال ثبت…";
+  delete drafts[item.requestId];
   call("product_ops_decide",{requestId:item.requestId,decisionToken:item.decisionToken,apply:true,
     source:"panel",decision:decision,rationale:rationale,
     actorId:state&&state.humanAuthorityActorId?state.humanAuthorityActorId:undefined})

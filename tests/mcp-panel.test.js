@@ -54,7 +54,7 @@ async function mountPanel(t) {
   const listeners = [];
   const posted = [];
   const sandbox = {
-    document, setTimeout, console, JSON, Math, String, Object, Array, Error,
+    document, setTimeout, clearTimeout, console, JSON, Math, String, Object, Array, Error,
     window: {
       addEventListener: (type, fn) => { if (type === "message") listeners.push(fn); },
       removeEventListener: () => {},
@@ -209,6 +209,48 @@ test("the composer records the owner's own words and refuses an empty rationale"
   assert.equal(args.source, "panel", "the server must know a person composed this");
   assert.equal(args.decision, "rejected");
   assert.equal(args.rationale, "پیش از نوشتن داستان مهاجرت، نه.", "the owner's text is sent verbatim");
+});
+
+test("a refresh never eats a rationale the owner is halfway through writing", async (t) => {
+  // The panel refreshes itself while the owner reads it. A rebuild that discarded an unsent draft
+  // would lose their reasoning at the exact moment they were composing it.
+  const { posted, deliver, settle, payload, document } = await mountPanel(t);
+  const handshake = posted.shift();
+  deliver({ jsonrpc: "2.0", id: handshake.id, result: { protocolVersion: "2026-01-26" } });
+  deliver({ jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { structuredContent: payload } });
+  await settle();
+
+  const gate = payload.decisions.items[0];
+  const halfWritten = "هنوز مطمئن نیستم، ولی احتمالاً به‌خاطر";
+  document.getElementById(`t-${gate.requestId}`).value = halfWritten;
+
+  // Fresh data arrives, exactly as an autonomous cycle moving would deliver it.
+  deliver({ jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { structuredContent: payload } });
+  await settle();
+
+  assert.equal(document.getElementById(`t-${gate.requestId}`).value, halfWritten,
+    "the draft must survive a refresh");
+
+  // And it must still be what gets sent.
+  posted.length = 0;
+  document.getElementById(`y-${gate.requestId}`).onclick();
+  assert.equal(posted.shift().params.arguments.rationale, halfWritten);
+});
+
+test("a quiet background refresh does not disturb the interface", async (t) => {
+  const { posted, deliver, settle, payload, document } = await mountPanel(t);
+  const handshake = posted.shift();
+  deliver({ jsonrpc: "2.0", id: handshake.id, result: { protocolVersion: "2026-01-26" } });
+  deliver({ jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { structuredContent: payload } });
+  await settle();
+
+  const before = document.getElementById("root").innerHTML;
+  deliver({ jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { structuredContent: payload } });
+  await settle();
+  assert.equal(document.getElementById("root").innerHTML, before,
+    "unchanged data must render identically rather than flickering into a new shape");
+  assert.equal(document.getElementById("refresh").textContent, "",
+    "a background refresh must not leave the manual control in a loading state");
 });
 
 test("a failing host request is reported rather than swallowed", async (t) => {

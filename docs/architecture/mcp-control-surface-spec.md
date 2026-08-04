@@ -459,23 +459,46 @@ is `NOT_FOUND`; the tab list is closed, never derived from the argument.
 
 In Claude Code these are referenced as `@product-ops:productops://taskboard`.
 
-### 7.1 Change notification
+### 7.1 Change notification — implemented
 
-Watch, with `fs.watch` and a 500 ms trailing debounce:
+Status: implemented in [`src/mcp/watch.js`](../../src/mcp/watch.js).
 
-```text
-taskboard/tasks.csv
-.product-ops/runtime/approvals.json
-.product-ops/runtime/autopilot/state.json
-```
+This section originally specified `notifications/resources/list_changed`. That was the wrong
+primitive: `listChanged` announces that the *set* of resources changed, and this server's set is
+fixed. What changes is their content, which is what `resources/subscribe` and
+`notifications/resources/updated` exist for. The capability is now `subscribe: true`,
+`listChanged: false`.
 
-Explicitly ignore `orchestrator.lease.json` and `control-plane.lease.json`, which are rewritten on
-every heartbeat and would otherwise produce a notification every 10 seconds.
+Only a resource a client actually subscribed to is announced. A server that notified about every
+change would be chatter, and a client that never subscribed asked for none of it.
 
-On change, emit `notifications/resources/list_changed`. Claude Code refreshes server capabilities on
-that notification without a reconnect, which gives near-live state in an open session without
-polling. Verify the notification path against the `2026-07-28` stateless core before relying on it;
-stdio holds a connection, so it is expected to apply, but the revision changed the transport model.
+| File | Marks stale |
+| --- | --- |
+| `taskboard/tasks.csv` | `productops://taskboard` |
+| `.product-ops/runtime/approvals.json` | `productops://approvals/pending` |
+| `.product-ops/runtime/autopilot/state.json` | `productops://cycle/latest`, `productops://events/recent` |
+| `.product-ops/runtime/autopilot/events.jsonl` | `productops://events/recent` |
+
+Directories are watched rather than individual files, because an atomic replace unlinks and
+recreates the file and drops a file-level watch on every platform. The watched directories are
+created up front: they appear on first write, and watching only what already exists meant a fresh
+project reported nothing until the server restarted.
+
+Lease files and the temporary artefacts of an atomic replace (`*.tmp`, `*.bak`, `*.stale.*`) are
+ignored. A running coordinator rewrites its lease every few seconds; without this the server would
+wake every subscriber continuously and report nothing of substance.
+
+A 500 ms trailing debounce collapses the several filesystem events a single controlled write
+produces into one report.
+
+### 7.2 Panel refresh
+
+Notifications reach the host, not the app iframe, so the panel keeps its own cadence: 10 seconds
+while a gate is pending or work is in progress, 45 seconds when nothing is moving.
+
+An unsent rationale is captured before the rebuild and restored after it. A refresh that discarded
+a draft would lose the owner's reasoning at the moment they were composing it, and it arrives
+unprompted, so they would have no reason to expect it.
 
 ## 7.2 The panel — implemented
 

@@ -4,6 +4,18 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+- Made the control surface live: the server watches the canonical records and notifies subscribers
+  when a resource they hold goes stale, and the panel refreshes itself, faster while work is moving
+  or a gate is waiting and slower when nothing is.
+- Preserved an unsent rationale across a refresh, so a background update cannot discard reasoning
+  the owner is halfway through writing.
+- Declared resource subscription rather than list-change notification. The set of resources is
+  fixed; what changes is their content, and only a resource a client actually subscribed to is
+  announced.
+- Ignored lease heartbeats and the temporary files an atomic replace leaves behind, and created the
+  runtime directories up front, so a fresh project reports approval and cycle changes instead of
+  silently watching nothing until the server restarts.
+
 - Gave every product boundary a team name and a line describing what it does, so the panel shows an
   organisation a product owner can supervise rather than the role codes that identify contracts.
 - Added the hand-off chain for the cycle in flight, both teams with what each is carrying, and task

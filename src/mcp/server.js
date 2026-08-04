@@ -15,6 +15,7 @@ import { RESOURCES, RESOURCE_TEMPLATES, readResource } from "./resources.js";
 import { PROMPTS, getPrompt, toListEntry as toPromptEntry } from "./prompts.js";
 import { DEFAULT_BRIEF_CEILING } from "./projection.js";
 import { PANEL_MIME_TYPE } from "./app/panel.js";
+import { watchCanonicalRecords } from "./watch.js";
 
 const SUPPORTED_PROTOCOL_VERSIONS = ["2026-07-28", "2025-06-18"];
 
@@ -74,7 +75,8 @@ export async function createServerContext(options) {
     allowWrites: options.allowWrites === true,
     briefCeiling: options.briefCeiling ?? DEFAULT_BRIEF_CEILING,
     decisionToken: tokens.issue,
-    verifyDecisionToken: tokens.verify
+    verifyDecisionToken: tokens.verify,
+    subscriptions: new Set()
   };
 }
 
@@ -93,7 +95,8 @@ export function createHandlers(context, { version = packageVersion() } = {}) {
         protocolVersion: SUPPORTED_PROTOCOL_VERSIONS.includes(requested) ? requested : SUPPORTED_PROTOCOL_VERSIONS[0],
         capabilities: {
           tools: { listChanged: false },
-          resources: { subscribe: false, listChanged: true },
+          // subscribe, not listChanged: the set of resources is fixed, their content is not.
+          resources: { subscribe: true, listChanged: false },
           prompts: { listChanged: false },
           // MCP Apps, so a host that can render declares itself and receives the control tower in
           // place of a text result. Hosts that cannot simply ignore the extension.
@@ -118,6 +121,18 @@ export function createHandlers(context, { version = packageVersion() } = {}) {
     },
     "resources/list": () => ({ resources: [...RESOURCES] }),
     "resources/templates/list": () => ({ resourceTemplates: [...RESOURCE_TEMPLATES] }),
+    "resources/subscribe"(params) {
+      if (typeof params?.uri !== "string") throw new RpcError(INVALID_PARAMS, "resources/subscribe requires a uri.");
+      if (!RESOURCES.some((resource) => resource.uri === params.uri)) {
+        throw new RpcError(INVALID_PARAMS, `Resource "${params.uri}" is not served by this project.`);
+      }
+      context.subscriptions.add(params.uri);
+      return {};
+    },
+    "resources/unsubscribe"(params) {
+      context.subscriptions.delete(params?.uri);
+      return {};
+    },
     async "resources/read"(params) {
       if (typeof params?.uri !== "string") throw new RpcError(INVALID_PARAMS, "resources/read requires a uri.");
       try {
@@ -149,7 +164,15 @@ export async function startServer(argv, { input = process.stdin, output = proces
   // Assigned after the transport exists; handlers close over the context, so initialize still sees
   // it when the client connects.
   context.elicit = (params) => transport.request("elicitation/create", params);
-  return { context, transport };
+
+  // Only what a client actually subscribed to is announced. A server that notified about every
+  // change would be chatter, and a client that never subscribed asked for none of it.
+  const watcher = watchCanonicalRecords(context.root, (uris) => {
+    for (const uri of uris) {
+      if (context.subscriptions.has(uri)) transport.notify("notifications/resources/updated", { uri });
+    }
+  });
+  return { context, transport, watcher };
 }
 
 function packageVersion() {
@@ -174,8 +197,9 @@ async function isEntryPoint() {
 
 if (await isEntryPoint()) {
   try {
-    const { transport } = await startServer(process.argv.slice(2));
+    const { transport, watcher } = await startServer(process.argv.slice(2));
     await transport.closed;
+    watcher.close();
     await transport.close();
   } catch (error) {
     process.stderr.write(`product-ops-mcp: ${error.message}\n`);

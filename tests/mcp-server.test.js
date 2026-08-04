@@ -65,14 +65,16 @@ test("argument parsing binds a project and defaults to read-only", () => {
   assert.throws(() => parseServerArguments(["--project", ".", "--brief-byte-ceiling", "12"]), /between 512 and 262144/);
 });
 
-test("initialize negotiates a supported protocol and advertises resource change notification", async (t) => {
+test("initialize negotiates a supported protocol and offers content subscription", async (t) => {
   const { handlers } = await handlersFor(t);
   const known = handlers.initialize({ protocolVersion: "2025-06-18", capabilities: {} });
   assert.equal(known.protocolVersion, "2025-06-18");
 
   const unknown = handlers.initialize({ protocolVersion: "1999-01-01", capabilities: {} });
   assert.equal(unknown.protocolVersion, "2026-07-28");
-  assert.equal(unknown.capabilities.resources.listChanged, true);
+  // The resource set is fixed; what changes is content, which is what subscription is for.
+  assert.equal(unknown.capabilities.resources.subscribe, true);
+  assert.equal(unknown.capabilities.resources.listChanged, false);
   assert.equal(unknown.serverInfo.name, "product-ops");
   assert.match(unknown.instructions, /untrusted-record/);
   assert.ok(unknown.instructions.length <= 900, `instructions must stay within the context budget, got ${unknown.instructions.length}`);
@@ -682,7 +684,10 @@ test("the panel resource is self-contained, so a strict sandbox can render it", 
   assert.equal(/<script[^>]+src=/.test(content.text), false, "no external script may be loaded");
   assert.equal(/<link[^>]+href=/.test(content.text), false, "no external stylesheet may be loaded");
   assert.match(content.text, /ui\/initialize/, "the panel must perform the app handshake");
-  assert.ok(Buffer.byteLength(content.text) < 16384, "the panel should stay small enough to preload cheaply");
+  // A budget, not a target. The host fetches this once per session, so the cost of a few kilobytes
+  // is nil; the ceiling exists so the panel cannot quietly become a bundled application.
+  assert.ok(Buffer.byteLength(content.text) < 24576,
+    `the panel is ${Buffer.byteLength(content.text)} bytes and should stay a single readable page`);
 });
 
 test("the panel payload carries everything the interface needs in one call", async (t) => {
