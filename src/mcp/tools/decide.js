@@ -36,9 +36,9 @@ export async function decide(context, args = {}) {
     };
   }
 
-  const collected = context.supportsElicitation
-    ? await elicit(context, config, request)
-    : relayed(args, request);
+  const collected = args.source === "panel"
+    ? composed(args, config, request)
+    : (context.supportsElicitation ? await elicit(context, config, request) : relayed(args, request));
 
   // The disposition is settled before any lock is taken. Holding a write lease across a dialog that
   // waits on a person would block every other local surface for as long as they take to answer.
@@ -63,6 +63,9 @@ export async function decide(context, args = {}) {
   const lines = [`Recorded ${result.request.status} on gate "${result.request.gate}" for ${result.request.taskId}, attributed to ${result.request.decidedByActorId}.`];
   if (collected.attribution === "model_relayed") {
     lines.push("This host cannot open a dialog, so the rationale was relayed by a model rather than typed by the product owner. The record says the owner decided; treat that attribution with the caution it deserves.");
+  }
+  if (collected.attribution === "panel_entered") {
+    lines.push("The product owner composed this in the control tower panel.");
   }
   return { structuredContent, text: lines.join("\n") };
 }
@@ -107,6 +110,34 @@ async function elicit(context, config, request) {
     actorId: String(content.actorId ?? config.project.humanAuthorityActorId),
     rationale: content.rationale.trim().slice(0, 2000),
     attribution: "human_entered"
+  };
+}
+
+/**
+ * The product owner composed the disposition in the control tower panel.
+ *
+ * The panel runs in a sandboxed iframe the host renders; a model cannot type into it. What the
+ * server receives, though, is an ordinary tool call, and no field in it proves who authored the
+ * text. Two host-side controls carry that weight instead: the decision token, which only the
+ * pending-decisions listing issues, and `anthropic/requiresUserInteraction`, which makes a person
+ * approve every single call to this tool in every permission mode.
+ *
+ * The attribution is recorded distinctly so the provenance stays legible in the record rather than
+ * being flattened into the dialog path.
+ */
+function composed(args, config, request) {
+  if (!["approved", "rejected"].includes(args.decision)) {
+    throw new ToolFailure("ELICITATION_DECLINED", `Gate "${request.gate}" needs an explicit approved or rejected disposition.`);
+  }
+  const rationale = String(args.rationale ?? "").trim();
+  if (rationale === "") {
+    throw new ToolFailure("ELICITATION_DECLINED", "A disposition without a rationale is not a durable decision. Write why.");
+  }
+  return {
+    decision: args.decision,
+    actorId: String(args.actorId ?? config.project.humanAuthorityActorId),
+    rationale: rationale.slice(0, 2000),
+    attribution: "panel_entered"
   };
 }
 

@@ -60,6 +60,32 @@ display:flex;flex-direction:column;gap:7px}
 .gate-q{font-weight:600}
 .risks{margin:0;padding-inline-start:16px;font-size:12px}
 .risks li{margin:1px 0}
+textarea{font:inherit;font-size:12px;width:100%;min-height:62px;resize:vertical;padding:7px 9px;border-radius:7px;
+border:1px solid var(--color-border-primary,light-dark(#c9c4bb,#3a4048));
+background:var(--color-background-primary,light-dark(#fff,#15181d));color:inherit}
+textarea:focus{outline:2px solid light-dark(#8fa9c6,#3d5a86);outline-offset:-1px}
+button.yes{background:light-dark(#1d6b3f,#2f8a55);color:#fff;border-color:transparent}
+button.no{background:light-dark(#a33a33,#b6483f);color:#fff;border-color:transparent}
+.flow{display:flex;gap:0;overflow-x:auto;padding-bottom:3px}
+.step{flex:0 0 auto;display:flex;align-items:center;gap:0}
+.node{border:1px solid var(--color-border-primary,light-dark(#e3e0da,#2c313a));border-radius:8px;
+padding:6px 9px;min-width:96px;text-align:center;background:var(--color-background-primary,light-dark(#fff,#1b1f26))}
+.node b{display:block;font-size:11px;font-weight:600;line-height:1.35}
+.node span{font-size:10px;opacity:.6}
+.node.now{border-color:light-dark(#c08a2e,#c9932f);box-shadow:0 0 0 2px light-dark(#f6e6c8,#3a2c12)}
+.node.done{opacity:.5}
+.node.stuck{border-color:light-dark(#c2534b,#a8463e)}
+.node.gate-node{border-style:dashed}
+.arrow{width:16px;text-align:center;opacity:.35;font-size:11px}
+.teams{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:7px}
+.team{border:1px solid var(--color-border-primary,light-dark(#e3e0da,#2c313a));border-radius:8px;padding:7px 9px}
+.team b{font-size:11.5px;font-weight:600;display:block}
+.team small{font-size:10px;opacity:.55;display:block;line-height:1.4;margin-top:1px}
+.team .tally{margin-top:5px;font-size:10.5px;display:flex;gap:7px}
+.team.idle{opacity:.45}
+.tag{font-size:10px;padding:1px 6px;border-radius:5px;border:1px solid var(--color-border-primary,light-dark(#e3e0da,#2c313a))}
+.side{display:flex;align-items:center;gap:6px;margin:0 0 6px}
+.side b{font-size:12px}
 button{font:inherit;font-weight:600;font-size:12px;padding:6px 13px;border-radius:7px;cursor:pointer;
 border:1px solid var(--color-border-primary,light-dark(#c9c4bb,#3a4048));
 background:var(--color-background-primary,light-dark(#fff,#232830));color:inherit}
@@ -112,43 +138,118 @@ function render(){
   var gates='<div><h2>در انتظار تصمیم شما</h2>'+(s.decisions.items.length?
     s.decisions.items.map(gate).join(""):'<div class="card empty">هیچ دروازه‌ای منتظر شما نیست.</div>')+'</div>';
   var risks=s.risks&&s.risks.length?'<div><h2>ریسک‌های باز</h2><div class="card"><ul class="risks">'
-    +s.risks.map(function(r){return '<li dir="auto">'+plain(r.detail)+' <span class="muted">('+esc(r.ownerRole)+")</span></li>";}).join("")
+    +s.risks.map(function(r){return '<li dir="auto">'+plain(r.detail)+' <span class="muted">('+esc(teamOf(r.ownerRole))+")</span></li>";}).join("")
     +'</ul></div></div>':"";
   var foot='<div class="row between"><span class="note">'+esc(s.project.name)+' · '+esc((s.generatedAt||"").slice(11,16))+'</span>'
     +'<button id="refresh">تازه‌سازی</button></div>';
   root.className="wrap";
-  root.innerHTML=head+counts+gates+risks+foot;
+  root.innerHTML=head+counts+gates+flowSection(s)+teamsSection(s)+risks+foot;
   document.getElementById("refresh").onclick=refresh;
   s.decisions.items.forEach(function(item){
-    var b=document.getElementById("d-"+item.requestId);
-    if(b)b.onclick=function(){decide(item);};
+    var yes=document.getElementById("y-"+item.requestId);
+    var no=document.getElementById("n-"+item.requestId);
+    if(yes)yes.onclick=function(){submit(item,"approved");};
+    if(no)no.onclick=function(){submit(item,"rejected");};
   });
+}
+
+// ── who holds what ───────────────────────────────────────────────────────────
+function teamOf(roleId){
+  if(roleId==="human")return "مالک محصول";
+  var s=state&&state.teams;
+  if(s){var all=(s.product||[]).concat(s.engineering||[]);
+    for(var i=0;i<all.length;i++) if(all[i].id===roleId) return all[i].name;}
+  return roleId||"—";
+}
+function flowSection(s){
+  var f=s.flow;if(!f||!f.steps||!f.steps.length)return "";
+  var nodes=f.steps.map(function(step,i){
+    var cls=step.status==="done"?"done":(step.status==="in_progress"?"now":
+      (step.status==="blocked"?"stuck":(step.humanGate?"gate-node":"")));
+    var mark=step.status==="done"?"✓":(step.status==="in_progress"?"●":
+      (step.status==="blocked"?"!":(step.humanGate?"⌾":"○")));
+    return '<div class="step">'+(i?'<div class="arrow">◀</div>':"")
+      +'<div class="node '+cls+'" title="'+esc(step.taskId)+'"><b>'+esc(step.team)+"</b>"
+      +"<span>"+mark+" "+esc(taskStatusLabel(step.status,step.humanGate))+"</span></div></div>";
+  }).join("");
+  return '<div><h2>مسیر کار و پاس‌کاری تیم‌ها</h2><div class="card"><div class="flow">'+nodes+"</div>"
+    +'<div class="note" style="margin-top:7px">● در حال انجام · ⌾ منتظر تصمیم شما · ! متوقف · ✓ انجام‌شده</div></div></div>';
+}
+function teamsSection(s){
+  var t=s.teams;if(!t)return "";
+  return '<div><h2>تیم‌ها</h2>'+sideBlock("محصول",t.product,"مسئول معنا، اولویت و پذیرش")
+    +(t.engineering&&t.engineering.length?sideBlock("مهندسی",t.engineering,"مسئول پیاده‌سازی و شواهد فنی")
+      :'<div class="note" style="margin-top:6px">تیم مهندسی هنوز به این فضای کاری متصل نشده است.</div>')+"</div>";
+}
+function sideBlock(title,teams,subtitle){
+  var busy=teams.filter(function(x){return x.total>0;}).length;
+  return '<div class="side"><b>'+esc(title)+'</b><span class="tag">'+busy+" از "+teams.length+" درگیر</span>"
+    +'<span class="note">'+esc(subtitle)+"</span></div>"
+    +'<div class="teams" style="margin-bottom:10px">'+teams.map(function(x){
+      return '<div class="team'+(x.total?"":" idle")+'"><b>'+esc(x.name)+"</b><small>"+esc(x.focus)+"</small>"
+        +'<div class="tally">'+(x.active?"<span>"+x.active+" فعال</span>":"")
+        +(x.blocked?"<span>"+x.blocked+" متوقف</span>":"")
+        +(x.done?"<span>"+x.done+" انجام‌شده</span>":"")
+        +(x.total?"":"<span>بدون کار</span>")+"</div></div>";
+    }).join("")+"</div>";
 }
 function cell(n,label){return '<div class="count"><b>'+n+"</b><span>"+label+"</span></div>";}
 function gate(item){
   // dir="auto" per record string: a question or a risk may be written in any language, and letting
   // each pick its own direction keeps punctuation where its author put it.
+  var id=esc(item.requestId);
   return '<div class="gate"><div class="gate-q" dir="auto">'+plain(item.question)+'</div>'
-    +'<div class="muted"><code>'+esc(item.gate)+"</code> · "+esc(item.taskId)+"</div>"
+    +'<div class="muted">'+esc(teamOf(ownerOf(item.taskId)))+' · <code>'+esc(item.gate)+"</code> · "+esc(item.taskId)+"</div>"
+    +(item.context?'<div class="note" dir="auto">'+plain(item.context)+"</div>":"")
     +(item.risks&&item.risks.length?'<ul class="risks">'+item.risks.map(function(r){return '<li dir="auto">'+plain(r)+"</li>";}).join("")+"</ul>":"")
-    +'<div class="row"><button class="primary" id="d-'+esc(item.requestId)+'">ثبت تصمیم…</button>'
-    +'<span class="note">پاسخ را خودتان در پنجرهٔ بعدی وارد می‌کنید.</span></div></div>';
+    +'<textarea id="t-'+id+'" dir="auto" placeholder="دلیل تصمیم‌تان را بنویسید — همین متن در پروندهٔ محصول ثبت و به شما نسبت داده می‌شود."></textarea>'
+    +'<div class="row"><button class="yes" id="y-'+id+'">تأیید</button>'
+    +'<button class="no" id="n-'+id+'">رد</button>'
+    +'<span class="note" id="m-'+id+'">بدون دلیل، تصمیم ثبت نمی‌شود.</span></div></div>';
+}
+function ownerOf(taskId){
+  var f=state&&state.flow;if(!f||!f.steps)return null;
+  for(var i=0;i<f.steps.length;i++) if(f.steps[i].taskId===taskId) return f.steps[i].roleId;
+  return null;
 }
 function phaseLabel(p){return {idle:"بی‌کار",product_analysis:"تحلیل محصول",human_gate:"در انتظار انسان",
   development_handoff:"تحویل به توسعه",engineering:"مهندسی",product_validation:"اعتبارسنجی محصول",
   reporting:"گزارش",complete:"کامل"}[p]||p;}
 function statusLabel(s){return {idle:"بی‌کار",running:"در حال اجرا",paused:"متوقف",waiting_for_human:"منتظر انسان",
   completed:"کامل",blocked:"مسدود",failed:"ناموفق"}[s]||s;}
+// Task statuses are a different vocabulary from coordinator statuses; the flow reads task ones.
+function taskStatusLabel(s,gate){
+  if(s==="ready"&&gate)return "منتظر تصمیم شما";
+  return {backlog:"در نوبت",ready:"آماده",in_progress:"در حال انجام",blocked:"متوقف",
+    in_review:"در بازبینی",done:"انجام‌شده",cancelled:"لغوشده"}[s]||s;
+}
 
 function call(name,args){return send("tools/call",{name:name,arguments:args||{}});}
 function refresh(){
   if(busy)return;busy=true;var b=document.getElementById("refresh");if(b){b.disabled=true;b.textContent="…";}
   call("product_ops_panel").then(function(r){adopt(r&&r.structuredContent);}).catch(fail).then(function(){busy=false;});
 }
-function decide(item){
-  if(busy)return;busy=true;
-  var b=document.getElementById("d-"+item.requestId);if(b){b.disabled=true;b.textContent="در انتظار پاسخ شما…";}
-  call("product_ops_decide",{requestId:item.requestId,decisionToken:item.decisionToken,apply:true})
+/**
+ * The product owner writes their own reasoning here and chooses. The source flag tells the server a
+ * person composed this rather than a model summarising them; the record keeps that attribution.
+ */
+function submit(item,decision){
+  if(busy)return;
+  var box=document.getElementById("t-"+item.requestId);
+  var note=document.getElementById("m-"+item.requestId);
+  var rationale=box&&box.value?box.value.trim():"";
+  if(!rationale){
+    if(note)note.textContent="برای ثبت تصمیم، دلیلش را بنویسید.";
+    if(box)box.focus();
+    return;
+  }
+  busy=true;
+  var yes=document.getElementById("y-"+item.requestId),no=document.getElementById("n-"+item.requestId);
+  if(yes)yes.disabled=true;if(no)no.disabled=true;
+  if(note)note.textContent="در حال ثبت…";
+  call("product_ops_decide",{requestId:item.requestId,decisionToken:item.decisionToken,apply:true,
+    source:"panel",decision:decision,rationale:rationale,
+    actorId:state&&state.humanAuthorityActorId?state.humanAuthorityActorId:undefined})
     .then(function(){busy=false;refresh();})
     .catch(function(e){busy=false;fail(e);});
 }

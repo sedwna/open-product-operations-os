@@ -8,6 +8,7 @@ import { validateProject } from "../../validation.js";
 import { projectStatus, renderStatusText } from "../projection.js";
 import { untrusted, untrustedList } from "../untrusted.js";
 import { ToolFailure } from "../authority.js";
+import { ENGINEERING_ROLE_IDS, PRODUCT_ROLE_IDS, describeTeam, teamName } from "../app/teams.js";
 
 const MAX_FINDINGS = 50;
 
@@ -23,19 +24,86 @@ export async function status(context, { verbosity = "brief" } = {}) {
  * every other surface reads; it is not a second source of truth.
  */
 export async function panel(context, args = {}) {
-  const [state, gates] = await Promise.all([
+  const [state, gates, snapshot, board] = await Promise.all([
     status(context, { verbosity: "full" }),
-    pendingDecisions(context, { limit: 10 })
+    pendingDecisions(context, { limit: 10 }),
+    loadDashboardSnapshot(context.root),
+    loadTaskboard(context.root)
   ]);
   const structuredContent = {
     ...state.structuredContent,
     decisions: { pending: gates.structuredContent.pending, items: gates.structuredContent.items },
-    humanAuthorityActorId: gates.structuredContent.humanAuthorityActorId
+    humanAuthorityActorId: gates.structuredContent.humanAuthorityActorId,
+    teams: buildTeams(snapshot),
+    flow: buildFlow(snapshot, board)
   };
   return {
     structuredContent,
-    text: `${state.text}\n\nThe control tower panel is open. Decisions taken there still go through the product owner's own dialog.`
+    text: `${state.text}\n\nThe control tower panel is open, showing both teams and where the work currently sits.`
   };
+}
+
+/**
+ * Both sides of the operating model as named teams rather than role codes, each with what it is
+ * carrying right now. The product side always exists; the engineering side appears only once an
+ * application repository is linked and has reported workstreams.
+ */
+function buildTeams(snapshot) {
+  const tasks = snapshot.tasks ?? [];
+  const product = PRODUCT_ROLE_IDS.map((roleId) => {
+    const owned = tasks.filter((task) => task.owner_role === roleId);
+    return {
+      ...describeTeam(roleId, "product"),
+      total: owned.length,
+      active: owned.filter((task) => ["ready", "in_progress", "in_review"].includes(task.status)).length,
+      blocked: owned.filter((task) => task.status === "blocked").length,
+      done: owned.filter((task) => task.status === "done").length,
+      current: owned.find((task) => task.status === "in_progress")?.task_id ?? null
+    };
+  });
+
+  const workstreams = snapshot.autopilot?.engineering?.workstreams ?? [];
+  const engineering = workstreams.length === 0 ? [] : ENGINEERING_ROLE_IDS.map((roleId) => {
+    const owned = workstreams.filter((item) => item.ownerRole === roleId);
+    return {
+      ...describeTeam(roleId, "engineering"),
+      total: owned.length,
+      active: owned.filter((item) => ["claimed", "in_progress", "in_review"].includes(item.status)).length,
+      blocked: owned.filter((item) => ["blocked", "failed"].includes(item.status)).length,
+      done: owned.filter((item) => item.status === "completed").length,
+      current: owned.find((item) => ["claimed", "in_progress"].includes(item.status))?.id ?? null
+    };
+  }).filter((team) => team.total > 0);
+
+  return { product, engineering };
+}
+
+/**
+ * The hand-off chain for the cycle in flight: which team holds each step, in routing order, so the
+ * panel can show where the work actually is instead of only how much of it there is.
+ */
+function buildFlow(snapshot, board) {
+  const eventId = snapshot.autopilot?.state?.activeEventId
+    ?? [...(snapshot.tasks ?? [])].reverse().find((task) => task.status !== "done")?.event_id
+    ?? snapshot.tasks?.[0]?.event_id
+    ?? null;
+  if (!eventId) return { eventId: null, steps: [] };
+
+  const byId = new Map(board.records.map((task) => [task.task_id, task]));
+  const steps = (snapshot.tasks ?? [])
+    .filter((task) => task.event_id === eventId)
+    .slice(0, 30)
+    .map((task) => ({
+      taskId: task.task_id,
+      roleId: task.owner_role,
+      team: teamName(task.owner_role),
+      side: task.owner_role === "RB-13" ? "bridge" : "product",
+      status: task.status,
+      humanGate: task.human_gate || null,
+      waitingOn: dependencyState(task, byId).incomplete.slice(0, 3),
+      title: untrusted(task.title, { source: "taskboard", id: task.task_id, limit: 120 })
+    }));
+  return { eventId, steps };
 }
 
 export async function pendingDecisions(context, { limit = 10 } = {}) {

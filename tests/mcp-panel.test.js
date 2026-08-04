@@ -43,8 +43,9 @@ async function mountPanel(t) {
 
   const elements = new Map();
   const element = (id) => ({
-    id, className: "", innerHTML: "", textContent: "", disabled: false, onclick: null,
-    parentNode: null, firstElementChild: null, insertBefore() {}, removeChild() {}
+    id, className: "", innerHTML: "", textContent: "", value: "", disabled: false, onclick: null,
+    parentNode: null, firstElementChild: null,
+    focus() {}, insertBefore() {}, removeChild() {}
   });
   const document = {
     getElementById(id) { if (!elements.has(id)) elements.set(id, element(id)); return elements.get(id); },
@@ -139,7 +140,44 @@ test("record text is escaped, so a hostile record cannot inject markup into the 
   assert.match(rendered, /&lt;img/, "the hostile markup should appear as visible text");
 });
 
-test("the decision button hands the gate to the owner without deciding it", async (t) => {
+test("both sides appear as named teams, never as role codes", async (t) => {
+  const { posted, deliver, settle, payload, document } = await mountPanel(t);
+  const handshake = posted.shift();
+  deliver({ jsonrpc: "2.0", id: handshake.id, result: { protocolVersion: "2026-01-26" } });
+  deliver({ jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { structuredContent: payload } });
+  await settle();
+
+  assert.equal(payload.teams.product.length, 13, "every product boundary is a team");
+  for (const team of payload.teams.product) {
+    assert.notEqual(team.name, team.id, `${team.id} still shows as a code`);
+    assert.ok(team.focus.length > 0, `${team.id} needs a line explaining what it does`);
+  }
+
+  const rendered = document.getElementById("root").innerHTML;
+  assert.match(rendered, /کشف و تحقیق/, "product teams render by name");
+  assert.match(rendered, /تیم مهندسی هنوز/, "an unlinked engineering side says so rather than showing nothing");
+  assert.equal(/>RB-\d\d</.test(rendered), false, "a role code must never be the visible label");
+});
+
+test("the hand-off chain shows where the work actually sits", async (t) => {
+  const { posted, deliver, settle, payload, document } = await mountPanel(t);
+  const handshake = posted.shift();
+  deliver({ jsonrpc: "2.0", id: handshake.id, result: { protocolVersion: "2026-01-26" } });
+  deliver({ jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { structuredContent: payload } });
+  await settle();
+
+  assert.ok(payload.flow.steps.length > 0, "an active event must produce a chain");
+  for (const step of payload.flow.steps) {
+    assert.notEqual(step.team, step.roleId, "each step is labelled by team");
+  }
+  const rendered = document.getElementById("root").innerHTML;
+  assert.match(rendered, /class="flow"/);
+  assert.match(rendered, /class="node stuck"/, "a blocked step must be visually distinct");
+  assert.equal(/>(ready|backlog|in_progress|blocked)</.test(rendered), false,
+    "raw status vocabulary must not reach the reader");
+});
+
+test("the composer records the owner's own words and refuses an empty rationale", async (t) => {
   const { posted, deliver, settle, payload, document } = await mountPanel(t);
   const handshake = posted.shift();
   deliver({ jsonrpc: "2.0", id: handshake.id, result: { protocolVersion: "2026-01-26" } });
@@ -147,20 +185,30 @@ test("the decision button hands the gate to the owner without deciding it", asyn
   await settle();
 
   const gate = payload.decisions.items[0];
-  const button = document.getElementById(`d-${gate.requestId}`);
-  assert.equal(typeof button.onclick, "function", "each pending gate needs a control");
-  posted.length = 0;
-  button.onclick();
+  const approve = document.getElementById(`y-${gate.requestId}`);
+  const reject = document.getElementById(`n-${gate.requestId}`);
+  const box = document.getElementById(`t-${gate.requestId}`);
+  assert.equal(typeof approve.onclick, "function", "each gate needs an approve control");
+  assert.equal(typeof reject.onclick, "function", "and a reject control");
 
+  // A disposition without reasoning is not a durable decision.
+  posted.length = 0;
+  box.value = "   ";
+  approve.onclick();
+  assert.equal(posted.length, 0, "an empty rationale must not reach the server");
+  assert.match(document.getElementById(`m-${gate.requestId}`).textContent, /دلیلش را بنویسید/);
+
+  box.value = "پیش از نوشتن داستان مهاجرت، نه.";
+  reject.onclick();
   const call = posted.shift();
   assert.equal(call.params.name, "product_ops_decide");
-  assert.deepEqual(Object.keys(call.params.arguments).sort(), ["apply", "decisionToken", "requestId"]);
-  assert.equal(call.params.arguments.requestId, gate.requestId);
-  assert.equal(call.params.arguments.apply, true);
-  for (const forbidden of ["decision", "actorId", "rationale"]) {
-    assert.equal(forbidden in call.params.arguments, false,
-      `the panel must not supply ${forbidden}; the host dialog collects it from the product owner`);
-  }
+  const args = call.params.arguments;
+  assert.equal(args.requestId, gate.requestId);
+  assert.equal(args.decisionToken, gate.decisionToken);
+  assert.equal(args.apply, true);
+  assert.equal(args.source, "panel", "the server must know a person composed this");
+  assert.equal(args.decision, "rejected");
+  assert.equal(args.rationale, "پیش از نوشتن داستان مهاجرت، نه.", "the owner's text is sent verbatim");
 });
 
 test("a failing host request is reported rather than swallowed", async (t) => {
@@ -172,12 +220,13 @@ test("a failing host request is reported rather than swallowed", async (t) => {
 
   const gate = payload.decisions.items[0];
   posted.length = 0;
-  document.getElementById(`d-${gate.requestId}`).onclick();
+  document.getElementById(`t-${gate.requestId}`).value = "دلیل کافی.";
+  document.getElementById(`y-${gate.requestId}`).onclick();
   const call = posted.shift();
   deliver({ jsonrpc: "2.0", id: call.id, error: { code: -32602, message: "WRITE_LEASE_HELD: another surface is writing." } });
   await settle();
 
   // The panel re-renders after a failure, so the gate stays actionable rather than stuck disabled.
   assert.match(document.getElementById("root").innerHTML, /class="gate"/);
-  assert.equal(typeof document.getElementById(`d-${gate.requestId}`).onclick, "function");
+  assert.equal(typeof document.getElementById(`y-${gate.requestId}`).onclick, "function");
 });

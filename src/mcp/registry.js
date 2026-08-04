@@ -193,9 +193,10 @@ export const TOOL_DEFINITIONS = Object.freeze([
         requestId: { type: "string", pattern: "^APR-[0-9A-F]{12}$" },
         decisionToken: { type: "string", minLength: 32, maxLength: 32, description: "Issued by product_ops_pending_decisions. Read that first; it cannot be constructed." },
         apply: { type: "boolean", default: false, description: "Open the dialog and record the answer. Omitted or false describes what would be asked." },
-        decision: { type: "string", enum: ["approved", "rejected"], description: "Compatibility only, for hosts that cannot open a dialog. Supply only what the product owner actually said." },
-        actorId: { type: "string", maxLength: 80, description: "Compatibility only. Must be the configured human authority actor." },
-        rationale: { type: "string", maxLength: 2000, description: "Compatibility only. The owner's own reasoning, not your summary of it." }
+        source: { type: "string", enum: ["panel"], description: "Set only by the control tower panel, where the product owner composed the disposition themselves. Never set this yourself." },
+        decision: { type: "string", enum: ["approved", "rejected"], description: "Only from the panel, or from a host that cannot open a dialog. Supply only what the product owner actually said." },
+        actorId: { type: "string", maxLength: 80, description: "Must be the configured human authority actor." },
+        rationale: { type: "string", maxLength: 2000, description: "The owner's own reasoning, not your summary of it." }
       },
       required: ["requestId", "decisionToken"],
       additionalProperties: false

@@ -702,15 +702,20 @@ test("the panel payload carries everything the interface needs in one call", asy
   assert.match(item.question, /^<untrusted-record/, "record text stays enveloped in the payload");
 });
 
-test("the panel asks the owner to decide rather than deciding for them", async (t) => {
+test("the panel carries the owner's decision but never authors one", async (t) => {
   const { handlers } = await handlersFor(t);
   const [content] = (await handlers["resources/read"]({ uri: PANEL_URI })).contents;
-  // The button opens product_ops_decide, which opens the host's dialog. A panel that posted a
-  // disposition straight to the store would be the model deciding through a nicer surface.
   assert.match(content.text, /product_ops_decide/);
+  assert.match(content.text, /<textarea/, "the owner composes the reasoning in the panel itself");
+  assert.match(content.text, /source:"panel"/, "so the server records who composed it");
+
+  // The disposition comes from which button a person pressed and the reasoning from what they
+  // typed. Neither may be baked into the panel, or it would be deciding on their behalf.
   assert.equal(/decision:\s*["'](approved|rejected)["']/.test(content.text), false,
-    "the panel must never choose a disposition itself");
-  assert.equal(/rationale\s*:/.test(content.text), false, "the panel must never author a rationale");
+    "no disposition may be hardcoded into a request");
+  assert.equal(/rationale:\s*["'][^"']/.test(content.text), false,
+    "no rationale text may be hardcoded");
+  assert.match(content.text, /rationale:rationale/, "the rationale sent is the one that was typed");
 });
 
 test("prompts present human gates without resolving them", async (t) => {
