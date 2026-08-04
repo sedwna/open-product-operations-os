@@ -2,6 +2,7 @@ import { TIERS } from "./authority.js";
 import * as read from "./tools/read.js";
 import * as write from "./tools/write.js";
 import { decide } from "./tools/decide.js";
+import { PANEL_URI } from "./app/panel.js";
 
 const READ_ONLY_ANNOTATIONS = Object.freeze({
   readOnlyHint: true,
@@ -24,6 +25,18 @@ const PLAN_ANNOTATIONS = Object.freeze({
  * elicitation.
  */
 export const TOOL_DEFINITIONS = Object.freeze([
+  {
+    name: "product_ops_panel",
+    title: "Open the control tower",
+    description: "Open the interactive control-tower panel: current phase, task counts, open risks, and the gates waiting on the product owner.",
+    tier: TIERS.READ,
+    annotations: READ_ONLY_ANNOTATIONS,
+    // Binds this tool to its MCP App. The host preloads the resource and renders it in place of a
+    // text result; `visibility` keeps the summary available to the model if it cannot.
+    meta: { ui: { resourceUri: PANEL_URI, visibility: ["app", "model"] } },
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    handler: read.panel
+  },
   {
     name: "product_ops_status",
     title: "Product cycle status",

@@ -14,6 +14,7 @@ import { createDecisionTokenIssuer } from "./tools/read.js";
 import { RESOURCES, RESOURCE_TEMPLATES, readResource } from "./resources.js";
 import { PROMPTS, getPrompt, toListEntry as toPromptEntry } from "./prompts.js";
 import { DEFAULT_BRIEF_CEILING } from "./projection.js";
+import { PANEL_MIME_TYPE } from "./app/panel.js";
 
 const SUPPORTED_PROTOCOL_VERSIONS = ["2026-07-28", "2025-06-18"];
 
@@ -91,7 +92,10 @@ export function createHandlers(context, { version = packageVersion() } = {}) {
         capabilities: {
           tools: { listChanged: false },
           resources: { subscribe: false, listChanged: true },
-          prompts: { listChanged: false }
+          prompts: { listChanged: false },
+          // MCP Apps, so a host that can render declares itself and receives the control tower in
+          // place of a text result. Hosts that cannot simply ignore the extension.
+          extensions: { "io.modelcontextprotocol/ui": { mimeTypes: [PANEL_MIME_TYPE] } }
         },
         serverInfo: { name: "product-ops", title: "Product Operations", version },
         instructions: INSTRUCTIONS

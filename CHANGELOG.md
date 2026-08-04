@@ -4,6 +4,16 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+- Added the control tower as an MCP App: a self-contained interactive panel the host renders inside
+  the conversation, showing the current phase, task counts, open risks, and the gates waiting on the
+  product owner, with a control that puts a gate to them.
+- Kept the panel a view rather than an authority. Its button opens the same human dialog the decide
+  tool uses and supplies no disposition, actor, or rationale of its own, so a nicer surface cannot
+  become a way for a model to decide.
+- Made the panel self-contained with no external origin, script, or stylesheet, so a strict host
+  sandbox can render it, and unwrapped the untrusted-record envelope for the reader while still
+  escaping the record text underneath it.
+
 - Added the human-authority tier to the MCP control surface. A pending gate is put to the product
   owner through the host's own dialog, and the disposition, deciding actor, and rationale are
   collected from the person rather than supplied by the model. Where a dialog is available, a model

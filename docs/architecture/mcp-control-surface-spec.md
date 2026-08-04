@@ -477,6 +477,41 @@ that notification without a reconnect, which gives near-live state in an open se
 polling. Verify the notification path against the `2026-07-28` stateless core before relying on it;
 stdio holds a connection, so it is expected to apply, but the revision changed the transport model.
 
+## 7.2 The panel — implemented
+
+Status: implemented in [`src/mcp/app/panel.js`](../../src/mcp/app/panel.js).
+
+The control tower ships as an [MCP App](https://modelcontextprotocol.io/extensions/apps/overview),
+the extension Anthropic and OpenAI standardised in January 2026, so a capable host renders it inline
+instead of returning text.
+
+| Element | Value |
+| --- | --- |
+| Extension capability | `io.modelcontextprotocol/ui` with `mimeTypes: ["text/html;profile=mcp-app"]` |
+| Resource | `ui://product-ops/control-tower` |
+| Tool binding | `product_ops_panel` carries `_meta.ui.resourceUri` and `visibility: ["app", "model"]` |
+| Bridge | JSON-RPC over `postMessage` to `window.parent`; `ui/initialize`, `tools/call`, and `ui/notifications/tool-result` |
+| Size | under 16 KB, no external origin, script, or stylesheet |
+
+`visibility` includes `model` so the text summary still reaches the conversation on a host that
+cannot render, rather than the tool appearing to return nothing.
+
+### The panel is a view, not an authority
+
+Its decision control calls `product_ops_decide` with only `requestId`, `decisionToken`, and
+`apply` — never a disposition, an actor, or a rationale. Those still come from the host dialog
+described in §5.4. A panel that wrote a disposition directly would be the same model decision
+wearing a better interface, and the button is labelled to say so: it puts the gate to the owner
+rather than resolving it.
+
+### Rendering untrusted records
+
+Tool payloads arrive with record text wrapped in `<untrusted-record>`. That envelope exists for a
+model; a person reading the panel does not need it. The panel unwraps it on the raw string and then
+escapes the result. Doing it the other way round means matching entity-encoded attributes, which is
+where the first implementation failed silently — the markers rendered to the reader while every
+source-level assertion still passed.
+
 ## 8. Prompts
 
 | Name | Arguments | Produces |

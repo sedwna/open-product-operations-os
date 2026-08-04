@@ -18,6 +18,7 @@ import {
 import { TOOL_DEFINITIONS } from "../src/mcp/registry.js";
 import { DEFAULT_BRIEF_CEILING, byteLength, projectStatus } from "../src/mcp/projection.js";
 import { untrusted } from "../src/mcp/untrusted.js";
+import { PANEL_MIME_TYPE, PANEL_URI } from "../src/mcp/app/panel.js";
 import { makeTempDirectory } from "./helpers.js";
 
 async function makeProject(t) {
@@ -83,6 +84,7 @@ test("a read-only server registers exactly the read tier and no mutation path", 
   assert.deepEqual(tools.map((tool) => tool.name).sort(), [
     "product_ops_cycle_report",
     "product_ops_evidence",
+    "product_ops_panel",
     "product_ops_pending_decisions",
     "product_ops_readiness",
     "product_ops_status",
@@ -139,13 +141,13 @@ test("exercising every read path leaves the project byte-identical", async (t) =
 test("write authorisation registers the plan and human-authority tiers, and nothing beyond them", async (t) => {
   const { handlers } = await handlersFor(t, { allowWrites: true });
   const { tools } = handlers["tools/list"]();
-  assert.equal(tools.length, 11);
+  assert.equal(tools.length, 12);
 
   const byTier = (tier) => TOOL_DEFINITIONS.filter((definition) => definition.tier === tier).map((definition) => definition.name).sort();
   assert.deepEqual(byTier("plan"), ["product_ops_autopilot", "product_ops_intake", "product_ops_operate"]);
   assert.deepEqual(byTier("human_authority"), ["product_ops_decide"]);
-  assert.equal(byTier("read").length, 7);
-  assert.equal(TOOL_DEFINITIONS.length, 11, "every definition belongs to a known tier");
+  assert.equal(byTier("read").length, 8);
+  assert.equal(TOOL_DEFINITIONS.length, 12, "every definition belongs to a known tier");
 
   for (const tool of tools.filter((entry) => entry.annotations.readOnlyHint === false)) {
     assert.equal(tool.annotations.destructiveHint, false, `${tool.name} must not be marked destructive`);
@@ -494,7 +496,8 @@ test("readiness names its blockers instead of reporting a bare status", async (t
 test("resources list, read, and reject anything outside the canonical catalog", async (t) => {
   const { handlers } = await handlersFor(t);
   const { resources } = handlers["resources/list"]();
-  assert.equal(resources.length, 6);
+  assert.equal(resources.length, 7, "six record resources plus the panel");
+  assert.equal(resources.filter((item) => item.uri.startsWith("productops://")).length, 6);
   const { resourceTemplates } = handlers["resources/templates/list"]();
   assert.equal(resourceTemplates[0].uriTemplate, "productops://workbook/{tab}");
 
@@ -652,6 +655,62 @@ test("a decision needs the issued token and an open gate", async (t) => {
   assert.equal(first.isError, false, first.content[0].text);
   const second = await call({ requestId: gate.requestId, decisionToken: gate.decisionToken, apply: true });
   assert.equal(second.structuredContent.code, "APPROVAL_NOT_PENDING");
+});
+
+test("the panel is declared as an MCP App and bound to its tool", async (t) => {
+  const { handlers } = await handlersFor(t);
+  const capabilities = handlers.initialize({ protocolVersion: "2026-07-28", capabilities: {} }).capabilities;
+  assert.deepEqual(capabilities.extensions["io.modelcontextprotocol/ui"], { mimeTypes: [PANEL_MIME_TYPE] });
+  assert.equal(PANEL_MIME_TYPE, "text/html;profile=mcp-app");
+  assert.match(PANEL_URI, /^ui:\/\//, "a UI resource must use the ui:// scheme");
+
+  const entry = handlers["tools/list"]().tools.find((tool) => tool.name === "product_ops_panel");
+  assert.deepEqual(entry._meta.ui, { resourceUri: PANEL_URI, visibility: ["app", "model"] });
+  assert.equal(entry.annotations.readOnlyHint, true, "opening the panel must not be a write");
+
+  const resource = handlers["resources/list"]().resources.find((item) => item.uri === PANEL_URI);
+  assert.equal(resource.mimeType, PANEL_MIME_TYPE, "the panel must be discoverable for preloading");
+});
+
+test("the panel resource is self-contained, so a strict sandbox can render it", async (t) => {
+  const { handlers } = await handlersFor(t);
+  const [content] = (await handlers["resources/read"]({ uri: PANEL_URI })).contents;
+  assert.equal(content.mimeType, PANEL_MIME_TYPE);
+  assert.match(content.text, /^<!doctype html>/);
+  assert.match(content.text, /dir="rtl"/);
+  assert.equal(/https?:\/\//.test(content.text), false, "the panel must not reference an external origin");
+  assert.equal(/<script[^>]+src=/.test(content.text), false, "no external script may be loaded");
+  assert.equal(/<link[^>]+href=/.test(content.text), false, "no external stylesheet may be loaded");
+  assert.match(content.text, /ui\/initialize/, "the panel must perform the app handshake");
+  assert.ok(Buffer.byteLength(content.text) < 16384, "the panel should stay small enough to preload cheaply");
+});
+
+test("the panel payload carries everything the interface needs in one call", async (t) => {
+  const { root, handlers } = await handlersFor(t, { allowWrites: true });
+  const gate = await openGate(root, handlers);
+
+  const result = await handlers["tools/call"]({ name: "product_ops_panel", arguments: {} });
+  assert.equal(result.isError, false);
+  const payload = result.structuredContent;
+  for (const key of ["project", "cycle", "counts", "risks", "decisions", "roleActivity", "readiness"]) {
+    assert.ok(key in payload, `the panel payload must include ${key}`);
+  }
+  assert.equal(payload.decisions.pending, 1);
+  const [item] = payload.decisions.items;
+  assert.equal(item.requestId, gate.requestId);
+  assert.equal(item.decisionToken.length, 32, "the panel needs a usable token to put the gate to the owner");
+  assert.match(item.question, /^<untrusted-record/, "record text stays enveloped in the payload");
+});
+
+test("the panel asks the owner to decide rather than deciding for them", async (t) => {
+  const { handlers } = await handlersFor(t);
+  const [content] = (await handlers["resources/read"]({ uri: PANEL_URI })).contents;
+  // The button opens product_ops_decide, which opens the host's dialog. A panel that posted a
+  // disposition straight to the store would be the model deciding through a nicer surface.
+  assert.match(content.text, /product_ops_decide/);
+  assert.equal(/decision:\s*["'](approved|rejected)["']/.test(content.text), false,
+    "the panel must never choose a disposition itself");
+  assert.equal(/rationale\s*:/.test(content.text), false, "the panel must never author a rationale");
 });
 
 test("prompts present human gates without resolving them", async (t) => {

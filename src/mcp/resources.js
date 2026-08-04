@@ -6,6 +6,7 @@ import { loadTaskboard, visibleTaskboardRecords } from "../runtime/taskboard.js"
 import { readAutopilotEvents, readAutopilotState } from "../autopilot/state.js";
 import { ToolFailure } from "./authority.js";
 import { untrusted } from "./untrusted.js";
+import { PANEL_MIME_TYPE, PANEL_URI, renderPanel } from "./app/panel.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 
@@ -13,6 +14,7 @@ const MAX_EVENTS = 100;
 const MAX_TASK_ROWS = 200;
 
 export const RESOURCES = Object.freeze([
+  { uri: PANEL_URI, name: "Control tower panel", description: "Interactive control-tower interface rendered by the host.", mimeType: PANEL_MIME_TYPE },
   { uri: "productops://project/config", name: "Project configuration", description: "Project identity, roles, environments, and separation rules.", mimeType: "application/json" },
   { uri: "productops://taskboard", name: "Canonical task board", description: "The canonical task board projected to a readable table.", mimeType: "text/markdown" },
   { uri: "productops://approvals/pending", name: "Pending human gates", description: "Full pending approval records with context and risks.", mimeType: "application/json" },
@@ -31,6 +33,9 @@ export const RESOURCE_TEMPLATES = Object.freeze([
 ]);
 
 export async function readResource(root, uri) {
+  if (uri === PANEL_URI) {
+    return { contents: [{ uri, mimeType: PANEL_MIME_TYPE, text: renderPanel() }] };
+  }
   if (uri === "productops://project/config") return json(uri, await projectConfig(root));
   if (uri === "productops://taskboard") return markdown(uri, await taskboardTable(root));
   if (uri === "productops://approvals/pending") return json(uri, await pendingApprovals(root));

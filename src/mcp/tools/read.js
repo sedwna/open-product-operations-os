@@ -17,6 +17,27 @@ export async function status(context, { verbosity = "brief" } = {}) {
   return { structuredContent: projection, text: renderStatusText(projection) };
 }
 
+/**
+ * One payload for the interactive panel: cycle state, counts, risks, and the pending gates with
+ * the tokens needed to put them to the product owner. The panel is a view over the same records
+ * every other surface reads; it is not a second source of truth.
+ */
+export async function panel(context, args = {}) {
+  const [state, gates] = await Promise.all([
+    status(context, { verbosity: "full" }),
+    pendingDecisions(context, { limit: 10 })
+  ]);
+  const structuredContent = {
+    ...state.structuredContent,
+    decisions: { pending: gates.structuredContent.pending, items: gates.structuredContent.items },
+    humanAuthorityActorId: gates.structuredContent.humanAuthorityActorId
+  };
+  return {
+    structuredContent,
+    text: `${state.text}\n\nThe control tower panel is open. Decisions taken there still go through the product owner's own dialog.`
+  };
+}
+
 export async function pendingDecisions(context, { limit = 10 } = {}) {
   const [config, approvals] = await Promise.all([loadConfig(context.root), loadApprovals(context.root)]);
   const pending = approvals.requests.filter((request) => request.status === "pending");
