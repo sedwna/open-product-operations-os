@@ -4,6 +4,18 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+- Gave every product boundary a team name and a line describing what it does, so the panel shows an
+  organisation a product owner can supervise rather than the role codes that identify contracts.
+- Added the hand-off chain for the cycle in flight, both teams with what each is carrying, and task
+  status in the reader's vocabulary rather than the storage vocabulary.
+- Turned each gate card into a composer: the owner writes their reasoning and chooses, and a
+  disposition without reasoning is refused. Decisions carry one of three distinct attributions —
+  entered in the host dialog, composed in the panel, or relayed by a model — so provenance stays
+  legible instead of being flattened into one claim.
+- Added a coordinator brief and a setup walkthrough as prompts, so the agent running the workspace
+  knows it is driving two teams for the product owner, reports diagnosed problems rather than
+  status, and never adopts an existing application repository without being asked.
+
 - Added the control tower as an MCP App: a self-contained interactive panel the host renders inside
   the conversation, showing the current phase, task counts, open risks, and the gates waiting on the
   product owner, with a control that puts a gate to them.

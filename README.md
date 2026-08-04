@@ -94,6 +94,43 @@ product-ops dashboard ./my-product --serve --apply
 
 Read the [runtime guide](docs/runtime/README.md) for the complete operating and safety contract.
 
+## Run it from Claude or Codex
+
+Point your coding agent at the project and supervise from inside the conversation. The control
+surface speaks the Model Context Protocol, so the same setup serves Claude Code, Claude Desktop,
+the ChatGPT desktop app, Codex CLI, and any compliant IDE.
+
+`.mcp.json` for Claude Code, or `.codex/config.toml` for Codex:
+
+```json
+{
+  "mcpServers": {
+    "product-ops": {
+      "command": "npx",
+      "args": ["-y", "--package=open-product-operations-os", "product-ops-mcp", "--project", "."]
+    }
+  }
+}
+```
+
+Read-only is the default. Add `--allow-writes` when you want the owner to be able to record intake,
+run a cycle, and settle human gates from the conversation.
+
+Then, in the session:
+
+| Ask for | What happens |
+| --- | --- |
+| `/product-ops:start` | Walks you from an empty workspace to a running one, with or without an existing application |
+| `/product-ops:take-command` | Puts the agent in the coordinator seat with the full operating brief |
+| `/product-ops:what-needs-me` | Every gate waiting on you, with its risks and evidence |
+| **the panel** | `product_ops_panel` renders the control tower inline: both teams, the hand-off chain, and a box to write your decision in |
+
+The panel shows the organisation, not the schema — named teams on both sides, where each piece of
+work currently sits, and what is waiting on you. Deciding is yours: the surface collects your
+reasoning and attributes the record to you.
+
+Read the [MCP control surface](docs/architecture/mcp-control-surface.md) for the authority model.
+
 ## One-click start
 
 Clone the repository, or download and fully extract the complete release archive for your platform,

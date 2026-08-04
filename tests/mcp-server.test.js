@@ -718,10 +718,35 @@ test("the panel carries the owner's decision but never authors one", async (t) =
   assert.match(content.text, /rationale:rationale/, "the rationale sent is the one that was typed");
 });
 
+test("the coordinator brief names the authority and forbids deciding for the owner", async (t) => {
+  const { handlers } = await handlersFor(t);
+  const text = handlers["prompts/get"]({ name: "take-command" }).messages[0].content.text;
+  assert.match(text, /product owner is the authority/i);
+  assert.match(text, /Never record a disposition on their behalf/i);
+  assert.match(text, /Never say RB-04 or ENG-09/i, "the brief must forbid role codes in front of the owner");
+  assert.match(text, /untrusted-record/, "and must carry the injection rule");
+  // A coordinator that reports symptoms is not doing the job the owner delegated.
+  assert.match(text, /diagnose it before reporting it/i);
+});
+
+test("the setup walkthrough refuses to adopt an application on the owner's behalf", async (t) => {
+  const { handlers } = await handlersFor(t);
+  const greenfield = handlers["prompts/get"]({ name: "start" }).messages[0].content.text;
+  assert.match(greenfield, /product_ops_validate/);
+  assert.match(greenfield, /Ask whether they already have an application repository/i);
+  assert.match(greenfield, /perfectly good place to start/i, "no application must not read as a failure");
+
+  const existing = handlers["prompts/get"]({ name: "start", arguments: { application: "../my-app" } }).messages[0].content.text;
+  assert.match(existing, /\.\.\/my-app/);
+  assert.match(existing, /their call, not yours/i, "adding to an existing repository needs explicit consent");
+  assert.match(existing, /keeps its own Git history/i);
+  assert.match(existing, /autopilot authorisation off unless they ask/i);
+});
+
 test("prompts present human gates without resolving them", async (t) => {
   const { handlers } = await handlersFor(t);
   const { prompts } = handlers["prompts/list"]();
-  assert.deepEqual(prompts.map((prompt) => prompt.name), ["brief", "what-needs-me", "explain-blocked"]);
+  assert.deepEqual(prompts.map((prompt) => prompt.name), ["take-command", "start", "brief", "what-needs-me", "explain-blocked"]);
 
   const gate = handlers["prompts/get"]({ name: "what-needs-me" });
   const text = gate.messages[0].content.text;
