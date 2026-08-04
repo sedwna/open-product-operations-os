@@ -112,7 +112,7 @@ function render(){
   var gates='<div><h2>در انتظار تصمیم شما</h2>'+(s.decisions.items.length?
     s.decisions.items.map(gate).join(""):'<div class="card empty">هیچ دروازه‌ای منتظر شما نیست.</div>')+'</div>';
   var risks=s.risks&&s.risks.length?'<div><h2>ریسک‌های باز</h2><div class="card"><ul class="risks">'
-    +s.risks.map(function(r){return "<li>"+plain(r.detail)+' <span class="muted">('+esc(r.ownerRole)+")</span></li>";}).join("")
+    +s.risks.map(function(r){return '<li dir="auto">'+plain(r.detail)+' <span class="muted">('+esc(r.ownerRole)+")</span></li>";}).join("")
     +'</ul></div></div>':"";
   var foot='<div class="row between"><span class="note">'+esc(s.project.name)+' · '+esc((s.generatedAt||"").slice(11,16))+'</span>'
     +'<button id="refresh">تازه‌سازی</button></div>';
@@ -126,9 +126,11 @@ function render(){
 }
 function cell(n,label){return '<div class="count"><b>'+n+"</b><span>"+label+"</span></div>";}
 function gate(item){
-  return '<div class="gate"><div class="gate-q">'+plain(item.question)+'</div>'
+  // dir="auto" per record string: a question or a risk may be written in any language, and letting
+  // each pick its own direction keeps punctuation where its author put it.
+  return '<div class="gate"><div class="gate-q" dir="auto">'+plain(item.question)+'</div>'
     +'<div class="muted"><code>'+esc(item.gate)+"</code> · "+esc(item.taskId)+"</div>"
-    +(item.risks&&item.risks.length?'<ul class="risks">'+item.risks.map(function(r){return "<li>"+plain(r)+"</li>";}).join("")+"</ul>":"")
+    +(item.risks&&item.risks.length?'<ul class="risks">'+item.risks.map(function(r){return '<li dir="auto">'+plain(r)+"</li>";}).join("")+"</ul>":"")
     +'<div class="row"><button class="primary" id="d-'+esc(item.requestId)+'">ثبت تصمیم…</button>'
     +'<span class="note">پاسخ را خودتان در پنجرهٔ بعدی وارد می‌کنید.</span></div></div>';
 }
