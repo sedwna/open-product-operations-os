@@ -258,10 +258,19 @@ export async function readiness(context) {
   if (snapshot.readiness.pendingApprovals > 0) blockers.push(`${snapshot.readiness.pendingApprovals} human gate(s) still pending.`);
   if (snapshot.readiness.blockedTasks > 0) blockers.push(`${snapshot.readiness.blockedTasks} blocked task(s) on the board.`);
   return {
-    structuredContent: { summary: snapshot.readiness, assessments, blockers: blockers.slice(0, 25) },
-    text: blockers.length === 0
-      ? "No readiness blocker is recorded."
-      : `Release is not clear. ${blockers.length} blocker(s):\n${blockers.slice(0, 10).map((item) => `- ${item}`).join("\n")}`
+    structuredContent: {
+      summary: snapshot.readiness,
+      assessed: assessments.length > 0,
+      assessments,
+      blockers: blockers.slice(0, 25)
+    },
+    text: blockers.length > 0
+      ? `Release is not clear. ${blockers.length} blocker(s):\n${blockers.slice(0, 10).map((item) => `- ${item}`).join("\n")}`
+      // "No blockers" and "nobody has assessed this yet" are different answers, and reporting the
+      // first when the second is true reads as a green light nobody gave.
+      : assessments.length === 0
+        ? "No readiness assessment exists yet, so there is nothing to be ready or unready against. This is not a clear release; it is an unasked question."
+        : "No readiness blocker is recorded against the current assessment."
   };
 }
 

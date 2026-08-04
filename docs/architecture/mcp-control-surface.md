@@ -29,16 +29,26 @@ authority model, the durable records, and the evidence chain. Neither takes over
 ```text
 src/mcp/
 ├── server.js       stdio entry point, capability negotiation, project binding
+├── jsonrpc.js      newline-delimited JSON-RPC over stdio, both directions
 ├── registry.js     single declarative table: name → schema, handler, authority tier
 ├── tools/
-│   ├── read.js     status, decisions, task, cycle, evidence, readiness, validate
-│   └── write.js    intake, operate, autopilot, decide
+│   ├── read.js     panel, status, decisions, task, cycle, evidence, readiness, validate
+│   ├── write.js    intake, operate, autopilot
+│   └── decide.js   the human-authority tier
+├── app/
+│   ├── panel.js    the control tower as an MCP App
+│   └── teams.js    human names for the boundaries on both sides
 ├── resources.js    productops:// URI handlers and templates
-├── prompts.js      brief, what-needs-me, explain-blocked
-├── authority.js    the gate: tier enforcement, dry-run default, actor binding
+├── prompts.js      take-command, start, brief, what-needs-me, explain-blocked
+├── authority.js    the gate: tier enforcement, dry-run default, failure taxonomy
 ├── projection.js   snapshot → token-bounded product-owner view
+├── watch.js        canonical-record watcher behind resource subscription
 └── untrusted.js    envelope for record-derived text
 ```
+
+The shared control-plane write lease lives outside this tree, in
+[`src/runtime/control-plane-lease.js`](../../src/runtime/control-plane-lease.js), because it guards
+every local surface rather than this one.
 
 New bin entry in `package.json`:
 
