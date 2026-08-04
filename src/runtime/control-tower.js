@@ -2,6 +2,7 @@ import { INTAKE_STORE_FILE, SCHEMA_VERSION } from "../constants.js";
 import { loadApprovals, requestApproval } from "./approvals.js";
 import { runDevelopmentTask } from "./development-runner.js";
 import { readJsonOptional, utcTimestamp, writeJson } from "./io.js";
+import { withControlPlaneLease } from "./control-plane-lease.js";
 import {
   dependencyState,
   loadTaskboard,
@@ -14,6 +15,19 @@ export async function runControlTower(
   root,
   config,
   { dryRun = true, executeDevelopment = false, now = new Date() } = {}
+) {
+  // One scheduling cycle reads the board, the approvals, and the intake store, then writes all
+  // three. Holding the lease across the whole sequence is what makes it a transaction; guarding
+  // only the individual writes would let a concurrent surface interleave between read and write.
+  return dryRun
+    ? controlTowerCycle(root, config, { dryRun, executeDevelopment, now })
+    : withControlPlaneLease(root, () => controlTowerCycle(root, config, { dryRun, executeDevelopment, now }));
+}
+
+async function controlTowerCycle(
+  root,
+  config,
+  { dryRun, executeDevelopment, now }
 ) {
   const [{ headers, records: loadedTasks }, approvalStore, intakeStore] = await Promise.all([
     loadTaskboard(root),

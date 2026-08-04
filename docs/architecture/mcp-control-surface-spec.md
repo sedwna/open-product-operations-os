@@ -379,36 +379,65 @@ that waits on a human is unbounded and would block the dashboard indefinitely.
 
 Delegates to `decideApproval`, which independently enforces the human-authority actor.
 
-## 6. Control-plane write lease
+## 6. Control-plane write lease — implemented
 
-Today the autopilot has an exclusive lease but approval and task-board writes do not. Adding a second
-writing surface makes that gap reachable, so the lease generalises.
+Status: implemented in [`src/runtime/control-plane-lease.js`](../../src/runtime/control-plane-lease.js).
+
+The autopilot had an exclusive lease but approval and task-board writes did not. Adding a second
+writing surface made that gap reachable.
+
+### 6.1 Placement — chokepoint, not per surface
+
+The original plan was for each tier B and C handler to wrap its own mutation. Tracing the writes
+showed something better: **every canonical control-plane write already funnels through two
+functions**, `replaceTaskboard` in [`taskboard.js`](../../src/runtime/taskboard.js) and
+`requestApproval` / `decideApproval` in [`approvals.js`](../../src/runtime/approvals.js).
+
+Guarding those two chokepoints covers the CLI, the dashboard, the autopilot coordinator, and the MCP
+surface in one change, and no future caller can bypass the lease by forgetting to wrap itself.
 
 File: `.product-ops/runtime/control-plane.lease.json`, schema published as
 `schemas/control-plane-lease.schema.json`.
 
-```json
-{
-  "schemaVersion": "1.0.0",
-  "holderId": "mcp:7a1c…",
-  "surface": "mcp | dashboard | cli",
-  "acquiredAt": "…",
-  "heartbeatAt": "…",
-  "expiresAt": "…"
-}
-```
-
 | Parameter | Value |
 | --- | --- |
 | TTL | 30 s |
-| Renew interval | 10 s |
-| Acquisition | exclusive create (`wx`); on `EEXIST` read and compare |
-| Expired lease | stolen only via compare-and-set on the exact previous `holderId`, written through [`src/atomic-move.js`](../../src/atomic-move.js) |
+| Wait before refusing | 5 s, polled at 50 ms |
+| Acquisition | exclusive create (`wx`); on `EEXIST`, read and compare |
+| Reclaim | expired **or** holder process no longer alive, via compare-and-set on the observed `holderId` |
 | Release | `finally`, always |
+| Re-entrancy | per resolved project root, within one process |
 
-Every tier B and C handler wraps its mutation in acquire/release. A handler that cannot acquire
-returns `WRITE_LEASE_HELD` naming the holding surface. The dashboard server and the autopilot
-orchestrator adopt the same lease in the same change, or the guarantee is one-sided.
+The bounded wait matters: these are millisecond-scale critical sections, so failing instantly would
+turn ordinary near-simultaneous writes into spurious errors.
+
+### 6.2 Serialised writes are not transactions
+
+The lease serialises writes. It does not by itself make a read-modify-write atomic: a caller that
+loads records, edits them, and writes them back must hold the lease **across the whole sequence**.
+Nesting is safe — it re-enters rather than blocking.
+
+Two sequences currently need this and have it:
+
+- `runControlTower` reads the board, approvals, and intake store, then writes all three;
+- `requestApproval` and `decideApproval` each read the store, check a precondition, and write.
+
+Guarding only the individual writes would let a concurrent surface interleave between the read and
+the write, which is exactly how one gate ends up with two dispositions.
+
+### 6.3 Surface attribution
+
+A process declares itself once at startup with `setControlPlaneSurface`, so a refusal can name the
+holder — `WRITE_LEASE_HELD (dashboard)` — instead of reporting a bare conflict. The default is
+`cli`; the dashboard declares itself when started writable, and the MCP server declares itself at
+`startServer`.
+
+### 6.4 Out of scope
+
+The controlled workbook writer in [`src/local-writer.js`](../../src/local-writer.js) is not guarded
+by this lease. It has its own precondition, read-back, replay, and rollback protocol, and only one
+surface drives it today. If a second surface ever writes workbook rows, it must join this lease
+first.
 
 ## 7. Resources
 
@@ -511,11 +540,12 @@ sequenceDiagram
 
 ## 11. Open items to resolve before phase 3
 
-1. Confirm the exact Codex per-tool approval key names against the current configuration reference,
-   and confirm whether Codex implements MCP elicitation. If it does not, the fallback path in §5.4 is
-   the only path on that host, and the caveat text must be prominent.
+1. Confirm the exact Codex per-tool approval key names against the current configuration reference.
+   Codex has implemented MCP elicitation since v0.119, so the primary path in §5.4 is available on
+   both hosts and the fallback is a compatibility path rather than the Codex path.
 2. Confirm `notifications/resources/list_changed` semantics under the `2026-07-28` stateless core.
-3. Decide whether `@modelcontextprotocol/sdk` enters `dependencies` — see the dependency trade-off in
-   the architecture document — and re-run the SBOM and licence gates if it does.
-4. Land the shared control-plane lease across all three surfaces in one change. A lease adopted by
-   the MCP server alone provides no mutual exclusion.
+3. ~~Decide whether `@modelcontextprotocol/sdk` enters `dependencies`.~~ Resolved: the transport is
+   implemented in-repository. The SDK carries seventeen direct dependencies for HTTP transports and
+   OAuth that this surface does not use.
+4. ~~Land the shared control-plane lease across all surfaces in one change.~~ Resolved: guarded at
+   the two write chokepoints, so every surface is covered. See §6.

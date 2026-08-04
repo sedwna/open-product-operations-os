@@ -7,6 +7,7 @@ import { renderDashboard } from "./dashboard-view.js";
 import { runControlTower } from "./control-tower.js";
 import { ingestRecord } from "./intake.js";
 import { startAutopilotLoop } from "../autopilot/orchestrator.js";
+import { setControlPlaneSurface } from "./control-plane-lease.js";
 import { patchAutopilotState, readAutomationLink, readAutopilotState } from "../autopilot/state.js";
 import { dependencyState, loadTaskboard, replaceTaskboard } from "./taskboard.js";
 
@@ -24,6 +25,7 @@ export async function startDashboardServer(
     throw new Error("Dashboard port must be an integer between 0 and 65535.");
   }
   await validatedConfig(root);
+  if (writable) setControlPlaneSurface("dashboard");
   const automationLink = await readAutomationLink(root).catch((error) => {
     if (error.code === "ENOENT") return null;
     throw error;

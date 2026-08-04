@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import fs from "node:fs/promises";
 import { loadConfig, validateConfig, validateConfigRelationships } from "../config.js";
 import { assertNoLinkTraversal } from "../paths.js";
+import { setControlPlaneSurface } from "../runtime/control-plane-lease.js";
 import { readPackagedFile } from "../catalog.js";
 import { INVALID_PARAMS, RpcError, serveStdio } from "./jsonrpc.js";
 import { TOOL_DEFINITIONS, toListEntry } from "./registry.js";
@@ -129,6 +130,7 @@ export function createHandlers(context, { version = packageVersion() } = {}) {
 
 export async function startServer(argv, { input = process.stdin, output = process.stdout } = {}) {
   const context = await createServerContext(parseServerArguments(argv));
+  setControlPlaneSurface("mcp");
   const transport = serveStdio({
     input,
     output,

@@ -7,6 +7,7 @@ import { loadApprovals, decideApproval, requestApproval } from "../runtime/appro
 import { runControlTower } from "../runtime/control-tower.js";
 import { readJsonOptional } from "../runtime/io.js";
 import { dependencyState, loadTaskboard, replaceTaskboard, selectRunnableTasks } from "../runtime/taskboard.js";
+import { CONTROL_PLANE_LEASE_FILE } from "../runtime/control-plane-lease.js";
 import { runEngineeringDelivery } from "./engineering.js";
 import { runProductAgent } from "./product-agent.js";
 import { materializeCycleWorkbook, materializeWriterCheckpoint } from "./workbook.js";
@@ -470,7 +471,11 @@ async function commitProductCycle(root, cycleId) {
   const unsafe = (await changedGitPaths(root)).filter((file) => !isManagedProductPath(file));
   if (unsafe.length) throw new Error(`Autopilot refused to commit unrelated Product Operations changes: ${unsafe.join(", ")}`);
   await runGit(root, ["add", "--all"]);
-  await runGit(root, ["reset", "--quiet", "HEAD", "--", ".product-ops/runtime/autopilot/orchestrator.lease.json"]).catch(() => {});
+  await runGit(root, [
+    "reset", "--quiet", "HEAD", "--",
+    ".product-ops/runtime/autopilot/orchestrator.lease.json",
+    CONTROL_PLANE_LEASE_FILE
+  ]).catch(() => {});
   const staged = (await runGit(root, ["diff", "--cached", "--name-only"])).stdout.trim();
   if (!staged) return null;
   await runGit(root, [

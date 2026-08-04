@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-product-operations-os.local/schemas/control-plane-lease.schema.json",
+  "title": "Control Plane Write Lease",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "holderId", "surface", "pid", "acquiredAt", "expiresAt"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "holderId": { "type": "string", "minLength": 8, "maxLength": 64 },
+    "surface": { "enum": ["cli", "dashboard", "mcp", "autopilot"] },
+    "pid": { "type": "integer", "minimum": 1 },
+    "acquiredAt": { "type": "string", "format": "date-time" },
+    "expiresAt": { "type": "string", "format": "date-time" }
+  }
+}

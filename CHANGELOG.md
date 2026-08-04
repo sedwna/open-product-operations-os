@@ -4,6 +4,16 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+- Added a shared control-plane write lease so the CLI, the local dashboard, the autonomous
+  coordinator, and the MCP surface can no longer interleave writes to the canonical task board or
+  the approval store. Guarding the two write chokepoints covers every surface at once and leaves no
+  bypass for a future caller.
+- Held the lease across the read-modify-write sequences that need it, so one scheduling cycle is a
+  transaction and a single human gate can only ever receive one disposition.
+- Made a refusal name the surface that holds the write authority, reclaim a lease whose holder
+  process is gone, tolerate a corrupt lease file, and wait briefly before refusing so ordinary
+  near-simultaneous writes do not fail spuriously.
+
 - Added a read-only Model Context Protocol control surface (`product-ops-mcp`) so Claude Code,
   Claude Desktop, the ChatGPT desktop app, Codex CLI, and compliant IDEs can report product-cycle
   state, pending human gates, task detail, evidence, readiness, and validation findings directly

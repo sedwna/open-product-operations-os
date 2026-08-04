@@ -24,6 +24,7 @@ test("all public JSON schemas parse and declare Draft 2020-12", async () => {
     "automation-status.schema.json",
     "autopilot-state.schema.json",
     "board-task.schema.json",
+    "control-plane-lease.schema.json",
     "development-os-config.schema.json",
     "development-request.schema.json",
     "development-run.schema.json",

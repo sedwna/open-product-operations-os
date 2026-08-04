@@ -2,6 +2,7 @@ import { TASKBOARD_FILE } from "../constants.js";
 import { readCsvRecords, splitReferences } from "./io.js";
 import { stringifyCsv } from "../csv.js";
 import { applyWrites, planWrites } from "../file-writer.js";
+import { withControlPlaneLease } from "./control-plane-lease.js";
 
 export async function loadTaskboard(root) {
   const parsed = await readCsvRecords(root, TASKBOARD_FILE);
@@ -55,7 +56,7 @@ export function selectRunnableTasks(tasks, approvals = []) {
 export async function replaceTaskboard(root, headers, records, { dryRun = true } = {}) {
   const rows = [headers, ...records.map((record) => headers.map((header) => record[header] ?? ""))];
   const serialized = stringifyCsv(rows);
-  const operations = await planWrites(
+  const plan = () => planWrites(
     root,
     new Map([
       [TASKBOARD_FILE, serialized],
@@ -63,8 +64,14 @@ export async function replaceTaskboard(root, headers, records, { dryRun = true }
     ]),
     { force: true, replaceOperational: true }
   );
-  if (!dryRun) await applyWrites(root, operations);
-  return operations;
+  if (dryRun) return plan();
+  // Serialise against the other local surfaces. A caller performing a read-modify-write should hold
+  // the lease across its own load as well; nesting re-enters rather than blocking.
+  return withControlPlaneLease(root, async () => {
+    const operations = await plan();
+    await applyWrites(root, operations);
+    return operations;
+  });
 }
 
 export function nextTaskId(config, tasks) {
