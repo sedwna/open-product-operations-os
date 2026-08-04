@@ -269,7 +269,8 @@ entries and a `truncated` flag.
 
 ## 5. Tier B and C — write tools
 
-Registered only with `--allow-writes`.
+Registered only with `--allow-writes`. Tier B is implemented in
+[`src/mcp/tools/write.js`](../../src/mcp/tools/write.js); tier C lands with elicitation.
 
 ### 5.1 `product_ops_intake`
 

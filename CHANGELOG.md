@@ -4,6 +4,19 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+- Added the planning tier to the MCP control surface: recording product intake, running one bounded
+  control-plane cycle, and controlling the local autonomous coordinator. These tools are registered
+  only under explicit write authorisation, so a read-only server still has no reachable mutation
+  path, and they plan by default rather than writing.
+- Kept autonomous-cycle authorisation an explicit opt-in on intake, so submitting an idea through a
+  chat window cannot silently start engineering work, and excluded development dispatch from the
+  surface entirely.
+- Made the coordinator controls report whether a coordinator process is actually running, and state
+  that pausing is cooperative, so a caller cannot mistake a durable state change for a stopped
+  cycle.
+- Brought intake deduplication under the write lease; it read the store, decided, and wrote it back
+  without one, so a concurrent surface could record the same idea twice under different events.
+
 - Added a shared control-plane write lease so the CLI, the local dashboard, the autonomous
   coordinator, and the MCP surface can no longer interleave writes to the canonical task board or
   the approval store. Guarding the two write chokepoints covers every surface at once and leaves no

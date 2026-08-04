@@ -2,8 +2,12 @@ import assert from "node:assert/strict";
 import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
+import { INTAKE_STORE_FILE } from "../src/constants.js";
 import { initCommand } from "../src/commands/init.js";
+import { initializeDevelopmentOs } from "../src/development/init.js";
 import { requestApproval } from "../src/runtime/approvals.js";
+import { readJsonOptional } from "../src/runtime/io.js";
+import { CONTROL_PLANE_LEASE_FILE } from "../src/runtime/control-plane-lease.js";
 import { loadTaskboard, replaceTaskboard } from "../src/runtime/taskboard.js";
 import {
   createHandlers,
@@ -71,7 +75,181 @@ test("a read-only server registers exactly the read tier and no mutation path", 
     assert.equal(tool.annotations.readOnlyHint, true, `${tool.name} must be annotated read-only`);
     assert.equal(tool.annotations.destructiveHint, false);
   }
-  assert.equal(TOOL_DEFINITIONS.every((definition) => definition.tier === "read"), true, "phase one registers the read tier only");
+  for (const name of ["product_ops_intake", "product_ops_operate", "product_ops_autopilot"]) {
+    await assert.rejects(
+      async () => handlers["tools/call"]({ name, arguments: {} }),
+      /is not registered/,
+      `${name} must be unreachable without write authorisation`
+    );
+  }
+});
+
+test("write authorisation registers the plan tier and nothing beyond it", async (t) => {
+  const { handlers } = await handlersFor(t, { allowWrites: true });
+  const { tools } = handlers["tools/list"]();
+  assert.equal(tools.length, 10);
+  const plan = tools.filter((tool) => tool.annotations.readOnlyHint === false);
+  assert.deepEqual(plan.map((tool) => tool.name).sort(), [
+    "product_ops_autopilot",
+    "product_ops_intake",
+    "product_ops_operate"
+  ]);
+  for (const tool of plan) assert.equal(tool.annotations.destructiveHint, false);
+  assert.equal(
+    TOOL_DEFINITIONS.some((definition) => definition.tier === "human_authority"),
+    false,
+    "the human-authority tier lands with elicitation, not here"
+  );
+});
+
+test("intake plans by default and never authorises a cycle unless asked", async (t) => {
+  const { root, handlers } = await handlersFor(t, { allowWrites: true });
+  const args = {
+    type: "new_idea",
+    title: "Let coordinators choose the summary day",
+    description: "Monday summaries arrive after the week is already planned.",
+    source: "support conversation"
+  };
+
+  const planned = await handlers["tools/call"]({ name: "product_ops_intake", arguments: args });
+  assert.equal(planned.isError, false);
+  assert.equal(planned.structuredContent.applied, false);
+  assert.match(planned.content[0].text, /Nothing was written/);
+  const store = await readJsonOptional(root, INTAKE_STORE_FILE, { records: [] });
+  assert.equal(store.records.length, 0, "a planned intake must not reach the store");
+
+  const applied = await handlers["tools/call"]({ name: "product_ops_intake", arguments: { ...args, apply: true } });
+  assert.equal(applied.structuredContent.applied, true);
+  assert.equal(applied.structuredContent.autopilotAuthorized, false, "a chat-submitted idea must not authorise a cycle by default");
+  assert.match(applied.content[0].text, /does not authorise an autonomous cycle/);
+  const written = await readJsonOptional(root, INTAKE_STORE_FILE, { records: [] });
+  assert.equal(written.records.length, 1);
+  assert.equal(written.records[0].autopilotAuthorized, false);
+
+  const duplicate = await handlers["tools/call"]({ name: "product_ops_intake", arguments: { ...args, apply: true } });
+  assert.equal(duplicate.structuredContent.status, "duplicate");
+  assert.equal(duplicate.structuredContent.eventId, applied.structuredContent.eventId);
+});
+
+test("intake says plainly when it authorises a cycle", async (t) => {
+  const { handlers } = await handlersFor(t, { allowWrites: true });
+  const result = await handlers["tools/call"]({
+    name: "product_ops_intake",
+    arguments: {
+      type: "user_finding",
+      title: "Export drops the final row",
+      description: "The CSV export loses the last record when the table is filtered.",
+      source: "reported by a customer",
+      apply: true,
+      autopilotAuthorized: true
+    }
+  });
+  assert.equal(result.structuredContent.autopilotAuthorized, true);
+  assert.match(result.content[0].text, /authorises one bounded autonomous cycle/);
+  assert.match(result.content[0].text, /Production release, destructive actions, spending, and external publication remain separately gated/);
+});
+
+test("operate plans by default and never dispatches development", async (t) => {
+  const { root, handlers } = await handlersFor(t, { allowWrites: true });
+  await handlers["tools/call"]({
+    name: "product_ops_intake",
+    arguments: { type: "new_idea", title: "Routing probe", description: "Seeds a routable event.", source: "test", apply: true }
+  });
+
+  const before = (await loadTaskboard(root)).records.length;
+  const planned = await handlers["tools/call"]({ name: "product_ops_operate", arguments: {} });
+  assert.equal(planned.structuredContent.applied, false);
+  assert.ok(planned.structuredContent.actionCount > 0);
+  assert.equal((await loadTaskboard(root)).records.length, before, "planning must not change the board");
+
+  const applied = await handlers["tools/call"]({ name: "product_ops_operate", arguments: { apply: true } });
+  assert.equal(applied.structuredContent.applied, true);
+  assert.ok((await loadTaskboard(root)).records.length > before);
+  assert.equal(
+    applied.structuredContent.actions.some((action) => action.type === "dispatch_task" && action.developmentExecution),
+    false,
+    "development execution is not reachable from this surface"
+  );
+  const definition = TOOL_DEFINITIONS.find((entry) => entry.name === "product_ops_operate");
+  assert.equal("executeDevelopment" in definition.inputSchema.properties, false);
+});
+
+test("a held lease surfaces as a coded tool failure rather than a crash", async (t) => {
+  const { root, handlers } = await handlersFor(t, { allowWrites: true });
+  const file = path.join(root, CONTROL_PLANE_LEASE_FILE);
+  await fs.mkdir(path.dirname(file), { recursive: true });
+  await fs.writeFile(file, `${JSON.stringify({
+    schemaVersion: "1.0.0",
+    holderId: "00000000-0000-4000-8000-0000000000ff",
+    surface: "dashboard",
+    pid: process.pid,
+    acquiredAt: new Date().toISOString(),
+    expiresAt: new Date(Date.now() + 60_000).toISOString()
+  })}\n`, "utf8");
+  t.after(() => fs.rm(file, { force: true }));
+
+  const result = await handlers["tools/call"]({
+    name: "product_ops_intake",
+    arguments: { type: "new_idea", title: "Blocked by the lease", description: "Should refuse cleanly.", source: "test", apply: true }
+  });
+  assert.equal(result.isError, true);
+  assert.equal(result.structuredContent.code, "WRITE_LEASE_HELD");
+  assert.equal(result.structuredContent.surface, "dashboard");
+});
+
+/** A real linked application, because a link pointing at a directory that cannot exist proves nothing. */
+async function linkApplication(root) {
+  const application = path.join(path.dirname(root), "application");
+  await initializeDevelopmentOs(application, {});
+  const link = path.join(root, ".product-ops/runtime/automation/link.json");
+  await fs.mkdir(path.dirname(link), { recursive: true });
+  await fs.writeFile(link, `${JSON.stringify({
+    schemaVersion: "1.0.0",
+    applicationRelativePath: "../application",
+    provider: "claude",
+    productExecutorsEnabled: true,
+    engineeringExecutorsEnabled: true,
+    autoStart: true,
+    autoApproveInitialIdea: false,
+    createdAt: new Date().toISOString()
+  })}\n`, "utf8");
+  return link;
+}
+
+test("autopilot control refuses a workspace with no coordinator to control", async (t) => {
+  const { root, handlers } = await handlersFor(t, { allowWrites: true });
+  const absent = await handlers["tools/call"]({ name: "product_ops_autopilot", arguments: { action: "pause" } });
+  assert.equal(absent.isError, true);
+  assert.equal(absent.structuredContent.code, "AUTOPILOT_NOT_CONFIGURED");
+
+  const unknown = await handlers["tools/call"]({ name: "product_ops_autopilot", arguments: { action: "obliterate" } });
+  assert.equal(unknown.isError, true);
+
+  // A link that parses but points nowhere usable is a configuration problem the owner can fix, not
+  // an internal fault.
+  const link = await linkApplication(root);
+  await fs.rm(path.join(path.dirname(root), "application"), { recursive: true, force: true });
+  const broken = await handlers["tools/call"]({ name: "product_ops_autopilot", arguments: { action: "pause" } });
+  assert.equal(broken.isError, true);
+  assert.equal(broken.structuredContent.code, "AUTOPILOT_NOT_CONFIGURED");
+  assert.match(broken.structuredContent.message, /cannot be used/);
+  await fs.rm(link, { force: true });
+});
+
+test("autopilot pause states that it is cooperative and whether anything is listening", async (t) => {
+  const { root, handlers } = await handlersFor(t, { allowWrites: true });
+  await linkApplication(root);
+
+  const result = await handlers["tools/call"]({ name: "product_ops_autopilot", arguments: { action: "pause" } });
+  assert.equal(result.isError, false, result.content[0].text);
+  assert.equal(result.structuredContent.status, "paused");
+  assert.equal(result.structuredContent.coordinatorRunning, false);
+  assert.match(result.content[0].text, /Pause is cooperative/);
+  assert.match(result.content[0].text, /No coordinator process is currently running/);
+
+  const resumed = await handlers["tools/call"]({ name: "product_ops_autopilot", arguments: { action: "resume" } });
+  assert.equal(resumed.structuredContent.previousStatus, "paused");
+  assert.equal(resumed.structuredContent.status, "idle");
 });
 
 test("no tool accepts a filesystem path, so injected text cannot redirect the project root", () => {

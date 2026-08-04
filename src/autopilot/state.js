@@ -194,4 +194,16 @@ function samePath(left, right) {
   return process.platform === "win32" ? a.toLowerCase() === b.toLowerCase() : a === b;
 }
 
-export const AUTOPILOT_PATHS = Object.freeze({ root: ROOT, state: STATE_FILE, link: LINK_FILE, events: EVENT_FILE });
+export const AUTOPILOT_PATHS = Object.freeze({ root: ROOT, state: STATE_FILE, link: LINK_FILE, events: EVENT_FILE, lease: LEASE_FILE });
+
+/**
+ * Whether a coordinator process is currently holding the orchestrator lease. A surface that changes
+ * autopilot state needs this to report truthfully: patching the durable state does nothing visible
+ * unless some process is running the loop that observes it.
+ */
+export async function readAutopilotCoordinator(root) {
+  const lease = await readJson(path.join(root, LEASE_FILE)).catch(() => null);
+  if (!lease?.expiresAt) return { live: false, pid: null };
+  const unexpired = Date.parse(lease.expiresAt) > Date.now();
+  return { live: unexpired && processIsAlive(lease.pid), pid: lease.pid ?? null };
+}

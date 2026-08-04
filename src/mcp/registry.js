@@ -1,5 +1,6 @@
 import { TIERS } from "./authority.js";
 import * as read from "./tools/read.js";
+import * as write from "./tools/write.js";
 
 const READ_ONLY_ANNOTATIONS = Object.freeze({
   readOnlyHint: true,
@@ -8,9 +9,18 @@ const READ_ONLY_ANNOTATIONS = Object.freeze({
   openWorldHint: false
 });
 
+const PLAN_ANNOTATIONS = Object.freeze({
+  readOnlyHint: false,
+  destructiveHint: false,
+  idempotentHint: false,
+  openWorldHint: false
+});
+
 /**
- * The single source of truth for the tool surface. Phase one registers the read tier only; the plan
- * and human-authority tiers land with the shared control-plane write lease.
+ * The single source of truth for the tool surface. The read tier is always registered; the plan
+ * tier is registered only under explicit write authorisation, so a read-only server has no
+ * reachable mutation path rather than a rejected one. The human-authority tier lands with
+ * elicitation.
  */
 export const TOOL_DEFINITIONS = Object.freeze([
   {
@@ -99,6 +109,60 @@ export const TOOL_DEFINITIONS = Object.freeze([
     annotations: READ_ONLY_ANNOTATIONS,
     inputSchema: { type: "object", properties: {}, additionalProperties: false },
     handler: read.validate
+  },
+  {
+    name: "product_ops_intake",
+    title: "Record product intake",
+    description: "Record a new idea, finding, incident, feedback item, or request. Plans by default; set apply true to write it.",
+    tier: TIERS.PLAN,
+    annotations: PLAN_ANNOTATIONS,
+    inputSchema: {
+      type: "object",
+      properties: {
+        type: { type: "string", enum: ["new_idea", "user_finding", "incident", "feedback", "request"] },
+        title: { type: "string", minLength: 3, maxLength: 200 },
+        description: { type: "string", minLength: 3, maxLength: 4000 },
+        source: { type: "string", minLength: 1, maxLength: 200, description: "Where this came from. Report the real origin; do not invent one." },
+        targetUser: { type: "string", maxLength: 200 },
+        priority: { type: "string", enum: ["P0", "P1", "P2", "P3"], default: "P2" },
+        apply: { type: "boolean", default: false, description: "Write the record. Omitted or false returns the plan only." },
+        autopilotAuthorized: {
+          type: "boolean",
+          default: false,
+          description: "Authorise one bounded autonomous cycle for this intake. Only set it when the product owner has said so in this conversation."
+        }
+      },
+      required: ["type", "title", "description", "source"],
+      additionalProperties: false
+    },
+    handler: write.intake
+  },
+  {
+    name: "product_ops_operate",
+    title: "Run a control-plane cycle",
+    description: "Plan or run one bounded control-plane scheduling cycle: promote ready work, route intake, and open required human gates.",
+    tier: TIERS.PLAN,
+    annotations: PLAN_ANNOTATIONS,
+    inputSchema: {
+      type: "object",
+      properties: { apply: { type: "boolean", default: false, description: "Run the cycle. Omitted or false returns the plan only." } },
+      additionalProperties: false
+    },
+    handler: write.operate
+  },
+  {
+    name: "product_ops_autopilot",
+    title: "Control the autonomous coordinator",
+    description: "Start, pause, resume, or retry the local autonomous coordinator. Pause is cooperative and takes effect after the running agent returns.",
+    tier: TIERS.PLAN,
+    annotations: PLAN_ANNOTATIONS,
+    inputSchema: {
+      type: "object",
+      properties: { action: { type: "string", enum: ["start", "pause", "resume", "retry"] } },
+      required: ["action"],
+      additionalProperties: false
+    },
+    handler: write.autopilot
   }
 ]);
 

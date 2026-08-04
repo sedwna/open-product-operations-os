@@ -25,9 +25,30 @@ export function toolResult({ structuredContent, text }) {
   return { content: [{ type: "text", text }], structuredContent, isError: false };
 }
 
+/**
+ * The published failure taxonomy. Anything outside it is reported as INTERNAL rather than leaking a
+ * filesystem or library error code into a contract callers may come to depend on.
+ */
+export const TOOL_ERROR_CODES = Object.freeze([
+  "PROJECT_INVALID",
+  "WRITE_LEASE_HELD",
+  "APPLY_NOT_AUTHORIZED",
+  "DECISION_TOKEN_INVALID",
+  "APPROVAL_NOT_PENDING",
+  "ACTOR_NOT_HUMAN_AUTHORITY",
+  "ELICITATION_UNAVAILABLE",
+  "ELICITATION_DECLINED",
+  "NOT_FOUND",
+  "AUTOPILOT_NOT_CONFIGURED"
+]);
+
 export function toolFailure(error) {
-  const code = error instanceof ToolFailure ? error.code : "INTERNAL";
-  const details = error instanceof ToolFailure ? error.details : {};
+  // ControlPlaneLeaseError carries WRITE_LEASE_HELD without being a ToolFailure, so match on the
+  // published code rather than on the class.
+  const code = TOOL_ERROR_CODES.includes(error?.code) ? error.code : "INTERNAL";
+  const details = error instanceof ToolFailure
+    ? error.details
+    : (error?.holderSurface ? { surface: error.holderSurface } : {});
   return {
     content: [{ type: "text", text: `${code}: ${error.message}` }],
     structuredContent: { code, message: error.message, ...details },

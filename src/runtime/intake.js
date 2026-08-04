@@ -3,12 +3,20 @@ import { INTAKE_STORE_FILE, SCHEMA_VERSION } from "../constants.js";
 import { validatePublishedSchema } from "../schema-validation.js";
 import { compactDate, readJsonOptional, utcTimestamp, writeJson } from "./io.js";
 import { assertNoCredentialMaterial } from "./security.js";
+import { withControlPlaneLease } from "./control-plane-lease.js";
 
 const EMPTY_STORE = { schemaVersion: SCHEMA_VERSION, records: [] };
 const TYPES = new Set(["new_idea", "user_finding", "incident", "feedback", "request"]);
 
 export async function ingestRecord(root, input, { dryRun = true, now = new Date() } = {}) {
   validateInput(input);
+  // Deduplication reads the store, decides, and writes it back. Without the lease a second surface
+  // can insert between the duplicate check and the write, so the same idea lands twice under
+  // different event identifiers.
+  return dryRun ? ingest(root, input, { dryRun, now }) : withControlPlaneLease(root, () => ingest(root, input, { dryRun, now }));
+}
+
+async function ingest(root, input, { dryRun, now }) {
   const store = await readJsonOptional(root, INTAKE_STORE_FILE, EMPTY_STORE);
   if (!Array.isArray(store.records)) {
     throw new Error("Invalid intake store: records must be an array.");

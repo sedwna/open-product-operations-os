@@ -276,9 +276,9 @@ Follows the existing `node --test` discipline.
 
 | Phase | Scope | Risk |
 | --- | --- | --- |
-| 1 | Server skeleton, project binding, seven tier A tools, resources, prompts | None — read only |
-| 2 | Tier B tools with dry-run default | Low |
-| 3 | Tier C `decide` with `requiresUserInteraction` and confirmation token | Medium — authority path |
+| 1 ✅ | Server skeleton, project binding, seven tier A tools, resources, prompts | None — read only |
+| 2 ✅ | Shared control-plane write lease, then tier B tools with dry-run default | Low |
+| 3 | Tier C `decide` via elicitation, with a decision token | Medium — authority path |
 | 4 | Filesystem watch and `list_changed` | Low |
 | 5 | MCP Apps UI resource rendering the RTL control tower in-conversation | Separate design |
 
