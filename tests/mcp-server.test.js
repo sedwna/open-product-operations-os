@@ -140,6 +140,42 @@ test("the brief projection degrades in a fixed order rather than exceeding its b
   assert.equal(projection.decisions.pending, 40, "the count survives even when the items are dropped");
 });
 
+test("projected risks carry the risk itself, not the question they hang off", () => {
+  // dashboard.js puts the owning question in `title` and the actual risk in `detail`. Projecting
+  // `title` repeats one identical line per risk and drops the only useful content.
+  const snapshot = {
+    generatedAt: new Date().toISOString(),
+    project: { id: "p", name: "P" },
+    tasks: [],
+    approvals: [],
+    autopilot: { state: {}, events: [] },
+    automation: {},
+    readiness: {},
+    roleActivity: [],
+    risks: [
+      { id: "APR-1-1", source: "approval", severity: "high", ownerRole: "human", title: "Ship it or not?", detail: "Scheduled jobs must migrate without dropping a send." },
+      { id: "APR-1-2", source: "approval", severity: "high", ownerRole: "human", title: "Ship it or not?", detail: "No data on how many workspaces would change the default." }
+    ]
+  };
+  const { risks } = projectStatus(snapshot, { verbosity: "brief" });
+  assert.equal(risks.length, 2);
+  assert.match(risks[0].detail, /Scheduled jobs must migrate/);
+  assert.match(risks[1].detail, /No data on how many workspaces/);
+  assert.notEqual(risks[0].detail, risks[1].detail, "two risks must not project to the same text");
+  assert.equal(risks[0].source, "approval");
+  assert.equal("title" in risks[0], false, "the owning question is already reported under decisions");
+});
+
+test("task detail and status agree on how large the board is", async (t) => {
+  const { handlers } = await handlersFor(t);
+  const status = await handlers["tools/call"]({ name: "product_ops_status", arguments: {} });
+  const board = await handlers["resources/read"]({ uri: "productops://taskboard" });
+  const first = board.contents[0].text.match(/\| (\S+) \| EVT-/);
+  assert.ok(first, "the board resource must render at least one task row");
+  const detail = await handlers["tools/call"]({ name: "product_ops_task", arguments: { taskId: first[1] } });
+  assert.equal(detail.structuredContent.boardSize, status.structuredContent.counts.total);
+});
+
 test("record-authored text is enveloped and cannot close the envelope early", async (t) => {
   const { root, context, handlers } = await handlersFor(t);
   const loaded = await loadTaskboard(root);

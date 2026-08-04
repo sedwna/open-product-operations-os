@@ -45,11 +45,14 @@ export function projectStatus(snapshot, { verbosity = "brief", ceiling } = {}) {
         taskId: request.taskId
       }))
     },
+    // The snapshot puts the owning question or task title in `title` and the actual risk in
+    // `detail`. Projecting `title` alone repeats one line per risk and drops what matters.
     risks: (snapshot.risks ?? []).slice(0, BRIEF_RISKS).map((risk) => ({
       id: risk.id,
+      source: risk.source,
       severity: risk.severity,
       ownerRole: risk.ownerRole,
-      title: untrusted(risk.title, { source: "risk", id: risk.id })
+      detail: untrusted(risk.detail, { source: `risk/${risk.source}`, id: risk.id })
     })),
     latestCycle: latestCycle(snapshot),
     automation: {

@@ -3,7 +3,7 @@ import { loadConfig, validateConfig, validateConfigRelationships } from "../../c
 import { loadApprovals } from "../../runtime/approvals.js";
 import { loadDashboardSnapshot } from "../../runtime/dashboard.js";
 import { readCsvRecords } from "../../runtime/io.js";
-import { dependencyState, loadTaskboard } from "../../runtime/taskboard.js";
+import { dependencyState, loadTaskboard, visibleTaskboardRecords } from "../../runtime/taskboard.js";
 import { validateProject } from "../../validation.js";
 import { projectStatus, renderStatusText } from "../projection.js";
 import { untrusted, untrustedList } from "../untrusted.js";
@@ -71,7 +71,8 @@ export async function task(context, { taskId } = {}) {
     canonicalOutputRefs: splitRefs(record.canonical_output_refs),
     evidenceRefs: splitRefs(record.evidence_refs),
     updatedAt: record.updated_at,
-    boardSize: records.length
+    // Visible records, so this agrees with the count product_ops_status reports.
+    boardSize: visibleTaskboardRecords(records).length
   };
   const text = `${record.task_id} is ${record.status}, owned by ${record.owner_role}.`
     + (dependencies.satisfied ? "" : ` Waiting on ${[...dependencies.missing, ...dependencies.incomplete].join(", ")}.`)
