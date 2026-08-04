@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
@@ -82,6 +83,40 @@ test("a read-only server registers exactly the read tier and no mutation path", 
       `${name} must be unreachable without write authorisation`
     );
   }
+});
+
+test("exercising every read path leaves the project byte-identical", async (t) => {
+  // Registration alone does not prove read-only: a handler could still write a cache, a log, or a
+  // lease. Hash the tree, run every read tool and every resource, and hash it again.
+  const { root, handlers } = await handlersFor(t);
+  const digest = async () => {
+    const hash = crypto.createHash("sha256");
+    const walk = async (dir) => {
+      const entries = (await fs.readdir(dir, { withFileTypes: true })).sort((a, b) => a.name.localeCompare(b.name));
+      for (const entry of entries) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) { await walk(full); continue; }
+        hash.update(path.relative(root, full).replaceAll("\\", "/"));
+        hash.update(await fs.readFile(full));
+      }
+    };
+    await walk(root);
+    return hash.digest("hex");
+  };
+
+  const before = await digest();
+  for (const tool of handlers["tools/list"]().tools) {
+    await handlers["tools/call"]({ name: tool.name, arguments: tool.name === "product_ops_task" ? { taskId: "absent" } : {} });
+  }
+  await handlers["tools/call"]({ name: "product_ops_status", arguments: { verbosity: "full" } });
+  for (const resource of handlers["resources/list"]().resources) {
+    await handlers["resources/read"]({ uri: resource.uri });
+  }
+  await handlers["resources/read"]({ uri: "productops://workbook/idea_inbox" });
+  for (const prompt of handlers["prompts/list"]().prompts) {
+    handlers["prompts/get"]({ name: prompt.name });
+  }
+  assert.equal(await digest(), before, "a read-only session must not change a single byte");
 });
 
 test("write authorisation registers the plan tier and nothing beyond it", async (t) => {
