@@ -4,6 +4,23 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+- Added a read-only Model Context Protocol control surface (`product-ops-mcp`) so Claude Code,
+  Claude Desktop, the ChatGPT desktop app, Codex CLI, and compliant IDEs can report product-cycle
+  state, pending human gates, task detail, evidence, readiness, and validation findings directly
+  from the project's canonical records.
+- Bound the server to a single project root supplied at launch and refused any tool argument that
+  names a filesystem path, so record-authored text cannot redirect the surface at another directory.
+- Made read-only the default posture: the planning and human-authority tiers are not registered at
+  all unless the operator passes an explicit write-authorisation flag.
+- Wrapped every record-authored string returned by a tool or resource in a neutralised
+  `<untrusted-record>` envelope that injected text cannot close early.
+- Bounded the status projection to a guaranteed byte ceiling with a fixed degradation order, and
+  moved bulk history to on-demand `productops://` resources.
+- Implemented the newline-delimited JSON-RPC stdio transport in-repository rather than adding a
+  seventeen-dependency SDK to a four-dependency package.
+- Documented the control surface architecture and its implementation contract, including the
+  elicitation-based design for the human-authority tier that follows in a later phase.
+
 ## 0.8.1 - 2026-08-02
 
 - Made release readiness fail closed unless risk acceptance, rollback planning, and a real linked

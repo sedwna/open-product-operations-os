@@ -21,6 +21,7 @@
   "bin": {
     "development-os": "./src/development-cli.js",
     "product-ops": "./src/cli.js",
+    "product-ops-mcp": "./src/mcp/server.js",
     "product-ops-onboard": "./scripts/one-click-onboarding.mjs"
   },
   "files": [

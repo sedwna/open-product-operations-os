@@ -278,6 +278,7 @@ links, unsafe replacement races, and ambiguous recovery states.
 | Understand ownership and separation | [Architecture overview](docs/architecture/overview.md) |
 | Follow one event end to end | [Event lifecycle](docs/architecture/event-lifecycle.md) |
 | Operate the dashboard and agents | [Runtime guide](docs/runtime/README.md) |
+| Read the control plane from Claude or Codex | [MCP control surface](docs/architecture/mcp-control-surface.md) |
 | Connect a development agent | [Development runner](docs/runtime/development-runner.md) |
 | Initialize the complete engineering system | [Development OS](docs/development/README.md) |
 | Understand Product/Development synchronization | [Dual OS architecture](docs/architecture/dual-operating-system.md) |
