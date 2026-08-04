@@ -23,6 +23,10 @@ export function serveStdio({ input, output, handlers, onError = () => {} }) {
   let buffer = "";
   let closed = false;
   const pending = new Set();
+  // Requests this server sends to the client, awaiting their responses. Elicitation needs this:
+  // the human-authority path asks the host to collect a disposition from a person.
+  const outbound = new Map();
+  let outboundId = 0;
 
   const write = (message) => {
     if (closed) return;
@@ -38,6 +42,18 @@ export function serveStdio({ input, output, handlers, onError = () => {} }) {
 
   const dispatch = async (message) => {
     const { id = null, method, params } = message;
+
+    // A message carrying a result or an error is the client answering something we asked.
+    if (method === undefined && message.id !== undefined) {
+      const waiter = outbound.get(message.id);
+      if (!waiter) return;
+      outbound.delete(message.id);
+      clearTimeout(waiter.timer);
+      if (message.error) waiter.reject(new RpcError(message.error.code ?? INTERNAL_ERROR, message.error.message ?? "The client returned an error."));
+      else waiter.resolve(message.result ?? {});
+      return;
+    }
+
     const notification = message.id === undefined;
     if (message.jsonrpc !== "2.0" || typeof method !== "string") {
       if (!notification) fail(id, new RpcError(INVALID_REQUEST, "Request is not a valid JSON-RPC 2.0 message."));
@@ -98,9 +114,31 @@ export function serveStdio({ input, output, handlers, onError = () => {} }) {
     notify(method, params = {}) {
       write({ jsonrpc: "2.0", method, params });
     },
+    /**
+     * Ask the client something and wait for its answer. The timeout must be generous: an
+     * elicitation waits on a person, not on a machine.
+     */
+    request(method, params = {}, { timeoutMs = 10 * 60 * 1000 } = {}) {
+      if (closed) return Promise.reject(new RpcError(INTERNAL_ERROR, "The transport is closed."));
+      const id = `server-${(outboundId += 1)}`;
+      return new Promise((resolve, reject) => {
+        const timer = setTimeout(() => {
+          outbound.delete(id);
+          reject(new RpcError(INTERNAL_ERROR, `The client did not answer "${method}" within the allowed time.`));
+        }, timeoutMs);
+        timer.unref?.();
+        outbound.set(id, { resolve, reject, timer });
+        write({ jsonrpc: "2.0", id, method, params });
+      });
+    },
     async close() {
       await Promise.allSettled([...pending]);
       closed = true;
+      for (const waiter of outbound.values()) {
+        clearTimeout(waiter.timer);
+        waiter.reject(new RpcError(INTERNAL_ERROR, "The transport closed before the client answered."));
+      }
+      outbound.clear();
     },
     closed: new Promise((resolve) => {
       input.on("end", resolve);

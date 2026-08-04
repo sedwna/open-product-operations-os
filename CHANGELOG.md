@@ -4,6 +4,20 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+- Added the human-authority tier to the MCP control surface. A pending gate is put to the product
+  owner through the host's own dialog, and the disposition, deciding actor, and rationale are
+  collected from the person rather than supplied by the model. Where a dialog is available, a model
+  attempting to steer the outcome through tool arguments has no effect on what is recorded.
+- Required a decision token issued by the pending-decisions listing, so a fabricated or guessed
+  request identifier cannot reach the approval store, and kept the existing server-side check that
+  rejects any actor other than the configured human authority.
+- Made declining, cancelling, timing out, or answering a dialog incompletely leave the gate open
+  with nothing recorded, and labelled the compatibility path for hosts without dialog support as
+  model-relayed rather than presenting it as the owner's own words.
+- Added server-to-client request support to the stdio transport, which the dialog path needs, with
+  the disposition settled before any write lease is taken so a pending dialog cannot block the
+  other local surfaces for as long as a person takes to answer.
+
 - Added the planning tier to the MCP control surface: recording product intake, running one bounded
   control-plane cycle, and controlling the local autonomous coordinator. These tools are registered
   only under explicit write authorisation, so a read-only server still has no reachable mutation

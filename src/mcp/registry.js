@@ -1,6 +1,7 @@
 import { TIERS } from "./authority.js";
 import * as read from "./tools/read.js";
 import * as write from "./tools/write.js";
+import { decide } from "./tools/decide.js";
 
 const READ_ONLY_ANNOTATIONS = Object.freeze({
   readOnlyHint: true,
@@ -163,6 +164,30 @@ export const TOOL_DEFINITIONS = Object.freeze([
       additionalProperties: false
     },
     handler: write.autopilot
+  },
+  {
+    name: "product_ops_decide",
+    title: "Record a human decision",
+    description: "Put a pending human gate to the product owner and record their disposition. The decision and rationale are collected from the person, not from you.",
+    tier: TIERS.HUMAN_AUTHORITY,
+    annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+    // Anthropic-specific, honoured by Claude Code v2.1.199 and later: force the permission prompt on
+    // every call, in every permission mode. Other hosts apply their own approval model.
+    meta: { "anthropic/requiresUserInteraction": true },
+    inputSchema: {
+      type: "object",
+      properties: {
+        requestId: { type: "string", pattern: "^APR-[0-9A-F]{12}$" },
+        decisionToken: { type: "string", minLength: 32, maxLength: 32, description: "Issued by product_ops_pending_decisions. Read that first; it cannot be constructed." },
+        apply: { type: "boolean", default: false, description: "Open the dialog and record the answer. Omitted or false describes what would be asked." },
+        decision: { type: "string", enum: ["approved", "rejected"], description: "Compatibility only, for hosts that cannot open a dialog. Supply only what the product owner actually said." },
+        actorId: { type: "string", maxLength: 80, description: "Compatibility only. Must be the configured human authority actor." },
+        rationale: { type: "string", maxLength: 2000, description: "Compatibility only. The owner's own reasoning, not your summary of it." }
+      },
+      required: ["requestId", "decisionToken"],
+      additionalProperties: false
+    },
+    handler: decide
   }
 ]);
 

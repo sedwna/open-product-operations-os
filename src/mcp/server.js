@@ -83,6 +83,9 @@ export function createHandlers(context, { version = packageVersion() } = {}) {
     initialize(params) {
       const requested = params?.protocolVersion;
       context.clientCapabilities = params?.capabilities ?? {};
+      // Elicitation is how the human-authority tier reaches a person. A host that cannot open a
+      // dialog falls back to a weaker, explicitly-labelled path rather than silently pretending.
+      context.supportsElicitation = Boolean(context.elicit) && context.clientCapabilities.elicitation !== undefined;
       return {
         protocolVersion: SUPPORTED_PROTOCOL_VERSIONS.includes(requested) ? requested : SUPPORTED_PROTOCOL_VERSIONS[0],
         capabilities: {
@@ -137,6 +140,9 @@ export async function startServer(argv, { input = process.stdin, output = proces
     handlers: createHandlers(context),
     onError: (error) => process.stderr.write(`product-ops-mcp: ${error.message}\n`)
   });
+  // Assigned after the transport exists; handlers close over the context, so initialize still sees
+  // it when the client connects.
+  context.elicit = (params) => transport.request("elicitation/create", params);
   return { context, transport };
 }
 

@@ -6,7 +6,7 @@ import test from "node:test";
 import { INTAKE_STORE_FILE } from "../src/constants.js";
 import { initCommand } from "../src/commands/init.js";
 import { initializeDevelopmentOs } from "../src/development/init.js";
-import { requestApproval } from "../src/runtime/approvals.js";
+import { loadApprovals, requestApproval } from "../src/runtime/approvals.js";
 import { readJsonOptional } from "../src/runtime/io.js";
 import { CONTROL_PLANE_LEASE_FILE } from "../src/runtime/control-plane-lease.js";
 import { loadTaskboard, replaceTaskboard } from "../src/runtime/taskboard.js";
@@ -28,10 +28,27 @@ async function makeProject(t) {
   return root;
 }
 
-async function handlersFor(t, { allowWrites = false } = {}) {
+async function handlersFor(t, { allowWrites = false, elicit } = {}) {
   const root = await makeProject(t);
   const context = await createServerContext({ project: root, allowWrites });
-  return { root, context, handlers: createHandlers(context, { version: "test" }) };
+  if (elicit) context.elicit = elicit;
+  const handlers = createHandlers(context, { version: "test" });
+  handlers.initialize({ protocolVersion: "2026-07-28", capabilities: elicit ? { elicitation: {} } : {} });
+  return { root, context, handlers };
+}
+
+/** Open a real pending gate and return it with the token product_ops_pending_decisions issues. */
+async function openGate(root, handlers, overrides = {}) {
+  const { records } = await loadTaskboard(root);
+  await requestApproval(root, {
+    taskId: records[0].task_id,
+    gate: "product_direction_or_priority",
+    question: "Ship the per-workspace summary day, or keep one global default?",
+    risks: ["Existing scheduled jobs must migrate without dropping a send."],
+    ...overrides
+  }, { dryRun: false });
+  const listed = await handlers["tools/call"]({ name: "product_ops_pending_decisions", arguments: {} });
+  return listed.structuredContent.items[0];
 }
 
 test("argument parsing binds a project and defaults to read-only", () => {
@@ -119,22 +136,20 @@ test("exercising every read path leaves the project byte-identical", async (t) =
   assert.equal(await digest(), before, "a read-only session must not change a single byte");
 });
 
-test("write authorisation registers the plan tier and nothing beyond it", async (t) => {
+test("write authorisation registers the plan and human-authority tiers, and nothing beyond them", async (t) => {
   const { handlers } = await handlersFor(t, { allowWrites: true });
   const { tools } = handlers["tools/list"]();
-  assert.equal(tools.length, 10);
-  const plan = tools.filter((tool) => tool.annotations.readOnlyHint === false);
-  assert.deepEqual(plan.map((tool) => tool.name).sort(), [
-    "product_ops_autopilot",
-    "product_ops_intake",
-    "product_ops_operate"
-  ]);
-  for (const tool of plan) assert.equal(tool.annotations.destructiveHint, false);
-  assert.equal(
-    TOOL_DEFINITIONS.some((definition) => definition.tier === "human_authority"),
-    false,
-    "the human-authority tier lands with elicitation, not here"
-  );
+  assert.equal(tools.length, 11);
+
+  const byTier = (tier) => TOOL_DEFINITIONS.filter((definition) => definition.tier === tier).map((definition) => definition.name).sort();
+  assert.deepEqual(byTier("plan"), ["product_ops_autopilot", "product_ops_intake", "product_ops_operate"]);
+  assert.deepEqual(byTier("human_authority"), ["product_ops_decide"]);
+  assert.equal(byTier("read").length, 7);
+  assert.equal(TOOL_DEFINITIONS.length, 11, "every definition belongs to a known tier");
+
+  for (const tool of tools.filter((entry) => entry.annotations.readOnlyHint === false)) {
+    assert.equal(tool.annotations.destructiveHint, false, `${tool.name} must not be marked destructive`);
+  }
 });
 
 test("intake plans by default and never authorises a cycle unless asked", async (t) => {
@@ -496,6 +511,147 @@ test("resources list, read, and reject anything outside the canonical catalog", 
   await assert.rejects(handlers["resources/read"]({ uri: "productops://workbook/../../etc" }), /not served by this project/);
   await assert.rejects(handlers["resources/read"]({ uri: "productops://workbook/unknown_tab" }), /canonical catalog/);
   await assert.rejects(handlers["resources/read"]({ uri: "file:///etc/passwd" }), /not served by this project/);
+});
+
+test("decide is registered with the always-prompt marker and asks for nothing it should not", async (t) => {
+  const { handlers } = await handlersFor(t, { allowWrites: true });
+  const entry = handlers["tools/list"]().tools.find((tool) => tool.name === "product_ops_decide");
+  assert.ok(entry, "the human-authority tool must be registered under write authorisation");
+  assert.equal(entry._meta["anthropic/requiresUserInteraction"], true);
+  assert.deepEqual(entry.inputSchema.required, ["requestId", "decisionToken"],
+    "the disposition, actor, and rationale must not be required of the model");
+});
+
+test("decide plans without opening a dialog and without recording anything", async (t) => {
+  let asked = 0;
+  const { root, handlers } = await handlersFor(t, { allowWrites: true, elicit: async () => { asked += 1; return { action: "accept" }; } });
+  const gate = await openGate(root, handlers);
+
+  const planned = await handlers["tools/call"]({
+    name: "product_ops_decide",
+    arguments: { requestId: gate.requestId, decisionToken: gate.decisionToken }
+  });
+  assert.equal(planned.isError, false, planned.content[0].text);
+  assert.equal(planned.structuredContent.applied, false);
+  assert.deepEqual(planned.structuredContent.willAsk, ["decision", "actorId", "rationale"]);
+  assert.equal(asked, 0, "planning must not put a dialog in front of a person");
+  assert.match(planned.content[0].text, /You are not being asked to choose; you are asking them to/);
+
+  const stored = (await loadApprovals(root)).requests.find((item) => item.requestId === gate.requestId);
+  assert.equal(stored.status, "pending", "planning must not record a disposition");
+});
+
+test("decide records what the person entered, not what the model supplied", async (t) => {
+  let seen = null;
+  const { root, handlers } = await handlersFor(t, {
+    allowWrites: true,
+    elicit: async (params) => {
+      seen = params;
+      return { action: "accept", content: { decision: "rejected", actorId: "human-product-owner", rationale: "Not before the migration story is written." } };
+    }
+  });
+  const gate = await openGate(root, handlers);
+
+  const result = await handlers["tools/call"]({
+    name: "product_ops_decide",
+    arguments: {
+      requestId: gate.requestId,
+      decisionToken: gate.decisionToken,
+      apply: true,
+      // A model attempting to steer the outcome must have no effect when a dialog is available.
+      decision: "approved",
+      actorId: "human-product-owner",
+      rationale: "Looks fine to me."
+    }
+  });
+  assert.equal(result.isError, false, result.content[0].text);
+  assert.equal(result.structuredContent.decision, "rejected", "the dialog answer wins over the tool arguments");
+  assert.equal(result.structuredContent.attribution, "human_entered");
+  assert.match(result.structuredContent.rationale, /migration story/);
+  assert.doesNotMatch(result.structuredContent.rationale, /Looks fine to me/);
+
+  assert.deepEqual(seen.requestedSchema.required, ["decision", "actorId", "rationale"]);
+  assert.deepEqual(seen.requestedSchema.properties.decision.enum, ["approved", "rejected"]);
+  assert.match(seen.message, /product_direction_or_priority/);
+
+  const stored = (await loadApprovals(root)).requests.find((item) => item.requestId === gate.requestId);
+  assert.equal(stored.status, "rejected");
+  assert.equal(stored.decidedByActorId, "human-product-owner");
+});
+
+test("declining, cancelling, or answering incompletely records nothing", async (t) => {
+  for (const response of [{ action: "decline" }, { action: "cancel" }, { action: "accept", content: { decision: "approved" } }]) {
+    await t.test(`response ${JSON.stringify(response)}`, async (inner) => {
+      const { root, handlers } = await handlersFor(inner, { allowWrites: true, elicit: async () => response });
+      const gate = await openGate(root, handlers);
+      const result = await handlers["tools/call"]({
+        name: "product_ops_decide",
+        arguments: { requestId: gate.requestId, decisionToken: gate.decisionToken, apply: true }
+      });
+      assert.equal(result.isError, true);
+      assert.equal(result.structuredContent.code, "ELICITATION_DECLINED");
+      const stored = (await loadApprovals(root)).requests.find((item) => item.requestId === gate.requestId);
+      assert.equal(stored.status, "pending", "a refused dialog must leave the gate open");
+    });
+  }
+});
+
+test("a host without elicitation refuses rather than deciding on the owner's behalf", async (t) => {
+  const { root, handlers } = await handlersFor(t, { allowWrites: true });
+  const gate = await openGate(root, handlers);
+
+  const bare = await handlers["tools/call"]({
+    name: "product_ops_decide",
+    arguments: { requestId: gate.requestId, decisionToken: gate.decisionToken, apply: true }
+  });
+  assert.equal(bare.isError, true);
+  assert.equal(bare.structuredContent.code, "ELICITATION_UNAVAILABLE");
+  assert.equal((await loadApprovals(root)).requests[0].status, "pending");
+
+  const relayed = await handlers["tools/call"]({
+    name: "product_ops_decide",
+    arguments: {
+      requestId: gate.requestId, decisionToken: gate.decisionToken, apply: true,
+      decision: "approved", actorId: "human-product-owner", rationale: "The owner said to go ahead."
+    }
+  });
+  assert.equal(relayed.isError, false, relayed.content[0].text);
+  assert.equal(relayed.structuredContent.attribution, "model_relayed");
+  assert.match(relayed.content[0].text, /relayed by a model rather than typed by the product owner/);
+});
+
+test("the server-side authority check survives every host path", async (t) => {
+  const { root, handlers } = await handlersFor(t, { allowWrites: true });
+  const gate = await openGate(root, handlers);
+  const wrongActor = await handlers["tools/call"]({
+    name: "product_ops_decide",
+    arguments: {
+      requestId: gate.requestId, decisionToken: gate.decisionToken, apply: true,
+      decision: "approved", actorId: "actor-rb-02", rationale: "Delegated."
+    }
+  });
+  assert.equal(wrongActor.isError, true);
+  assert.match(wrongActor.structuredContent.message, /human authority actor/);
+  assert.equal((await loadApprovals(root)).requests[0].status, "pending");
+});
+
+test("a decision needs the issued token and an open gate", async (t) => {
+  const accept = async () => ({ action: "accept", content: { decision: "approved", actorId: "human-product-owner", rationale: "Agreed." } });
+  const { root, handlers } = await handlersFor(t, { allowWrites: true, elicit: accept });
+  const gate = await openGate(root, handlers);
+  const call = (args) => handlers["tools/call"]({ name: "product_ops_decide", arguments: args });
+
+  const forged = await call({ requestId: gate.requestId, decisionToken: "0".repeat(32), apply: true });
+  assert.equal(forged.structuredContent.code, "DECISION_TOKEN_INVALID");
+
+  const unknown = await call({ requestId: "APR-AAAAAAAAAAAA", decisionToken: gate.decisionToken, apply: true });
+  assert.equal(unknown.structuredContent.code, "NOT_FOUND");
+  assert.equal((await loadApprovals(root)).requests[0].status, "pending", "neither attempt may record anything");
+
+  const first = await call({ requestId: gate.requestId, decisionToken: gate.decisionToken, apply: true });
+  assert.equal(first.isError, false, first.content[0].text);
+  const second = await call({ requestId: gate.requestId, decisionToken: gate.decisionToken, apply: true });
+  assert.equal(second.structuredContent.code, "APPROVAL_NOT_PENDING");
 });
 
 test("prompts present human gates without resolving them", async (t) => {
