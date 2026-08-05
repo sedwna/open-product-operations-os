@@ -1,8 +1,15 @@
+import fs from "node:fs/promises";
 import path from "node:path";
 import { applyWrites, planWrites } from "../file-writer.js";
+import { parseCsv, stringifyCsv } from "../csv.js";
 import { ALWAYS_REQUIRED_ROLES, IMPACT_ROLE_MAP } from "./catalog.js";
 import { assertRequestBoundary, contractDigest, json, readContract, safeContractId } from "./contracts.js";
 import { loadDevelopmentConfig, validateDevelopmentConfig } from "./config.js";
+
+export const WORKSTREAM_BOARD = "engineering/taskboard/workstreams.csv";
+export const WORKSTREAM_HEADERS = Object.freeze([
+  "workstream_id", "request_id", "owner_role", "domain", "title", "status", "dependency_ids", "evidence_refs", "updated_at"
+]);
 
 export async function planDevelopmentRequest(root, requestFile, { dryRun = true } = {}) {
   const config = await loadDevelopmentConfig(root);
@@ -29,11 +36,50 @@ export async function planDevelopmentRequest(root, requestFile, { dryRun = true 
   const files = new Map([
     [requestPath, json(request)],
     [planPath, json(plan)],
-    [`${config.sync.receipts}/${receipt.receiptId}.json`, json(receipt)]
+    [`${config.sync.receipts}/${receipt.receiptId}.json`, json(receipt)],
+    [WORKSTREAM_BOARD, await projectWorkstreamBoard(root, plan)]
   ]);
-  const operations = await planWrites(path.resolve(root), files, {});
+  const operations = await planWrites(path.resolve(root), files, { force: true, replaceOperational: true });
   if (!dryRun) await applyWrites(path.resolve(root), operations);
   return { dryRun, request, digest, plan, receipt, operations };
+}
+
+/**
+ * Put a plan's workstreams on the engineering board.
+ *
+ * The board is the canonical record of what engineering is carrying, and the product-side panel
+ * reads it to show the engineering teams at all. A plan that created workstreams and left the board
+ * empty meant the documented planning path produced work nobody could see.
+ *
+ * Rows belonging to other requests are preserved, and re-planning the same request replaces its own
+ * rows rather than duplicating them, so planning stays idempotent.
+ */
+async function projectWorkstreamBoard(root, plan) {
+  const existing = await readBoard(root);
+  const kept = existing.filter((row) => row[1] !== plan.requestId);
+  const now = new Date().toISOString();
+  const added = plan.workstreams.map((workstream) => [
+    workstream.id,
+    plan.requestId,
+    workstream.ownerRole,
+    workstream.domain,
+    workstream.title,
+    workstream.status ?? "ready",
+    (workstream.dependencies ?? []).join("|"),
+    "",
+    now
+  ]);
+  return stringifyCsv([WORKSTREAM_HEADERS, ...kept, ...added]);
+}
+
+async function readBoard(root) {
+  try {
+    const rows = parseCsv(await fs.readFile(path.join(path.resolve(root), WORKSTREAM_BOARD), "utf8"));
+    return rows.slice(1).filter((row) => row.length === WORKSTREAM_HEADERS.length && row[0]);
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
 }
 
 export function buildPlan(request, config, digest) {

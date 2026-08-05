@@ -10,7 +10,7 @@ import { renderDashboard } from "./dashboard-view.js";
 import { readJsonOptional, writeJson } from "./io.js";
 import { calculateMetrics } from "./metrics.js";
 import { loadTaskboard, visibleTaskboardRecords } from "./taskboard.js";
-import { readAutopilotEvents, readAutopilotState } from "../autopilot/state.js";
+import { readAutomationLink, readAutopilotEvents, readAutopilotState } from "../autopilot/state.js";
 
 export async function loadDashboardSnapshot(root, { now = new Date(), mode = "snapshot", writable = false } = {}) {
   const [config, metrics, taskboard, approvals, intake, automation, autopilotState, autopilotEvents] = await Promise.all([
@@ -38,7 +38,12 @@ export async function loadDashboardSnapshot(root, { now = new Date(), mode = "sn
   ]);
   const tasks = visibleTaskboardRecords(taskboard.records);
   const latestAutopilotReport = await loadLatestAutopilotReport(root, autopilotState);
-  const engineeringProgress = await loadEngineeringProgress(autopilotState.applicationRoot);
+  // The coordinator records the application root once it has run. Before that, the automation link
+  // is what says where the application is — and a workspace that has planned engineering work
+  // through the CLI has a linked application without ever having run a cycle.
+  const engineeringProgress = await loadEngineeringProgress(
+    autopilotState.applicationRoot ?? await linkedApplicationRoot(root)
+  );
   const pendingApprovals = approvals.requests.filter((request) => request.status === "pending");
   const risks = collectRisks(tasks, pendingApprovals);
   const roleActivity = config.agents.map((agent) => {
@@ -90,6 +95,15 @@ export async function loadDashboardSnapshot(root, { now = new Date(), mode = "sn
       blockedTasks: metrics.totals.blocked
     }
   };
+}
+
+async function linkedApplicationRoot(root) {
+  try {
+    return (await readAutomationLink(root)).applicationRoot;
+  } catch {
+    // No link, or one that no longer resolves. Either way there is no engineering side to show.
+    return null;
+  }
 }
 
 export async function loadEngineeringProgress(applicationRoot) {

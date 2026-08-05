@@ -4,6 +4,15 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+- Made engineering planning put its workstreams on the engineering board. The board is the
+  canonical record of what engineering is carrying, and the documented planning path created
+  workstreams inside a plan file while leaving the board empty, so work existed that no surface
+  could show. Re-planning a request replaces its own rows rather than duplicating them, and rows
+  belonging to other requests are preserved.
+- Found the linked application through the automation link when no coordinator has run. The
+  application root was read only from coordinator state, so a workspace that planned engineering
+  work through the CLI reported no engineering side at all.
+
 - Made the control surface live: the server watches the canonical records and notifies subscribers
   when a resource they hold goes stale, and the panel refreshes itself, faster while work is moving
   or a gate is waiting and slower when nothing is.
