@@ -17,6 +17,7 @@ import {
   intakeCommand,
   metricsCommand,
   migrateCommand,
+  coordinatorCommand,
   operateCommand,
   providerQueueCommand,
   providerSyncCommand,
@@ -30,6 +31,7 @@ Usage:
   product-ops validate <target>
   product-ops generate-workbook <target> [--dry-run] [--force]
   product-ops operate <target> [--apply] [--execute-development]
+  product-ops coordinator <target> [--apply]
   product-ops development <target> --task <task-id> [--apply]
   product-ops development-export <target> --task <task-id> --file <request-json> [--apply]
   product-ops development-import <target> --file <result-json> [--apply]
@@ -50,6 +52,7 @@ Commands:
   validate           Check config, ownership, routing, tasks, files, and secrets.
   generate-workbook  Generate CSV workbook templates from the project config.
   operate            Plan or execute one control-plane scheduling cycle.
+  coordinator        Run the autonomous coordinator until stopped.
   development        Dispatch one eligible RB-13 task to a configured command agent.
   development-export Export an approved, versioned Product-to-Development contract.
   development-import Import an independently verified Development-to-Product result.
@@ -92,6 +95,8 @@ export async function run(argv, io = console) {
       lines = await generateWorkbookCommand(target, options);
     } else if (command === "operate") {
       lines = await operateCommand(target, options);
+    } else if (command === "coordinator") {
+      lines = await coordinatorCommand(target, options, io);
     } else if (command === "development") {
       lines = await developmentCommand(target, options);
     } else if (command === "development-export") {
@@ -191,6 +196,7 @@ function validateCommandOptions(command, provided) {
     validate: [],
     "generate-workbook": ["dryRun", "force"],
     operate: [...runtime, "executeDevelopment"],
+    coordinator: runtime,
     development: [...runtime, "task"],
     "development-export": [...runtime, "task", "file"],
     "development-import": [...runtime, "file"],

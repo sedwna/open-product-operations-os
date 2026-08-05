@@ -269,14 +269,25 @@ async function resetInProgressTask(root, taskId, message, now) {
   });
 }
 
-export function startAutopilotLoop(root, { intervalMs = 1500, runner = runPendingAutopilotCycle } = {}) {
+/**
+ * Run the cycle on a timer.
+ *
+ * `keepAlive` decides whether this loop is the reason the process exists. Hosted inside the
+ * dashboard server, it is not — the HTTP server holds the process open, and an unref'd timer avoids
+ * keeping it alive past its own shutdown. Run as a standalone coordinator, the loop *is* the
+ * process, and an unref'd timer would let it exit silently between cycles.
+ */
+export function startAutopilotLoop(
+  root,
+  { intervalMs = 1500, runner = runPendingAutopilotCycle, keepAlive = false, onCycle = null } = {}
+) {
   let timer = null;
   let closed = false;
   let active = null;
   const schedule = () => {
     if (closed) return;
     timer = setTimeout(tick, intervalMs);
-    timer.unref?.();
+    if (!keepAlive) timer.unref?.();
   };
   const tick = async () => {
     if (closed) return;
@@ -288,6 +299,10 @@ export function startAutopilotLoop(root, { intervalMs = 1500, runner = runPendin
     active = Promise.resolve()
       .then(() => runner(root))
       .catch((error) => ({ status: "failed", error: String(error.message) }))
+      .then((result) => {
+        try { onCycle?.(result); } catch { /* reporting must never stop the loop */ }
+        return result;
+      })
       .finally(() => { active = null; });
     return active;
   };

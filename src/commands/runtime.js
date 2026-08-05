@@ -11,6 +11,9 @@ import { exportDevelopmentRequest, importEngineeringResult } from "../developmen
 import { ingestRecord } from "../runtime/intake.js";
 import { migrateProject } from "../runtime/migrations.js";
 import { buildSetupWizard } from "../runtime/setup-wizard.js";
+import { setControlPlaneSurface } from "../runtime/control-plane-lease.js";
+import { startAutopilotLoop } from "../autopilot/orchestrator.js";
+import { readAutomationLink, readAutopilotState } from "../autopilot/state.js";
 
 export async function operateCommand(target, options) {
   const config = await validatedConfig(target);
@@ -122,6 +125,74 @@ export async function dashboardCommand(target, options) {
   if (options.port) throw new Error("dashboard --port requires --serve.");
   const result = await buildDashboard(target, { dryRun: runtimeDryRun(options), output: options.output });
   return [`${result.dryRun ? "Planned" : "Generated"} dashboard at ${result.output} (${result.bytes} bytes).`];
+}
+
+/**
+ * Run the autonomous coordinator as its own process.
+ *
+ * It previously existed only inside the dashboard server, which meant the one component that drives
+ * work forward could not run without also serving a web interface. Separating them lets either be
+ * replaced without taking the other with it.
+ */
+export async function coordinatorCommand(target, options, io = console) {
+  const config = await validatedConfig(target);
+  const link = await readAutomationLink(target).catch((error) => {
+    if (error.code === "ENOENT") return null;
+    throw new Error(`The automation link cannot be used: ${error.message}`);
+  });
+  if (!link) {
+    throw new Error("This workspace has no automation link, so there is no engineering side to coordinate.");
+  }
+  if (!link.autoStart) {
+    throw new Error("The automation link exists but does not authorise automatic start. Nothing would be claimed.");
+  }
+
+  const state = await readAutopilotState(target);
+  const lines = [
+    `Coordinator for ${config.project.name}.`,
+    `Application: ${link.applicationRelativePath} · provider: ${link.provider}`,
+    `Cycle status: ${state.status}${state.currentTaskId ? ` on ${state.currentTaskId}` : ""}.`
+  ];
+
+  if (!options.apply) {
+    lines.push(
+      "",
+      "This is a plan. Running the coordinator claims work, executes bounded agents, and writes",
+      "canonical records. Add the apply flag to start it.",
+      "Production release, destructive actions, spending, and external publication stay behind",
+      "their own human gates either way."
+    );
+    return lines;
+  }
+
+  setControlPlaneSurface("autopilot");
+  lines.push("", "Running. Press Ctrl+C to stop after the current agent returns.");
+  for (const line of lines) io.log(line);
+
+  const loop = startAutopilotLoop(target, {
+    keepAlive: true,
+    onCycle: (result) => {
+      if (!result || result.status === "idle" || result.status === "busy") return;
+      const detail = result.task?.task_id ?? result.cycleId ?? "";
+      io.log(`  ${result.status}${detail ? ` · ${detail}` : ""}${result.error ? ` · ${String(result.error).slice(0, 160)}` : ""}`);
+    }
+  });
+
+  // Pausing is cooperative everywhere else in this system; stopping is too. The active agent
+  // finishes and releases its lease rather than being killed mid-write.
+  await new Promise((resolve) => {
+    let stopping = false;
+    const stop = () => {
+      if (stopping) return;
+      stopping = true;
+      io.log("Stopping after the active agent returns…");
+      loop.close().then(resolve, resolve);
+    };
+    process.once("SIGINT", stop);
+    process.once("SIGTERM", stop);
+  });
+
+  return ["Coordinator stopped."];
 }
 
 export async function metricsCommand(target, options) {
