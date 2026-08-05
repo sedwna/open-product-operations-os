@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
@@ -6,7 +7,10 @@ import { initCommand } from "../src/commands/init.js";
 import { loadConfig } from "../src/config.js";
 import { initializeDevelopmentOs } from "../src/development/init.js";
 import { planDevelopmentRequest, WORKSTREAM_BOARD, WORKSTREAM_HEADERS } from "../src/development/planner.js";
-import { exportDevelopmentRequest } from "../src/development/product-sync.js";
+import { loadDevelopmentConfig } from "../src/development/config.js";
+import { contractDigest } from "../src/development/contracts.js";
+import { completeDevelopmentResult } from "../src/development/result.js";
+import { exportDevelopmentRequest, importEngineeringResult } from "../src/development/product-sync.js";
 import { validateDevelopmentOs } from "../src/development/validation.js";
 import { decideApproval, loadApprovals, requestApproval } from "../src/runtime/approvals.js";
 import { runControlTower } from "../src/runtime/control-tower.js";
@@ -103,6 +107,78 @@ async function connect(t, { link = true } = {}) {
   return { product, application, config, bridge, requestFile, request };
 }
 
+/**
+ * Everything engineering must produce before a result can cross back: content-addressed evidence at
+ * an exact revision, a sealed run for every planned workstream, passing gates, and a disposition
+ * from an actor who did not produce the work.
+ */
+async function completeEngineering(application, plan, request, { revision = "a1b2c3d4e5f60718293a4b5c6d7e8f9012345678" } = {}) {
+  const devConfig = await loadDevelopmentConfig(application);
+  const actorFor = (role) => devConfig.roles.find((entry) => entry.id === role).actorId;
+  const write = async (file, value) => {
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  };
+
+  const body = "PASS tests/digest-link.test.js\n  resolves against the originating workspace\n";
+  const evidencePath = ".development-os/evidence/test-output.txt";
+  await fs.mkdir(path.join(application, ".development-os/evidence"), { recursive: true });
+  await fs.writeFile(path.join(application, evidencePath), body, "utf8");
+  const evidence = [{
+    path: evidencePath,
+    kind: "test",
+    sha256: crypto.createHash("sha256").update(body).digest("hex"),
+    sourceRevision: revision
+  }];
+
+  const workstreamRuns = [];
+  for (const workstream of plan.workstreams) {
+    const run = {
+      schemaVersion: "1.0.0",
+      planId: plan.planId,
+      workstreamId: workstream.id,
+      ownerRole: workstream.ownerRole,
+      producerActorId: actorFor(workstream.ownerRole),
+      status: "completed",
+      ...(workstream.ownerRole === "ENG-15" ? { verificationDisposition: "passed" } : {}),
+      implementationRevision: revision,
+      changedComponents: ["src/digest/link-resolver.js"],
+      commands: ["npm test"],
+      evidence: [evidencePath],
+      knownRisks: [],
+      completedAt: new Date().toISOString()
+    };
+    await write(path.join(application, ".development-os/runs", `${plan.planId}-${workstream.id}-result.json`), run);
+    workstreamRuns.push({ workstreamId: workstream.id, runDigest: contractDigest(run) });
+  }
+
+  return {
+    schemaVersion: "1.0.0",
+    resultId: "ENGRESULT-20260805-001",
+    requestId: request.requestId,
+    productTaskId: request.productTaskId,
+    planId: plan.planId,
+    planDigest: contractDigest(plan),
+    sourceDigest: contractDigest(request),
+    implementationRevision: revision,
+    status: "implementation_complete",
+    implementationReferences: ["digest-app@a1b2c3d"],
+    changedComponents: ["src/digest/link-resolver.js", "tests/digest-link.test.js"],
+    workstreamRuns,
+    gateResults: plan.qualityGates.map((gateId) => ({ gateId, status: "passed", evidenceReferences: [evidencePath] })),
+    evidence,
+    knownRisks: ["Links created before the fix still carry the old workspace hint."],
+    producerActorId: actorFor("ENG-01"),
+    verification: {
+      verifierActorId: actorFor("ENG-15"),
+      disposition: "verified",
+      verifiedAt: new Date().toISOString(),
+      evidenceReferences: [evidencePath]
+    },
+    completedAt: new Date().toISOString()
+  };
+}
+
 async function boardRows(application) {
   const rows = parseCsv(await fs.readFile(path.join(application, WORKSTREAM_BOARD), "utf8"));
   return { headers: rows[0], records: rows.slice(1).filter((row) => row[0]) };
@@ -170,6 +246,84 @@ test("the product owner sees the engineering teams once an application is linked
   assert.equal(panel.teams.engineering.every((team) => team.name !== team.id), true, "named, not coded");
   assert.equal(panel.teams.engineering.every((team) => team.side === "engineering"), true);
   assert.ok(panel.teams.engineering.some((team) => team.id === "ENG-15"), "including independent verification");
+});
+
+test("a verified result crosses back with its digest and evidence intact", async (t) => {
+  const { product, application, config, bridge, requestFile, request } = await connect(t);
+  await exportDevelopmentRequest(product, config, bridge.task_id, requestFile, { dryRun: false });
+  const { plan } = await planDevelopmentRequest(application, requestFile, { dryRun: false });
+
+  const result = await completeEngineering(application, plan, request);
+  const resultFile = path.join(path.dirname(product), "result.json");
+  await fs.writeFile(resultFile, `${JSON.stringify(result, null, 2)}\n`, "utf8");
+
+  const sealed = await completeDevelopmentResult(application, resultFile, { dryRun: false });
+  assert.equal(sealed.receipt.direction, "development_to_product");
+  assert.equal(sealed.receipt.contractDigest, sealed.digest);
+
+  // The importer wants the sealed result and its receipt together, which is what the outbox holds.
+  const devConfig = await loadDevelopmentConfig(application);
+  const outbox = path.join(application, devConfig.sync.outbox);
+  await fs.copyFile(path.join(outbox, `${result.resultId}.json`), resultFile);
+  await fs.copyFile(path.join(outbox, `${result.resultId}.receipt.json`), `${resultFile.slice(0, -5)}.receipt.json`);
+
+  const imported = await importEngineeringResult(product, resultFile, { dryRun: false });
+  assert.equal(imported.result.resultId, result.resultId);
+  assert.equal(imported.digest, sealed.digest, "the digest must survive the crossing unchanged");
+
+  const stored = await fs.readdir(path.join(product, ".product-ops/runtime/development/contracts/inbox"));
+  assert.ok(stored.includes(`${result.resultId}.json`), "the verified result lands in the product boundary");
+});
+
+test("a result that its own producer signed off cannot cross back", async (t) => {
+  // The invariant the whole return path exists to protect: nobody certifies their own work.
+  const { product, application, config, bridge, requestFile, request } = await connect(t);
+  await exportDevelopmentRequest(product, config, bridge.task_id, requestFile, { dryRun: false });
+  const { plan } = await planDevelopmentRequest(application, requestFile, { dryRun: false });
+
+  const result = await completeEngineering(application, plan, request);
+  const devConfig = await loadDevelopmentConfig(application);
+  const verifier = devConfig.roles.find((role) => role.id === "ENG-15").actorId;
+  const selfCertified = { ...result, producerActorId: verifier };
+
+  const resultFile = path.join(path.dirname(product), "self-certified.json");
+  await fs.writeFile(resultFile, `${JSON.stringify(selfCertified, null, 2)}\n`, "utf8");
+  await assert.rejects(
+    completeDevelopmentResult(application, resultFile, { dryRun: false }),
+    /producer and verifier actors must be distinct/
+  );
+});
+
+test("an unverified result cannot claim a completed implementation", async (t) => {
+  const { product, application, config, bridge, requestFile, request } = await connect(t);
+  await exportDevelopmentRequest(product, config, bridge.task_id, requestFile, { dryRun: false });
+  const { plan } = await planDevelopmentRequest(application, requestFile, { dryRun: false });
+
+  const result = await completeEngineering(application, plan, request);
+  const unverified = { ...result, verification: { ...result.verification, disposition: "changes_requested" } };
+  const resultFile = path.join(path.dirname(product), "unverified.json");
+  await fs.writeFile(resultFile, `${JSON.stringify(unverified, null, 2)}\n`, "utf8");
+  await assert.rejects(
+    completeDevelopmentResult(application, resultFile, { dryRun: false }),
+    /requires an independent verified disposition/
+  );
+});
+
+test("evidence that does not match its recorded digest is refused", async (t) => {
+  const { product, application, config, bridge, requestFile, request } = await connect(t);
+  await exportDevelopmentRequest(product, config, bridge.task_id, requestFile, { dryRun: false });
+  const { plan } = await planDevelopmentRequest(application, requestFile, { dryRun: false });
+
+  const result = await completeEngineering(application, plan, request);
+  // The artifact is edited after its digest was taken, which is exactly what tampering looks like.
+  await fs.writeFile(path.join(application, result.evidence[0].path), "PASS (edited afterwards)\n", "utf8");
+
+  const resultFile = path.join(path.dirname(product), "tampered.json");
+  await fs.writeFile(resultFile, `${JSON.stringify(result, null, 2)}\n`, "utf8");
+  await assert.rejects(
+    completeDevelopmentResult(application, resultFile, { dryRun: false }),
+    /evidence digest mismatch/
+  );
 });
 
 test("an unlinked workspace says so rather than inventing an engineering side", async (t) => {
