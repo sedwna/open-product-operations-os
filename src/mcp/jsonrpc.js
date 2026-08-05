@@ -19,7 +19,7 @@ export class RpcError extends Error {
  * Newline-delimited JSON-RPC 2.0 over a stdio pair, as required by the MCP stdio transport.
  * Nothing except protocol messages may reach the output stream; diagnostics belong on stderr.
  */
-export function serveStdio({ input, output, handlers, onError = () => {} }) {
+export function serveStdio({ input, output, handlers, onError = () => {}, trace = null }) {
   let buffer = "";
   let closed = false;
   const pending = new Set();
@@ -30,7 +30,9 @@ export function serveStdio({ input, output, handlers, onError = () => {} }) {
 
   const write = (message) => {
     if (closed) return;
-    output.write(`${JSON.stringify(message)}\n`);
+    const line = JSON.stringify(message);
+    trace?.("out", line);
+    output.write(`${line}\n`);
   };
 
   const respond = (id, result) => write({ jsonrpc: "2.0", id, result });
@@ -80,6 +82,7 @@ export function serveStdio({ input, output, handlers, onError = () => {} }) {
   const consume = (line) => {
     const trimmed = line.trim();
     if (trimmed === "") return;
+    trace?.("in", trimmed);
     let message;
     try {
       message = JSON.parse(trimmed);

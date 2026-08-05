@@ -65,13 +65,30 @@ test("argument parsing binds a project and defaults to read-only", () => {
   assert.throws(() => parseServerArguments(["--project", ".", "--brief-byte-ceiling", "12"]), /between 512 and 262144/);
 });
 
-test("initialize negotiates a supported protocol and offers content subscription", async (t) => {
+test("initialize answers in the client's own revision, whatever it speaks", async (t) => {
+  // A client that receives a revision it does not understand disconnects, and the host then reports
+  // only that it could not attach. An allowlist made that inevitable for every revision it had not
+  // heard of — including 2025-11-25, which is what Claude Code actually speaks.
   const { handlers } = await handlersFor(t);
-  const known = handlers.initialize({ protocolVersion: "2025-06-18", capabilities: {} });
-  assert.equal(known.protocolVersion, "2025-06-18");
+  for (const revision of ["2025-11-25", "2026-07-28", "2025-06-18", "2025-03-26", "2024-11-05", "2099-01-01"]) {
+    assert.equal(
+      handlers.initialize({ protocolVersion: revision, capabilities: {} }).protocolVersion,
+      revision,
+      `a client speaking ${revision} must be answered in ${revision}`
+    );
+  }
+
+  // Only a malformed or absent offer falls back, and it falls back to a real revision.
+  for (const malformed of [undefined, "", "latest", "1.0", 20260728, null]) {
+    assert.equal(
+      handlers.initialize({ protocolVersion: malformed, capabilities: {} }).protocolVersion,
+      "2026-07-28",
+      `a malformed offer ${JSON.stringify(malformed)} must fall back`
+    );
+  }
 
   const unknown = handlers.initialize({ protocolVersion: "1999-01-01", capabilities: {} });
-  assert.equal(unknown.protocolVersion, "2026-07-28");
+  assert.equal(unknown.protocolVersion, "1999-01-01");
   // The resource set is fixed; what changes is content, which is what subscription is for.
   assert.equal(unknown.capabilities.resources.subscribe, true);
   assert.equal(unknown.capabilities.resources.listChanged, false);
