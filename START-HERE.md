@@ -161,11 +161,26 @@ A minimal intake file:
 The engineering side is a separate operating model with its own Git history. It is never a
 subfolder or a mutable database of the product repository.
 
+Two steps: give the application its engineering boundaries, then tell the product workspace which
+repository it operates.
+
 ```text
+# 1. In the application repository
 development-os init ./my-application --dry-run
 development-os init ./my-application
 development-os validate ./my-application
+
+# 2. Back in the product workspace
+product-ops link ./my-product --application ./my-application
+product-ops link ./my-product --application ./my-application --apply
 ```
+
+Until the link exists, this workspace has no engineering side: adoption has nothing to read, the
+coordinator has nothing to coordinate, and the panel shows product teams only.
+
+Linking says which repository the workspace is about — nothing more. Executors and the autonomous
+coordinator stay disabled, because naming a repository is not the same act as authorising agents to
+work inside it. Re-linking a moved repository keeps whatever you had already enabled.
 
 This creates 15 engineering authority boundaries and quality gates covering architecture, frontend,
 accessibility, backend, APIs, clients, database and migrations, data and AI, cloud and network,

@@ -68,10 +68,19 @@ If a link is missing, the system does not silently call the work complete.
 | **Provider boundary** | Disabled-by-default adapters for GitHub, GitLab, Jira, Linear, Azure DevOps, Sheets, Graph, and Airtable |
 | **Portable proof** | Cross-host package checks, clean-clone/archive tests, SBOM generation, license checks, and secret scans |
 
-## The control tower
+## Two ways to watch and decide
 
-The dashboard is generated from the same durable records that drive the control plane. It is not a
-second source of truth.
+There is one control plane and two windows onto it. Which you use depends on where you work, not on
+what you are allowed to do — both read the same durable records, and neither is a second source of
+truth.
+
+| | The panel | The local dashboard |
+| --- | --- | --- |
+| **Where** | Inside your agent host, in the conversation | A browser, on a loopback address |
+| **For** | Anyone driving the work through Claude, Codex, or another MCP host | Anyone who would rather not, and anyone without such a host |
+| **Opens with** | `product_ops_panel` | `product-ops dashboard ./my-product --serve` |
+
+The dashboard is generated from the same durable records that drive the control plane.
 
 - **Snapshot mode** creates a self-contained RTL report you can open locally.
 - **Live mode** serves the current project on a loopback address with search, filters, detail
@@ -199,7 +208,6 @@ templates/    canonical governance, role, workbook, workflow, and release contra
 schemas/      published validation contracts
 examples/     fictional end-to-end evidence
 docs/         architecture, security, migration, runtime, and verification guidance
-site/         public read-only dashboard demonstration with fictional data
 ```
 
 ## Development integration
@@ -210,10 +218,18 @@ It uses versioned request/result contracts and content-addressed receipts to syn
 Product Operations repository without merging their authority or canonical state.
 
 ```text
+# Give the application its engineering boundaries
 development-os init ./my-application --dry-run
 development-os init ./my-application
 development-os validate ./my-application
+
+# Then tell the product workspace which repository it operates
+product-ops link ./my-product --application ./my-application --apply
 ```
+
+Until that link exists the workspace has no engineering side: adoption has nothing to read and the
+coordinator has nothing to coordinate. Linking names the repository and stops there — executors and
+the coordinator stay disabled until separately enabled.
 
 `/product-ops:start` runs these initialization and validation commands for you when you confirm
 them; the commands above are there for scripting, CI, or when you prefer direct control. Specialist

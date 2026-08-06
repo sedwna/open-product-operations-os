@@ -328,14 +328,15 @@ path existing at all.
 
 ## Effect on the platform-specific surface
 
-Once the host launches the server, the graphical launchers, the portable Node bootstrap, and the
-provider CLI readiness probes stop being the primary delivery path.
+This section predicted that once the host launched the server, the graphical launchers and the
+portable Node bootstrap would stop being the delivery path. They have since been removed; the
+prior revision is preserved at tag `v0.8.1-launcher-era`.
 
-| Concern | Today | With this surface |
+| Concern | Before | Now |
 | --- | --- | --- |
 | Delivery | Three native launchers plus a per-platform archive | One npm package |
-| User prerequisite | None; a portable Node runtime is downloaded and checksummed | Node 20 or newer |
-| Platform-specific code | Launchers, runtime bootstrap, CLI readiness probes, filesystem semantics | Filesystem semantics only |
+| User prerequisite | None; a portable Node runtime was downloaded and checksummed | Node 20 or newer |
+| Platform-specific code | Launchers, runtime bootstrap, CLI readiness probes, filesystem semantics | Filesystem semantics, plus the readiness probes the spawned-provider executor still needs |
 
 What does **not** become platform-independent: path separators, Windows reserved filenames, CRLF
 handling in CSV records, rename atomicity, and case-sensitivity differences. Those are properties of

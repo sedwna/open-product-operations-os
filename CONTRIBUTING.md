@@ -20,3 +20,17 @@ Each change should include:
 
 Keep one logical change per commit.
 
+## Verifying a change
+
+```text
+npm ci
+npm run check          # lint, clean-room scan, the full suite, portability
+npm run supply-chain   # audit, licences, and the bill of materials
+npm run smoke          # the CLI end to end
+```
+
+`npm run packed:check` compares a real packed artifact against the recorded cross-host hash. It
+fails whenever source changes until the hash is regenerated, and regenerating it from a single
+platform has produced a false agreement before — so it belongs to CI or a second host, not to a
+local run.
+
