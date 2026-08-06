@@ -2,6 +2,7 @@ import { TIERS } from "./authority.js";
 import * as read from "./tools/read.js";
 import * as write from "./tools/write.js";
 import * as work from "./tools/work.js";
+import { adopt } from "./tools/adopt.js";
 import { decide } from "./tools/decide.js";
 import { PANEL_URI } from "./app/panel.js";
 
@@ -178,6 +179,15 @@ export const TOOL_DEFINITIONS = Object.freeze([
       additionalProperties: false
     },
     handler: write.autopilot
+  },
+  {
+    name: "product_ops_adopt",
+    title: "Survey the existing application",
+    description: "Account for every path in the linked application and assign each to the boundary that must read it. Reads only.",
+    tier: TIERS.PLAN,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    handler: adopt
   },
   {
     name: "product_ops_next_work",

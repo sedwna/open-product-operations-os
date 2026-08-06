@@ -4,6 +4,21 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+- Adopted an existing repository completely rather than sampling it. `product_ops_adopt` accounts for
+  every path found: each is either assigned to the boundary that must read it or excluded for a named
+  reason, and `coverage.complete` goes false the moment that stops adding up. A survey that hit its
+  ceiling reports itself as incomplete instead of passing for a full reading.
+- Kept surveying and interpreting apart. The survey is mechanical and draws no conclusions; what the
+  product is, who it serves, and what is wrong with it come from the teams, one bounded brief at a
+  time. A machine's guess about a product and its owner's decision must not end up in the same record
+  with nothing to tell them apart.
+- Recorded what a repository admits about itself — in-code markers, churn, history, stacks — as
+  located facts with their sources, never as graded findings. Grading them would be deciding product
+  priority, which is not a survey's job.
+- Refused to follow a symbolic link out of the repository while still counting it, so adoption cannot
+  quietly pull files from elsewhere on the filesystem into the product record, and ran the whole
+  survey through the credential scan before it can become canonical.
+
 - Let the host perform the work. The coordinator loop could only drive a spawned provider CLI, so a
   host whose subagents are its own to start had no way to take part. `product_ops_next_work` hands
   out one team's bounded brief and `product_ops_submit_work` takes the result back, inverting control

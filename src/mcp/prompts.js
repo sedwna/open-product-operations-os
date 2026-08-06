@@ -42,13 +42,16 @@ export const PROMPTS = Object.freeze([
         ? `They have an existing application at "${application}". It keeps its own Git history and stays the source of truth for code. What joins the operating model is the Development Operations OS namespace inside it, added by \`development-os init\`, and a link so this workspace can reach it. Adding that namespace to a repository someone already relies on is their call, not yours: show what it will create, and wait.`
         : "Ask whether they already have an application repository. If they do, it keeps its own Git history and only gains the Development Operations OS namespace — their explicit call. If they do not, this workspace runs product operations alone until one exists, which is a perfectly good place to start.",
       "",
-      "Then get one real thing moving:",
-      "1. Ask for the first idea, finding, or complaint in their own words.",
-      "2. Record it with product_ops_intake. Leave autopilot authorisation off unless they ask for it — submitting an idea is not the same as authorising an autonomous engineering cycle.",
-      "3. Run product_ops_operate so the work routes to teams.",
-      "4. Open product_ops_panel and walk them through what they are looking at.",
+      "There are two ways in from here. Find out which one they are, and do that one properly.",
       "",
-      "End by telling them the two things that matter: the panel is where they watch and decide, and nothing that needs their authority will happen without them."
+      "ADOPTING AN EXISTING PRODUCT. Once the application is linked, run product_ops_adopt. It accounts for every path in the repository and assigns each to the boundary that must read it. Then work through every assignment with product_ops_next_work — all of them, not a sample. A boundary whose paths were never read is a part of the product that was never adopted, and the owner will find that out later at the worst possible moment.",
+      "- If coverage.complete is false, say so before anything else and do not describe the repository as adopted. Report what was not accounted for.",
+      "- What the teams return are observations carrying their sources. They are not what the product is. That only comes from the owner accepting them, so present the findings and let them decide.",
+      "- Do not skip ahead to fixing what you find. Adoption records the product as it stands; changing it is the next cycle's work.",
+      "",
+      "STARTING FROM AN IDEA. Ask for it in their own words, record it with product_ops_intake, and run product_ops_operate so it routes to teams. Leave autopilot authorisation off unless they ask for it — submitting an idea is not the same as authorising an autonomous engineering cycle.",
+      "",
+      "Either way, finish by opening product_ops_panel and walking them through what they are looking at. End with the two things that matter: the panel is where they watch and decide, and nothing that needs their authority will happen without them."
     ].join("\n")
   },
   {
