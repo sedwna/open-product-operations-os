@@ -179,8 +179,10 @@ function assign(examined) {
 
   // Anything the groups above did not claim still belongs to someone. Experience owns the residue
   // rather than letting it fall out of the adoption silently.
-  const claimed = new Set(assignments.flatMap((assignment) => examined.filter(groupMatcher(groups, assignment.roleId)).map((file) => file.path)));
-  const residue = examined.map((file) => file.path).filter((value) => !claimed.has(value)).sort();
+  const residue = examined
+    .filter((file) => !groups.some((group) => group.match(file)))
+    .map((file) => file.path)
+    .sort();
   if (residue.length > 0) {
     const existing = assignments.find((assignment) => assignment.roleId === "RB-04");
     if (existing) {
@@ -209,11 +211,6 @@ function assign(examined) {
     });
   }
   return assignments;
-}
-
-function groupMatcher(groups, roleId) {
-  const group = groups.find((candidate) => candidate.roleId === roleId);
-  return group ? group.match : () => false;
 }
 
 async function walk(root, maxPaths) {
@@ -289,12 +286,24 @@ function kindOf(relativePath, name, extension) {
   }
   if ([".md", ".mdx", ".rst", ".adoc"].includes(extension)) return "documentation";
   if (/(^|\/)(tests?|spec|__tests__|e2e)(\/|$)/.test(lower) || /\.(test|spec)\.[a-z]+$/.test(lower)) return "test";
-  if (MANIFESTS.has(name) || /^\.?[a-z0-9.-]*(config|rc)(\.[a-z]+)?$/.test(name.toLowerCase())) return "configuration";
+  if (looksLikeConfiguration(name)) return "configuration";
   if ([".json", ".yaml", ".yml", ".toml", ".ini", ".env"].includes(extension)) return "configuration";
   if ([".csv", ".tsv", ".xml", ".graphql", ".proto"].includes(extension)) return "data";
   if (/(^|\/)(index|main|app|server|cli|entry)\.[a-z]+$/.test(lower)) return "entry";
   if (LANGUAGE_BY_EXTENSION.has(extension)) return "source";
   return "data";
+}
+
+/**
+ * Named shapes rather than a loose pattern. Matching "rc" anywhere in a filename classified
+ * ordinary source — `src.js` among them — as configuration, which then sent it to the boundary that
+ * reads risk instead of the one that reads behaviour.
+ */
+function looksLikeConfiguration(name) {
+  const lower = name.toLowerCase();
+  if (MANIFESTS.has(name)) return true;
+  if (lower.startsWith(".") && /(rc|config)(\.[a-z]+)?$/.test(lower)) return true;
+  return /\.config\.[a-z]+$/.test(lower);
 }
 
 async function readStacks(root, examined) {

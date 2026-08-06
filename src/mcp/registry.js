@@ -180,6 +180,15 @@ export const TOOL_DEFINITIONS = Object.freeze([
     },
     handler: write.autopilot
   },
+  // Two tools below read without writing and are still registered under the plan tier rather than
+  // the read tier. That is deliberate, not an oversight in either direction.
+  //
+  // `adopt` reads a *different repository* than the one this server is bound to. Reaching outside
+  // the project boundary is a larger thing to grant than reading inside it, whatever the tool then
+  // does with what it finds.
+  //
+  // `next_work` hands out a claim whose only use is `submit_work`. On a read-only server it could
+  // only ever produce work nobody can return, which is a worse answer than not offering it.
   {
     name: "product_ops_adopt",
     title: "Survey the existing application",

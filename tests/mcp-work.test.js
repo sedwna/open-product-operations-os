@@ -168,5 +168,4 @@ test("both work tools are registered as plan-tier and declared", async (t) => {
     assert.equal(definition.inputSchema.additionalProperties, false);
     assert.ok(definition.description.length <= 160, `${definition.name} description must stay short enough for a tool list`);
   }
-  assert.ok(await Promise.resolve(true));
 });

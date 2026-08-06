@@ -160,3 +160,21 @@ test("the survey is deterministic for an unchanged repository", async (t) => {
   const second = await surveyApplication(root, { now });
   assert.deepEqual(first, second, "two readings of the same repository must not disagree");
 });
+
+test("ordinary source is not mistaken for configuration", async (t) => {
+  // "rc" appears inside plenty of filenames. Matching it loosely sent source files to the boundary
+  // that reads risk instead of the one that reads product behaviour.
+  const root = await application(t, {
+    "src.js": "export const x = 1;\n",
+    "src/source.js": "export const y = 2;\n",
+    "vite.config.ts": "export default {};\n",
+    ".npmrc": "registry=https://example.invalid\n"
+  });
+  const survey = await surveyApplication(root);
+
+  assert.ok(!survey.configuration.includes("src.js"), "src.js is source, not configuration");
+  assert.ok(!survey.configuration.includes("src/source.js"), "source.js is source, not configuration");
+  assert.ok(survey.configuration.includes("vite.config.ts"), "a .config. file is configuration");
+  assert.ok(survey.configuration.includes(".npmrc"), "an rc dotfile is configuration");
+  assert.equal(survey.coverage.complete, true);
+});
