@@ -171,7 +171,7 @@ function render(){
     +'<button id="refresh">تازه‌سازی</button></div>';
   captureDrafts();
   root.className="wrap";
-  root.innerHTML=head+counts+gates+flowSection(s)+teamsSection(s)+risks+foot;
+  root.innerHTML=head+counts+gates+stuckSection(s)+flowSection(s)+teamsSection(s)+risks+foot;
   restoreDrafts();
   document.getElementById("refresh").onclick=function(){refresh();};
   s.decisions.items.forEach(function(item){
@@ -189,6 +189,27 @@ function teamOf(roleId){
   if(s){var all=(s.product||[]).concat(s.engineering||[]);
     for(var i=0;i<all.length;i++) if(all[i].id===roleId) return all[i].name;}
   return roleId||"—";
+}
+// Stuck work, separated by whose it is to clear. A blockage the owner cannot act on still belongs
+// on the panel — they asked where the work is stuck, not only where they are needed — but it must
+// not read as another thing waiting on them.
+function stuckSection(s){
+  var b=s.blockages;if(!b||!b.length)return "";
+  var mine=b.filter(function(x){return x.kind==="awaiting_decision";});
+  var theirs=b.filter(function(x){return x.kind!=="awaiting_decision";});
+  return '<div><h2>کجا گیر کرده‌ایم</h2>'
+    +(theirs.length?'<div class="card"><ul class="risks">'+theirs.map(stuckItem).join("")+"</ul></div>":"")
+    +(mine.length?'<div class="note" style="margin-top:6px">'+mine.length
+      +' مورد از این‌ها در بخش بالا منتظر تصمیم شماست.</div>':"")
+    +(theirs.length?"":'<div class="card empty">هیچ کاری پشت وابستگی نمانده است.</div>')+"</div>";
+}
+function stuckItem(x){
+  var why=x.reason?plain(x.reason):"دلیلی روی کارت ثبت نشده است.";
+  var out='<li dir="auto"><b>'+esc(x.team)+"</b> — "+why;
+  if(x.unblockCondition)out+='<div class="note" dir="auto">برای باز شدن: '+plain(x.unblockCondition)+"</div>";
+  if(x.waitingOn&&x.waitingOn.length)out+='<div class="note">در انتظار: '+esc(x.waitingOn.join("، "))+"</div>";
+  if(x.nextTeam)out+='<div class="note">پس از آن نزد '+esc(x.nextTeam)+" می‌رود.</div>";
+  return out+"</li>";
 }
 function flowSection(s){
   var f=s.flow;if(!f||!f.steps||!f.steps.length)return "";

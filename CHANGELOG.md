@@ -4,6 +4,14 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+- Made the panel say where the cycle is stuck, not only how much of it is. A count of blocked cards
+  tells the product owner something is wrong without telling them whether it is theirs to fix, so the
+  panel now reads the reason and the unblocking condition already recorded on each card, and names
+  the team holding it — "who do I talk to" being the owner's usual next question.
+- Separated a blockage waiting on the owner from one waiting on a dependency. Both belong on the
+  panel, because the owner asked where work is stuck and not only where they are needed, but a
+  dependency must not read as another thing demanding their attention.
+
 - Adopted an existing repository completely rather than sampling it. `product_ops_adopt` accounts for
   every path found: each is either assigned to the boundary that must read it or excluded for a named
   reason, and `coverage.complete` goes false the moment that stops adding up. A survey that hit its

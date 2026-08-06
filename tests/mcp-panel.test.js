@@ -272,3 +272,42 @@ test("a failing host request is reported rather than swallowed", async (t) => {
   assert.match(document.getElementById("root").innerHTML, /class="gate"/);
   assert.equal(typeof document.getElementById(`y-${gate.requestId}`).onclick, "function");
 });
+
+test("a blockage says why, and whose it is to clear", async (t) => {
+  const { posted, deliver, settle, payload, document } = await mountPanel(t);
+  const handshake = posted.shift();
+  deliver({ jsonrpc: "2.0", id: handshake.id, result: { protocolVersion: "2026-01-26" } });
+  deliver({ jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { structuredContent: payload } });
+  await settle();
+
+  assert.ok(payload.blockages.length > 0, "a blocked card must reach the panel");
+  for (const blockage of payload.blockages) {
+    assert.notEqual(blockage.team, blockage.roleId, "a blockage names the team holding it");
+    // The count alone tells the owner something is wrong without telling them whether it is theirs.
+    assert.ok(["awaiting_decision", "awaiting_dependency", "stopped"].includes(blockage.kind));
+  }
+
+  const rendered = document.getElementById("root").innerHTML;
+  assert.match(rendered, /کجا گیر کرده‌ایم/, "the panel must say where the cycle is stuck");
+  assert.match(rendered, /Waiting on the analytics export/, "the reason recorded on the card is what the owner reads");
+  assert.doesNotMatch(rendered, /RB-0\d/, "a blockage must never be reported by contract identifier");
+});
+
+test("a blocked card cannot inject markup through its reason", async (t) => {
+  const { root, handlers, posted, deliver, settle, document } = await mountPanel(t);
+  const loaded = await loadTaskboard(root);
+  const [first] = loaded.records;
+  await replaceTaskboard(root, loaded.headers, loaded.records.map((record) => record.task_id === first.task_id
+    ? { ...record, status: "blocked", blocked_reason: "<img src=x onerror=alert(1)> pending export" }
+    : record), { dryRun: false });
+
+  const fresh = (await handlers["tools/call"]({ name: "product_ops_panel", arguments: {} })).structuredContent;
+  const handshake = posted.shift();
+  deliver({ jsonrpc: "2.0", id: handshake.id, result: { protocolVersion: "2026-01-26" } });
+  deliver({ jsonrpc: "2.0", method: "ui/notifications/tool-result", params: { structuredContent: fresh } });
+  await settle();
+
+  const rendered = document.getElementById("root").innerHTML;
+  assert.match(rendered, /pending export/, "the reason itself must still reach the reader");
+  assert.doesNotMatch(rendered, /<img src=x/, "record text is data, never markup");
+});
