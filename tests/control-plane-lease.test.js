@@ -209,7 +209,6 @@ test("separate processes contending for one gate all reach a definite outcome", 
   // the lease and report an outcome. An unref'd poll timer lets it exit mid-wait, writing nothing
   // and reporting nothing, which reads as success to a caller.
   const root = await makeProject(t);
-  const config = await loadConfig(root);
   const { records } = await loadTaskboard(root);
   await requestApproval(root, {
     taskId: records[0].task_id,

@@ -162,7 +162,7 @@ async function reuseExportedDevelopmentRequest(productRoot, candidate) {
 }
 
 async function ensureDevelopmentApproval(root, config, task, { autoApprove, now, context }) {
-  let store = await loadApprovals(root);
+  const store = await loadApprovals(root);
   let approval = store.requests.find((candidate) => candidate.taskId === task.task_id && candidate.gate === "development-export");
   if (!approval) {
     approval = (await requestApproval(root, {

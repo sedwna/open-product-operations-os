@@ -143,7 +143,7 @@ test("a product owner can go from an empty workspace to a decided gate", async (
   // Debounce plus filesystem latency: poll rather than sleeping a fixed guess, so a loaded machine
   // waits longer instead of failing.
   for (let attempt = 0; attempt < 40 && updates.length === 0; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 250));
+    await new Promise((resolve) => { setTimeout(resolve, 250); });
     updates.push(...live.notifications.slice(before).filter((message) => message.method === "notifications/resources/updated"));
   }
   assert.ok(updates.length >= 1, "a board change must be announced to a subscriber");

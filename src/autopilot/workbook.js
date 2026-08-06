@@ -190,7 +190,6 @@ export async function materializeCycleWorkbook(root, config, { cycleId, intake, 
 }
 
 async function registerManifestAudit(root, config, manifest, cycleId, timestamp) {
-  const actor = (role) => config.agents.find((candidate) => candidate.id === role)?.actorId ?? "";
   const row = record("writer_manifests", { write_manifest_id: manifest.manifestId }, {
     event_id: manifest.eventId, status: "authorized",
     semantic_owner_role: manifest.semanticOwner.role, semantic_owner_actor_id: manifest.semanticOwner.actorId,

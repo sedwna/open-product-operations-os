@@ -190,7 +190,6 @@ export async function acquireControlPlaneLease(
   const target = path.join(path.resolve(root), CONTROL_PLANE_LEASE_FILE);
   await fs.mkdir(path.dirname(target), { recursive: true });
   const deadline = now().getTime() + Math.max(0, waitMs);
-  let blocker = null;
 
   while (true) {
     const moment = now();
@@ -213,7 +212,6 @@ export async function acquireControlPlaneLease(
     }
 
     const existing = await readLease(target);
-    blocker = existing;
     if (existing && isLive(existing, moment)) {
       if (now().getTime() >= deadline) throw new ControlPlaneLeaseError(existing);
       await sleep(POLL_INTERVAL_MS);

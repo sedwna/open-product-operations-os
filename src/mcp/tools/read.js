@@ -23,7 +23,7 @@ export async function status(context, { verbosity = "brief" } = {}) {
  * the tokens needed to put them to the product owner. The panel is a view over the same records
  * every other surface reads; it is not a second source of truth.
  */
-export async function panel(context, args = {}) {
+export async function panel(context) {
   const [state, gates, snapshot, board] = await Promise.all([
     status(context, { verbosity: "full" }),
     pendingDecisions(context, { limit: 10 }),

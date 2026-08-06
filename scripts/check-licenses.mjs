@@ -3,60 +3,50 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
+/**
+ * The licence allowlist governs what this package ships, so it is scoped to what a consumer
+ * actually installs.
+ *
+ * It used to walk every directory under node_modules, which was the same set only for as long as
+ * the repository had no development dependencies. The moment one arrived, the check started
+ * refusing licences on tooling that is never published — a gate failing for a reason unrelated to
+ * the thing it protects. The lockfile already records which entries are development-only, so the
+ * scope now comes from there rather than from what happens to be on disk.
+ */
+
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const nodeModules = path.join(root, "node_modules");
 const allowed = new Set(["Apache-2.0", "MIT", "ISC", "BSD-2-Clause", "BSD-3-Clause", "0BSD", "OFL", "OFL-1.1"]);
+
+const lockfile = JSON.parse(await fs.readFile(path.join(root, "package-lock.json"), "utf8"));
+const production = Object.entries(lockfile.packages ?? {})
+  .filter(([location, entry]) => location.startsWith("node_modules/") && entry.dev !== true)
+  .map(([location]) => location)
+  .sort();
+
+assert.ok(production.length >= 3, "the lockfile records no production dependencies to check");
+
 const checked = [];
-
-await visitNodeModules(nodeModules);
-assert.ok(checked.length >= 3, "installed production dependencies were not found");
-console.log(`Installed dependency license allowlist checked for ${checked.length} package(s).`);
-
-async function visitNodeModules(directory) {
-  let entries;
+const missing = [];
+for (const location of production) {
+  const directory = path.join(root, location);
+  let metadata;
   try {
-    entries = await fs.readdir(directory, { withFileTypes: true });
+    metadata = JSON.parse(await fs.readFile(path.join(directory, "package.json"), "utf8"));
   } catch (error) {
     if (error.code === "ENOENT") {
-      throw new Error("Run npm install or npm ci before checking dependency licenses.");
+      missing.push(location);
+      continue;
     }
     throw error;
   }
-
-  for (const entry of entries) {
-    if (!entry.isDirectory() || entry.name.startsWith(".")) {
-      continue;
-    }
-    if (entry.name.startsWith("@")) {
-      await visitScope(path.join(directory, entry.name));
-      continue;
-    }
-    await checkPackage(path.join(directory, entry.name));
-  }
-}
-
-async function visitScope(directory) {
-  for (const entry of await fs.readdir(directory, { withFileTypes: true })) {
-    if (entry.isDirectory()) {
-      await checkPackage(path.join(directory, entry.name));
-    }
-  }
-}
-
-async function checkPackage(directory) {
-  const metadata = JSON.parse(await fs.readFile(path.join(directory, "package.json"), "utf8"));
-  const license =
-    typeof metadata.license === "string" ? metadata.license : metadata.license?.type;
+  const license = typeof metadata.license === "string" ? metadata.license : metadata.license?.type;
   assert.equal(typeof license, "string", `${metadata.name} must declare a license`);
   assert.ok(allowed.has(license), `${metadata.name} uses unapproved license ${license}`);
   checked.push(`${metadata.name}@${metadata.version}:${license}`);
-  const nested = path.join(directory, "node_modules");
-  try {
-    await fs.access(nested);
-    await visitNodeModules(nested);
-  } catch (error) {
-    if (error.code !== "ENOENT") {
-      throw error;
-    }
-  }
 }
+
+// A production dependency in the lockfile but absent from disk means the check silently skipped it.
+// Reporting that is the difference between "all approved" and "all of the ones I could find".
+assert.deepEqual(missing, [], `run npm ci before checking licences; not installed: ${missing.join(", ")}`);
+assert.equal(checked.length, production.length);
+console.log(`Production dependency license allowlist checked for ${checked.length} package(s).`);

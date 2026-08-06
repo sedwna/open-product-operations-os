@@ -65,7 +65,7 @@ async function mountPanel(t) {
   vm.runInContext(renderPanel().match(/<script>([\s\S]*)<\/script>/)[1], sandbox);
 
   const deliver = (message) => { for (const fn of [...listeners]) fn({ data: message }); };
-  const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+  const settle = () => new Promise((resolve) => { setTimeout(resolve, 20); });
 
   return { root, payload, posted, deliver, settle, document, handlers };
 }

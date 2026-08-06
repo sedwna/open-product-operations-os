@@ -4,6 +4,23 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+- Added static analysis over the whole tree, which had none. Rules are listed explicitly rather than
+  extended from a preset, so what counts as a defect here changes by decision rather than by
+  upgrade. It immediately found six dead bindings and a duplicated import that had been read past
+  for months.
+- Held the dashboard's escaping with tests. It escaped record text in fourteen places and embedded
+  the whole snapshot as JSON inside a script tag, and none of it was pinned — the one surface where
+  injected text sits next to a real control had no test saying so.
+- Scoped the licence gate to what actually ships. It walked every directory under `node_modules`,
+  which was the same set only while the repository had no development dependencies; the first one
+  added made it refuse a licence on tooling no consumer installs.
+- Made the bill of materials name every shipped dependency and no others. Asking npm to omit the
+  development tree silently dropped a production dependency that a development one also required,
+  so the lockfile is now the authority for both gates and they are checked against each other.
+- Corrected the portability gate, which claimed configurable locales. There is no locale mechanism
+  and the interface is Persian throughout. The claim is withdrawn and recorded as an unmet gate: an
+  unevidenced claim in the document that governs evidence is worse than the gap it describes.
+
 - Made the panel say where the cycle is stuck, not only how much of it is. A count of blocked cards
   tells the product owner something is wrong without telling them whether it is theirs to fix, so the
   panel now reads the reason and the unblocking condition already recorded on each card, and names

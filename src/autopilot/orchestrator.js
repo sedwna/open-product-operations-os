@@ -121,7 +121,7 @@ export async function runPendingAutopilotCycle(
         return { status: "completed", cycleId, report, revision };
       }
 
-      let runnable = selectRunnableTasks(tasks, approvals.requests).find((task) => task.event_id === intake.eventId);
+      const runnable = selectRunnableTasks(tasks, approvals.requests).find((task) => task.event_id === intake.eventId);
       if (!runnable) {
         const gated = eventTasks.find((task) => task.status === "ready" && task.human_gate);
         if (gated) {
@@ -331,7 +331,7 @@ async function refreshCycleRouting(root, now) {
   const loaded = await loadTaskboard(root);
   let tasks = loaded.records;
   let changed = false;
-  let byId = new Map(tasks.map((task) => [task.task_id, task]));
+  const byId = new Map(tasks.map((task) => [task.task_id, task]));
   tasks = tasks.map((task) => {
     if (task.status !== "backlog" || !dependencyState(task, byId).satisfied) return task;
     changed = true;

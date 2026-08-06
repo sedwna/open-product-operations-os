@@ -18,7 +18,7 @@ export async function runDevelopmentTask(
   taskId,
   { dryRun = true, now = new Date(), spawnProcess = spawn } = {}
 ) {
-  const [{ records: tasks, byId }, approvals] = await Promise.all([
+  const [{ byId }, approvals] = await Promise.all([
     loadTaskboard(root),
     loadApprovals(root)
   ]);

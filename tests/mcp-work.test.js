@@ -160,7 +160,7 @@ test("with nothing ready, the surface says why rather than inventing work", asyn
   assert.doesNotMatch(result.content?.[0]?.text ?? "", /undefined|null/);
 });
 
-test("both work tools are registered as plan-tier and declared", async (t) => {
+test("both work tools are registered as plan-tier and declared", () => {
   const definitions = TOOL_DEFINITIONS.filter((tool) => tool.name.startsWith("product_ops_next_work") || tool.name.startsWith("product_ops_submit_work"));
   assert.equal(definitions.length, 2);
   for (const definition of definitions) {

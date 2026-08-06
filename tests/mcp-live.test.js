@@ -24,7 +24,7 @@ async function observe(root, act, { debounceMs = 40, settleMs = 700 } = {}) {
   const watcher = watchCanonicalRecords(root, (uris) => seen.push(...uris), { debounceMs });
   try {
     await act();
-    await new Promise((resolve) => setTimeout(resolve, settleMs));
+    await new Promise((resolve) => { setTimeout(resolve, settleMs); });
   } finally {
     watcher.close();
   }
@@ -85,7 +85,7 @@ test("one write produces one report, however many events the platform emits", as
   await replaceTaskboard(root, loaded.headers, loaded.records.map((record) => ({
     ...record, blocked_reason: "single write"
   })), { dryRun: false });
-  await new Promise((resolve) => setTimeout(resolve, 900));
+  await new Promise((resolve) => { setTimeout(resolve, 900); });
   assert.equal(reports, 1, `one write should report once, got ${reports}`);
 });
 

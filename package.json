@@ -44,7 +44,8 @@
     "postpack": "node scripts/pack-lifecycle.mjs restore",
     "test": "node --test",
     "test:coverage": "node --test --experimental-test-coverage",
-    "check": "node --check src/cli.js && node --check src/mcp/server.js && npm run clean-room:check && npm test && npm run portability",
+    "lint": "eslint .",
+    "check": "npm run lint && npm run clean-room:check && npm test && npm run portability",
     "smoke": "node scripts/smoke.mjs",
     "portability": "node scripts/verify-portability.mjs",
     "clean-room:check": "node scripts/check-clean-room.mjs",
@@ -64,5 +65,8 @@
     "ajv-formats": "3.0.1",
     "vazirmatn": "33.0.3",
     "yaml": "2.9.0"
+  },
+  "devDependencies": {
+    "eslint": "^9.39.5"
   }
 }
