@@ -5,6 +5,7 @@ import fs from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { generateWorkbookCommand } from "./commands/generate-workbook.js";
 import { initCommand } from "./commands/init.js";
+import { linkCommand } from "./commands/link.js";
 import { validateCommand } from "./commands/validate.js";
 import {
   approvalsCommand,
@@ -29,6 +30,7 @@ const HELP = `Product Operations OS CLI
 Usage:
   product-ops init <target> [--dry-run] [--force]
   product-ops validate <target>
+  product-ops link <target> --application <path> [--provider <codex|claude>] [--apply]
   product-ops generate-workbook <target> [--dry-run] [--force]
   product-ops operate <target> [--apply] [--execute-development]
   product-ops coordinator <target> [--apply]
@@ -50,6 +52,7 @@ Usage:
 Commands:
   init               Create a project config and generated operating artifacts.
   validate           Check config, ownership, routing, tasks, files, and secrets.
+  link               Point this workspace at the application repository it operates.
   generate-workbook  Generate CSV workbook templates from the project config.
   operate            Plan or execute one control-plane scheduling cycle.
   coordinator        Run the autonomous coordinator until stopped.
@@ -91,6 +94,8 @@ export async function run(argv, io = console) {
         throw new Error("validate does not accept --dry-run or --force.");
       }
       lines = await validateCommand(target);
+    } else if (command === "link") {
+      lines = await linkCommand(target, options);
     } else if (command === "generate-workbook") {
       lines = await generateWorkbookCommand(target, options);
     } else if (command === "operate") {
@@ -146,7 +151,7 @@ function parseArguments(argv) {
   const providedOptions = new Set();
   const positional = [];
   const flags = new Set(["--dry-run", "--force", "--apply", "--execute-development", "--serve"]);
-  const values = new Set(["--task", "--file", "--request", "--decision", "--actor", "--rationale", "--provider", "--output", "--answers", "--port"]);
+  const values = new Set(["--task", "--file", "--request", "--decision", "--actor", "--rationale", "--provider", "--output", "--answers", "--port", "--application"]);
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (flags.has(argument)) {
@@ -194,6 +199,7 @@ function validateCommandOptions(command, provided) {
   const allowed = {
     init: ["dryRun", "force"],
     validate: [],
+    link: ["apply", "application", "provider"],
     "generate-workbook": ["dryRun", "force"],
     operate: [...runtime, "executeDevelopment"],
     coordinator: runtime,

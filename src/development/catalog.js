@@ -1,6 +1,20 @@
 export const DEVELOPMENT_SCHEMA_VERSION = "1.0.0";
 export const DEVELOPMENT_CONFIG_FILE = "development-os.config.json";
 
+/**
+ * Everything this operating model writes into an application repository, at its root.
+ *
+ * Named once because two readers need the same answer for opposite reasons: validation walks these
+ * paths because they are the only ones it owns, and adoption skips them because a team asked to
+ * interpret a repository should be reading the product, not the furniture we moved in.
+ */
+export const DEVELOPMENT_NAMESPACE = Object.freeze([
+  "engineering",
+  ".development-os",
+  "DEVELOPMENT.md",
+  DEVELOPMENT_CONFIG_FILE
+]);
+
 export const ENGINEERING_ROLES = [
   role("ENG-01", "Engineering Coordination", "engineering_coordination",
     ["sequence engineering work", "manage technical dependencies", "consolidate delivery status"],

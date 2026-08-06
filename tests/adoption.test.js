@@ -178,3 +178,23 @@ test("ordinary source is not mistaken for configuration", async (t) => {
   assert.ok(survey.configuration.includes(".npmrc"), "an rc dotfile is configuration");
   assert.equal(survey.coverage.complete, true);
 });
+
+test("this operating model's own scaffolding is not adopted as product", async (t) => {
+  // A team asked to interpret the boundaries we wrote into the repository a minute earlier would be
+  // reading our furniture and reporting it as findings about the product.
+  const root = await application(t, {
+    "development-os.config.json": "{}",
+    "DEVELOPMENT.md": "# Open Development Operations OS\n",
+    "engineering/governance/charter.md": "# Engineering charter\n",
+    "engineering/schemas/engineering-plan.schema.json": "{}"
+  });
+  const survey = await surveyApplication(root);
+
+  const assigned = survey.assignments.flatMap((assignment) => assignment.paths);
+  for (const ours of ["DEVELOPMENT.md", "development-os.config.json", "engineering/governance/charter.md"]) {
+    assert.ok(!assigned.includes(ours), `${ours} belongs to the operating model, not the product`);
+  }
+  assert.ok(assigned.includes("README.md"), "the product's own documentation must still be read");
+  assert.ok(survey.coverage.exclusionsByReason.generated >= 1, "our scaffolding must be excluded by name, not dropped");
+  assert.equal(survey.coverage.complete, true);
+});

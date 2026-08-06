@@ -228,3 +228,24 @@ test("a blocked result stops its card and says why, in the producer's words", as
   assert.equal(card.status, "blocked");
   assert.match(card.blocked_reason, /analytics export/, "the card must carry the producer's own reason");
 });
+
+test("reaching the engineering hand-off is reported as a boundary, not as an empty queue", async (t) => {
+  // "Nothing is ready" would be false: the cycle is not stalled, it has arrived at the line this
+  // surface deliberately will not cross, and the owner needs to know which of the two it is.
+  const { root, handlers } = await workspace(t);
+  const config = await loadConfig(root);
+  const { headers, records } = await loadTaskboard(root);
+  const { replaceTaskboard } = await import("../src/runtime/taskboard.js");
+  await replaceTaskboard(root, headers, records.map((task) => ({
+    ...task,
+    owner_role: config.separation.developmentRole,
+    status: "ready",
+    human_gate: ""
+  })), { dryRun: false });
+
+  const result = await call(handlers, "product_ops_next_work");
+  assert.equal(result.structuredContent.available, false);
+  assert.equal(result.structuredContent.reason, "at_development_boundary");
+  assert.match(result.content[0].text, /hand-off to engineering/);
+  assert.doesNotMatch(result.content[0].text, /Nothing is ready/);
+});

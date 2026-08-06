@@ -27,10 +27,28 @@ export async function nextWork(context) {
   const config = await loadConfig(context.root);
   const { records: tasks } = await loadTaskboard(context.root);
   const approvals = await loadApprovals(context.root);
-  const runnable = selectRunnableTasks(tasks, approvals.requests)
-    .filter((task) => task.owner_role !== config.separation.developmentRole);
+  const allRunnable = selectRunnableTasks(tasks, approvals.requests);
+  const runnable = allRunnable.filter((task) => task.owner_role !== config.separation.developmentRole);
 
   if (runnable.length === 0) {
+    // Reporting "nothing is ready" when the engineering hand-off is the next card is misleading:
+    // the cycle is not stalled, it has simply reached the boundary this surface will not cross.
+    const atBoundary = allRunnable.filter((task) => task.owner_role === config.separation.developmentRole);
+    if (atBoundary.length > 0) {
+      return {
+        structuredContent: {
+          available: false,
+          reason: "at_development_boundary",
+          taskId: atBoundary[0].task_id,
+          team: describeTeam(config.separation.developmentRole, "product").name,
+          waitingOnOwner: pendingGateCount(approvals.requests)
+        },
+        text: [
+          `The next card, ${atBoundary[0].task_id}, is the hand-off to engineering, and this surface does not dispatch it.`,
+          "Crossing from product into development is a separate authority, exercised deliberately rather than as the next step in a loop: use `product-ops development` once the owner is ready, or the coordinator if one is configured to run unattended."
+        ].join("\n")
+      };
+    }
     return {
       structuredContent: { available: false, reason: reasonNothingIsReady(tasks, approvals.requests), waitingOnOwner: pendingGateCount(approvals.requests) },
       text: describeNothingReady(tasks, approvals.requests)

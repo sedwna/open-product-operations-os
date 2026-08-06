@@ -4,6 +4,7 @@ import { assertNoLinkTraversal, toPosixPath } from "../paths.js";
 import { validatePublishedSchema } from "../schema-validation.js";
 import { assertNoCredentialMaterial } from "../runtime/security.js";
 import { runGit } from "../autopilot/shared.js";
+import { DEVELOPMENT_NAMESPACE } from "../development/catalog.js";
 
 /**
  * Read an existing application repository mechanically, before anyone interprets it.
@@ -36,8 +37,18 @@ const EXCLUDED_DIRECTORIES = new Map([
   ["venv", "dependency"],
   [".gradle", "build_output"],
   [".tox", "build_output"],
-  ["coverage", "generated"]
+  ["coverage", "generated"],
+  [".product-ops", "generated"]
 ]);
+
+/**
+ * This operating model's own scaffolding, skipped at the repository root.
+ *
+ * Adopting a repository means reading the product. A team asked to interpret the boundaries we
+ * wrote into it a minute earlier would be reading our furniture and reporting it as findings —
+ * and the deeper the reading, the more confidently wrong the result.
+ */
+const OWN_SCAFFOLDING = new Set(DEVELOPMENT_NAMESPACE);
 
 const BINARY_EXTENSIONS = new Set([
   ".png", ".jpg", ".jpeg", ".gif", ".webp", ".ico", ".bmp", ".tiff", ".svg",
@@ -233,6 +244,10 @@ async function walk(root, maxPaths) {
         return { files, truncated };
       }
       const absolute = path.join(directory, entry.name);
+      if (directory === root && OWN_SCAFFOLDING.has(entry.name)) {
+        files.push({ path: relative(root, absolute), disposition: "generated" });
+        continue;
+      }
       if (entry.isSymbolicLink()) {
         // Following a link can leave the repository entirely, and a link's target is surveyed on its
         // own terms if it lives inside. Recording it keeps the count honest without following it.
