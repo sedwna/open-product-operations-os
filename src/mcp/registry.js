@@ -1,6 +1,7 @@
 import { TIERS } from "./authority.js";
 import * as read from "./tools/read.js";
 import * as write from "./tools/write.js";
+import * as work from "./tools/work.js";
 import { decide } from "./tools/decide.js";
 import { PANEL_URI } from "./app/panel.js";
 
@@ -177,6 +178,38 @@ export const TOOL_DEFINITIONS = Object.freeze([
       additionalProperties: false
     },
     handler: write.autopilot
+  },
+  {
+    name: "product_ops_next_work",
+    title: "Take the next ready product task",
+    description: "Hand out one bounded brief — the team, its boundary, and the task — for you to delegate to a subagent. Reads only.",
+    tier: TIERS.PLAN,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    handler: work.nextWork
+  },
+  {
+    name: "product_ops_submit_work",
+    title: "Return a completed product task",
+    description: "Record what your subagent produced for a claimed task. Plans by default; set apply true to record it.",
+    tier: TIERS.PLAN,
+    annotations: PLAN_ANNOTATIONS,
+    inputSchema: {
+      type: "object",
+      properties: {
+        taskId: { type: "string", minLength: 1, maxLength: 80 },
+        claimToken: { type: "string", minLength: 32, maxLength: 32, description: "Issued by product_ops_next_work. Take the work before returning it; this cannot be constructed." },
+        result: {
+          type: "object",
+          description: "The subagent's output. Validated against product-agent-run.schema.json and against the dispatched task; a mismatch is refused, not recorded.",
+          additionalProperties: true
+        },
+        apply: { type: "boolean", default: false, description: "Record the result. Omitted or false returns the plan only." }
+      },
+      required: ["taskId", "claimToken", "result"],
+      additionalProperties: false
+    },
+    handler: work.submitWork
   },
   {
     name: "product_ops_decide",

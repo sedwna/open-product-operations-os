@@ -12,6 +12,7 @@ import { INVALID_PARAMS, RpcError, serveStdio } from "./jsonrpc.js";
 import { TOOL_DEFINITIONS, toListEntry } from "./registry.js";
 import { selectRegisteredTools, toolFailure, toolResult } from "./authority.js";
 import { createDecisionTokenIssuer } from "./tools/read.js";
+import { createClaimTokenIssuer } from "./tools/work.js";
 import { RESOURCES, RESOURCE_TEMPLATES, readResource } from "./resources.js";
 import { PROMPTS, getPrompt, toListEntry as toPromptEntry } from "./prompts.js";
 import { DEFAULT_BRIEF_CEILING } from "./projection.js";
@@ -93,6 +94,7 @@ export async function createServerContext(options) {
   if (errors.length > 0) throw new Error(`Project configuration is invalid: ${errors[0]}`);
 
   const tokens = createDecisionTokenIssuer();
+  const claims = createClaimTokenIssuer();
   return {
     root,
     trace: createTrace(options.log),
@@ -100,6 +102,8 @@ export async function createServerContext(options) {
     briefCeiling: options.briefCeiling ?? DEFAULT_BRIEF_CEILING,
     decisionToken: tokens.issue,
     verifyDecisionToken: tokens.verify,
+    claimToken: claims.issue,
+    verifyClaimToken: claims.verify,
     subscriptions: new Set()
   };
 }

@@ -4,6 +4,24 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+- Let the host perform the work. The coordinator loop could only drive a spawned provider CLI, so a
+  host whose subagents are its own to start had no way to take part. `product_ops_next_work` hands
+  out one team's bounded brief and `product_ops_submit_work` takes the result back, inverting control
+  so the host asks for work rather than being handed it.
+- Ran both performers through one contract. The submitted result passes the same schema validation,
+  the same dispatch-identity check, the same credential scan, and the same sealing as anything a
+  provider CLI produced, because it enters through the same function — a delegated subagent gains a
+  performer, not an exemption.
+- Required a claim issued by the work handout, keyed to the task's status as well as its identity, so
+  a task identifier lifted from a record cannot reach the run store and a claim held across a state
+  change no longer verifies.
+- Kept the development boundary out of the handout. Dispatching engineering work crosses the
+  Product/Development authority line, and a chat message is not where that should start.
+- Retired the platform launcher delivery path: three graphical launchers with a committed Windows
+  executable, the one-click onboarding wizard, the portable Node bootstrap, and the launcher
+  integrity gate. The host launches the server now, which is what the architecture document said
+  would make them redundant. The prior revision is preserved at tag `v0.8.1-launcher-era`.
+
 - Made the control-plane write lease actually exclusive. It granted a fixed term and never extended
   it, so a holder whose work outlasted the term was judged abandoned while it was still writing and
   the surface that reclaimed it joined it inside the critical section. A healthy holder now keeps its
