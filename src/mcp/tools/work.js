@@ -5,6 +5,8 @@ import { readJsonOptional } from "../../runtime/io.js";
 import { loadApprovals } from "../../runtime/approvals.js";
 import { loadTaskboard, selectRunnableTasks } from "../../runtime/taskboard.js";
 import { buildProductAgentRequest, runProductAgent, submittedResultExecutor } from "../../autopilot/product-agent.js";
+import { applyRunOutcome, cycleProgress } from "../../autopilot/cycle.js";
+import { withControlPlaneLease } from "../../runtime/control-plane-lease.js";
 import { readAutomationLink } from "../../autopilot/state.js";
 import { describeTeam } from "../app/teams.js";
 import { ToolFailure } from "../authority.js";
@@ -103,21 +105,40 @@ export async function submitWork(context, args = {}) {
 
   const intake = await intakeFor(context.root, task.event_id);
   const link = await automationLink(context.root);
-  let recorded;
-  try {
-    recorded = await runProductAgent(context.root, config, task, {
-      intake,
-      cycleId: task.event_id,
-      applicationRoot: link?.applicationRoot ?? null,
-      execute: submittedResultExecutor(args.result)
-    });
-  } catch (error) {
-    // A rejection here is the contract refusing the submission, not an internal fault. Say which,
-    // because the coordinator can fix a malformed result and cannot fix a broken server.
-    throw new ToolFailure("RESULT_REJECTED", `The submitted result was refused: ${error.message}`);
-  }
 
+  // Recording the run and advancing the card are one transaction. Doing the first without the
+  // second seals the work correctly and leaves the board unchanged, so the next request hands out
+  // the same card — a loop that looks like it is running and is not.
+  const outcome = await withControlPlaneLease(context.root, async () => {
+    let recorded;
+    try {
+      recorded = await runProductAgent(context.root, config, task, {
+        intake,
+        cycleId: task.event_id,
+        applicationRoot: link?.applicationRoot ?? null,
+        execute: submittedResultExecutor(args.result)
+      });
+    } catch (error) {
+      // A rejection here is the contract refusing the submission, not an internal fault. Say which,
+      // because the coordinator can fix a malformed result and cannot fix a broken server.
+      throw new ToolFailure("RESULT_REJECTED", `The submitted result was refused: ${error.message}`);
+    }
+    const board = await loadTaskboard(context.root);
+    const advanced = await applyRunOutcome(context.root, board.headers, board.records, task, recorded.result);
+    return { recorded, advanced, progress: cycleProgress(advanced.tasks, task.event_id) };
+  });
+
+  const { recorded, advanced, progress } = outcome;
   const team = describeTeam(role.id, "product");
+  const lines = [
+    recorded.result.status === "completed"
+      ? `Recorded ${task.task_id} for ${team.name} and moved it to done. A completed result is sealed; submitting again returns the sealed record rather than replacing it.`
+      : `Recorded a ${recorded.result.status} result for ${task.task_id} (${team.name}) and stopped the card with the producer's own reason. It is not sealed, so the work can be attempted again.`
+  ];
+  lines.push(progress.complete
+    ? `Every card for ${task.event_id} is now done. Run product_ops_operate to close the cycle and produce its report.`
+    : `${progress.remaining} of ${progress.total} card(s) for ${task.event_id} remain. Call product_ops_next_work for the next one.`);
+
   return {
     structuredContent: {
       applied: true,
@@ -126,12 +147,18 @@ export async function submitWork(context, args = {}) {
       team: team.name,
       roleId: role.id,
       status: recorded.result.status,
+      boardStatus: advanced.status,
       outputFile: recorded.outputFile,
-      sealed: recorded.result.status === "completed"
+      sealed: recorded.result.status === "completed",
+      cycle: {
+        total: progress.total,
+        done: progress.done,
+        blocked: progress.blocked,
+        remaining: progress.remaining,
+        complete: progress.complete
+      }
     },
-    text: recorded.result.status === "completed"
-      ? `Recorded and sealed ${task.task_id} for ${team.name}. A completed result is immutable; a further submission for this task returns the sealed record rather than replacing it.`
-      : `Recorded a ${recorded.result.status} result for ${task.task_id} (${team.name}). It is not sealed, so the work can be attempted again.`
+    text: lines.join("\n")
   };
 }
 

@@ -169,3 +169,62 @@ test("both work tools are registered as plan-tier and declared", () => {
     assert.ok(definition.description.length <= 160, `${definition.name} description must stay short enough for a tool list`);
   }
 });
+
+test("the loop advances rather than handing out the same card forever", async (t) => {
+  // The defect this pins was invisible to every per-tool test: submit_work sealed the run correctly
+  // and never moved the board, so next_work returned the same card each time. A coordinator
+  // following the brief would have looped forever while appearing to work.
+  const { root, handlers } = await workspace(t);
+  await call(handlers, "product_ops_intake", {
+    type: "new_idea",
+    title: "Let coordinators choose the weekly summary day",
+    description: "Monday summaries arrive after the week is already planned.",
+    source: "support conversation",
+    apply: true
+  });
+  await call(handlers, "product_ops_operate", { apply: true });
+
+  const handled = [];
+  for (let pass = 0; pass < 40; pass += 1) {
+    const next = (await call(handlers, "product_ops_next_work")).structuredContent;
+    if (!next.available) break;
+    assert.ok(
+      !handled.includes(next.taskId),
+      `${next.taskId} was handed out twice; the board did not advance after it was returned`
+    );
+    handled.push(next.taskId);
+    const submitted = await call(handlers, "product_ops_submit_work", {
+      taskId: next.taskId,
+      claimToken: next.claimToken,
+      result: resultFor(next),
+      apply: true
+    });
+    assert.equal(submitted.structuredContent.boardStatus, "done", "a completed run must move its card to done");
+    assert.ok(submitted.structuredContent.cycle.total > 0, "the reply must say where the cycle now stands");
+  }
+
+  assert.ok(handled.length > 0, "the loop must have had work to do");
+  const { records } = await loadTaskboard(root);
+  for (const taskId of handled) {
+    assert.equal(records.find((task) => task.task_id === taskId).status, "done");
+  }
+});
+
+test("a blocked result stops its card and says why, in the producer's words", async (t) => {
+  const { root, handlers } = await workspace(t);
+  const next = (await call(handlers, "product_ops_next_work")).structuredContent;
+
+  const submitted = await call(handlers, "product_ops_submit_work", {
+    taskId: next.taskId,
+    claimToken: next.claimToken,
+    result: resultFor(next, { status: "blocked", summary: "The analytics export is unavailable." }),
+    apply: true
+  });
+  assert.equal(submitted.structuredContent.boardStatus, "blocked");
+  assert.equal(submitted.structuredContent.sealed, false, "only a completed result is sealed");
+
+  const { records } = await loadTaskboard(root);
+  const card = records.find((task) => task.task_id === next.taskId);
+  assert.equal(card.status, "blocked");
+  assert.match(card.blocked_reason, /analytics export/, "the card must carry the producer's own reason");
+});
