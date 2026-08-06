@@ -4,6 +4,22 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+- Made the control-plane write lease actually exclusive. It granted a fixed term and never extended
+  it, so a holder whose work outlasted the term was judged abandoned while it was still writing and
+  the surface that reclaimed it joined it inside the critical section. A healthy holder now keeps its
+  term current, and expiry once again means the holder is gone or wedged.
+- Stopped a lease being destroyed by the act of reading it. Creating it exclusively was not the same
+  as creating it atomically: the file appeared before its contents did, and a contender reading in
+  that window saw zero bytes, could not parse them, and reclaimed a live lease as corrupt. The lease
+  is now linked into place already complete, and an observation that fails to parse is only believed
+  when it survives a second look. A genuinely corrupt lease still does not wedge the control plane.
+- Made a displaced holder fail its write rather than race the surface that replaced it. Every
+  canonical write now confirms, against the file rather than a cached flag, that the lease is still
+  ours; a holder that lost it reports the failure instead of returning a result nobody can vouch for.
+- Kept a transient filesystem failure from masquerading as displacement, so a write that was never in
+  danger is not refused: a replace or read that fails while the term still has time left is retried
+  rather than treated as evidence that someone else owns the lease.
+
 - Made engineering planning put its workstreams on the engineering board. The board is the
   canonical record of what engineering is carrying, and the documented planning path created
   workstreams inside a plan file while leaving the board empty, so work existed that no surface
