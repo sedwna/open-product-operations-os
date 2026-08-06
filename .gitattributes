@@ -7,10 +7,7 @@
 *.pdf binary
 *.zip binary
 *.gz binary
-*.exe binary
 *.woff binary
 *.woff2 binary
 
 *.sh text eol=lf
-*.command text eol=lf
-*.desktop text eol=lf

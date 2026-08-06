@@ -1,7 +1,0 @@
-[Desktop Entry]
-Type=Application
-Name=Open Product Operations OS
-Comment=Create a complete local product workspace
-Terminal=true
-Categories=Development;ProjectManagement;
-Exec=sh -c 'launcher=${1#file://}; root=$(CDPATH= cd -- "$(dirname -- "$launcher")/../.." && pwd); exec sh "$root/launchers/common/bootstrap-node.sh" "$root"' sh %k

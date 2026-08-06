@@ -21,8 +21,7 @@
   "bin": {
     "development-os": "./src/development-cli.js",
     "product-ops": "./src/cli.js",
-    "product-ops-mcp": "./src/mcp/server.js",
-    "product-ops-onboard": "./scripts/one-click-onboarding.mjs"
+    "product-ops-mcp": "./src/mcp/server.js"
   },
   "files": [
     "src",
@@ -31,7 +30,6 @@
     "examples",
     "docs",
     "scripts",
-    "launchers",
     "tests",
     ".gitattributes",
     "npm-shrinkwrap.json",
@@ -44,11 +42,9 @@
   "scripts": {
     "prepack": "node scripts/pack-lifecycle.mjs prepare",
     "postpack": "node scripts/pack-lifecycle.mjs restore",
-    "onboard": "node scripts/one-click-onboarding.mjs",
-    "launchers:check": "node scripts/check-launchers.mjs",
     "test": "node --test",
     "test:coverage": "node --test --experimental-test-coverage",
-    "check": "node --check src/cli.js && npm run launchers:check && npm run clean-room:check && npm test && npm run portability",
+    "check": "node --check src/cli.js && node --check src/mcp/server.js && npm run clean-room:check && npm test && npm run portability",
     "smoke": "node scripts/smoke.mjs",
     "portability": "node scripts/verify-portability.mjs",
     "clean-room:check": "node scripts/check-clean-room.mjs",

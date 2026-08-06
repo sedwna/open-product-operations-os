@@ -17,11 +17,11 @@
   </p>
 
   <p>
-    <a href="docs/onboarding/one-click.md"><strong>Launch in one click</strong></a>
+    <a href="START-HERE.md"><strong>Start here</strong></a>
     ·
-    <a href="START-HERE.md">Start here</a>
+    <a href="docs/architecture/mcp-control-surface.md">Control surface</a>
     ·
-    <a href="docs/runtime/README.md">Run the control tower</a>
+    <a href="docs/runtime/README.md">Runtime guide</a>
     ·
     <a href="docs/architecture/overview.md">Explore the architecture</a>
     ·
@@ -131,37 +131,24 @@ reasoning and attributes the record to you.
 
 Read the [MCP control surface](docs/architecture/mcp-control-surface.md) for the authority model.
 
-## One-click start
+## Setting a workspace up
 
-Clone the repository, or download and fully extract the complete release archive for your platform,
-then open its launcher. Do not run a launcher from inside a compressed archive or copy the Windows
-executable away from its adjacent files. The graphical wizard asks for the folder names, product
-definition, and optional first idea. For a new application it initializes
-and validates both Product Operations OS and the independent Development Operations OS, creates
-separate Git histories, and opens the writable loopback-only live dashboard. Existing application repositories
-receive Development Operations OS files only after explicit opt-in.
+Ask your agent for `/product-ops:start`. It works through the setup with you rather than running
+ahead, and takes one of two paths.
 
-| Windows | macOS | Linux |
-| --- | --- | --- |
-| Double-click [`OpenProductOS.exe`](launchers/windows/OpenProductOS.exe) | Open [`OpenProductOS.command`](launchers/macos/OpenProductOS.command) | Open [`OpenProductOS.desktop`](launchers/linux/OpenProductOS.desktop) |
+| You have | What happens |
+| --- | --- |
+| **An existing project** | The repository is read, what the product already is gets derived from it — domains, journeys, open issues, technical debt — and the boards are seeded. Every derived row records its source and stays an observation until you accept it. |
+| **Only an idea** | The idea is recorded as intake and the product teams begin analysing it. |
 
-No administrator access is required. If Node.js is missing, the launcher downloads a portable
-Node.js 22 runtime from the official distribution and verifies its SHA-256 checksum before use.
-Release archives include the exact locked runtime dependencies; if they are missing or stale, the
-launcher repairs them from the lockfile without running package lifecycle scripts.
-See the [one-click onboarding guide](docs/onboarding/one-click.md) for first-open notes, the safety
-contract, recovery, and distributable bundles.
+Adding the Development Operations OS namespace to an application repository someone already relies
+on is the owner's call: the agent shows what it will create and waits.
 
 The [Autonomous Product Factory architecture](docs/automation/README.md) documents the implemented
 continuous loop: read-only product agents, dependency-ordered engineering workstreams, durable
 leases and retries, content-addressed evidence return, controlled workbook insertion, product
 verification, reports, and separate Git branches. Production release and destructive actions remain
 separately gated.
-
-```text
-# Universal command-line fallback
-npm run onboard
-```
 
 ## Five-minute manual start
 
@@ -228,15 +215,11 @@ development-os init ./my-application
 development-os validate ./my-application
 ```
 
-The graphical one-click path performs these initialization and validation commands automatically
-for a new application. Use the manual commands above when adding Development Operations OS later
-or when you prefer command-line control. In manual initialization specialist executors remain
-disabled until separately configured, tested, and authorized. In one-click automation mode, the
-wizard can select Codex or Claude Code explicitly, or automatically choose the authenticated local
-provider. Readiness checks activate the matching product and engineering executors, and the linked
-local dashboard starts the continuous coordinator.
+`/product-ops:start` runs these initialization and validation commands for you when you confirm
+them; the commands above are there for scripting, CI, or when you prefer direct control. Specialist
+executors stay disabled until separately configured, tested, and authorized either way.
 
-The original command-runner adapter remains available as a lower-level bounded integration.
+The command-runner adapter remains available as a lower-level bounded integration.
 
 Development is a governed adapter, not an implicit side effect. The development role receives an
 approved delivery contract, acceptance criteria, dependencies, evidence, a validation recipe, and
