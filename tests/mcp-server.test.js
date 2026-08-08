@@ -15,7 +15,9 @@ import {
   createServerContext,
   parseServerArguments
 } from "../src/mcp/server.js";
+import { fileURLToPath } from "node:url";
 import { TOOL_DEFINITIONS } from "../src/mcp/registry.js";
+import { TOOL_ERROR_CODES } from "../src/mcp/authority.js";
 import { DEFAULT_BRIEF_CEILING, byteLength, projectStatus } from "../src/mcp/projection.js";
 import { untrusted } from "../src/mcp/untrusted.js";
 import { PANEL_MIME_TYPE, PANEL_URI } from "../src/mcp/app/panel.js";
@@ -786,4 +788,26 @@ test("prompts present human gates without resolving them", async (t) => {
   assert.match(blocked.messages[0].content.text, /TASK-RB-02-0001/);
 
   assert.throws(() => handlers["prompts/get"]({ name: "nope" }), /not served by this project/);
+});
+
+test("every failure code a tool raises is in the published taxonomy", async () => {
+  // A code outside the list degrades to INTERNAL, so a refusal the caller could have acted on
+  // arrives looking like a server fault. Four codes were added without being published, and the
+  // only symptom was the wrong word in an error message.
+  const directory = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "src", "mcp");
+  const raised = new Set();
+  const walk = async (dir) => {
+    for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name);
+      if (entry.isDirectory()) { await walk(full); continue; }
+      if (!entry.name.endsWith(".js")) continue;
+      const source = await fs.readFile(full, "utf8");
+      for (const match of source.matchAll(/ToolFailure\(\s*"([A-Z_]+)"/g)) raised.add(match[1]);
+    }
+  };
+  await walk(directory);
+
+  assert.ok(raised.size > 0, "the scan must actually find raised failures");
+  const unpublished = [...raised].filter((code) => !TOOL_ERROR_CODES.includes(code)).sort();
+  assert.deepEqual(unpublished, [], "these codes are raised but not published, so callers will see INTERNAL");
 });
