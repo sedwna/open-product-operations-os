@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -17,7 +18,14 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const allowed = new Set(["Apache-2.0", "MIT", "ISC", "BSD-2-Clause", "BSD-3-Clause", "0BSD", "OFL", "OFL-1.1"]);
 
-const lockfile = JSON.parse(await fs.readFile(path.join(root, "package-lock.json"), "utf8"));
+// A published package ships npm-shrinkwrap.json and no package-lock.json, and this check runs
+// inside the packed artifact as well as in the source tree. Naming only one of them passed here and
+// failed there — the same mistake in the opposite direction to the one it replaced.
+const lockPath = ["package-lock.json", "npm-shrinkwrap.json"]
+  .map((name) => path.join(root, name))
+  .find((candidate) => existsSync(candidate));
+assert.ok(lockPath, "no package-lock.json or npm-shrinkwrap.json to read the dependency tree from");
+const lockfile = JSON.parse(await fs.readFile(lockPath, "utf8"));
 const production = Object.entries(lockfile.packages ?? {})
   .filter(([location, entry]) => location.startsWith("node_modules/") && entry.dev !== true)
   .map(([location]) => location)
