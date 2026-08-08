@@ -1,6 +1,8 @@
 import { TIERS } from "./authority.js";
 import * as read from "./tools/read.js";
 import * as write from "./tools/write.js";
+import * as work from "./tools/work.js";
+import { adopt } from "./tools/adopt.js";
 import { decide } from "./tools/decide.js";
 import { PANEL_URI } from "./app/panel.js";
 
@@ -177,6 +179,56 @@ export const TOOL_DEFINITIONS = Object.freeze([
       additionalProperties: false
     },
     handler: write.autopilot
+  },
+  // Two tools below read without writing and are still registered under the plan tier rather than
+  // the read tier. That is deliberate, not an oversight in either direction.
+  //
+  // `adopt` reads a *different repository* than the one this server is bound to. Reaching outside
+  // the project boundary is a larger thing to grant than reading inside it, whatever the tool then
+  // does with what it finds.
+  //
+  // `next_work` hands out a claim whose only use is `submit_work`. On a read-only server it could
+  // only ever produce work nobody can return, which is a worse answer than not offering it.
+  {
+    name: "product_ops_adopt",
+    title: "Survey the existing application",
+    description: "Account for every path in the linked application and assign each to the boundary that must read it. Reads only.",
+    tier: TIERS.PLAN,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    handler: adopt
+  },
+  {
+    name: "product_ops_next_work",
+    title: "Take the next ready product task",
+    description: "Hand out one bounded brief — the team, its boundary, and the task — for you to delegate to a subagent. Reads only.",
+    tier: TIERS.PLAN,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    handler: work.nextWork
+  },
+  {
+    name: "product_ops_submit_work",
+    title: "Return a completed product task",
+    description: "Record what your subagent produced for a claimed task. Plans by default; set apply true to record it.",
+    tier: TIERS.PLAN,
+    annotations: PLAN_ANNOTATIONS,
+    inputSchema: {
+      type: "object",
+      properties: {
+        taskId: { type: "string", minLength: 1, maxLength: 80 },
+        claimToken: { type: "string", minLength: 32, maxLength: 32, description: "Issued by product_ops_next_work. Take the work before returning it; this cannot be constructed." },
+        result: {
+          type: "object",
+          description: "The subagent's output. Validated against product-agent-run.schema.json and against the dispatched task; a mismatch is refused, not recorded.",
+          additionalProperties: true
+        },
+        apply: { type: "boolean", default: false, description: "Record the result. Omitted or false returns the plan only." }
+      },
+      required: ["taskId", "claimToken", "result"],
+      additionalProperties: false
+    },
+    handler: work.submitWork
   },
   {
     name: "product_ops_decide",

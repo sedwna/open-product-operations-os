@@ -23,7 +23,7 @@ export async function status(context, { verbosity = "brief" } = {}) {
  * the tokens needed to put them to the product owner. The panel is a view over the same records
  * every other surface reads; it is not a second source of truth.
  */
-export async function panel(context, args = {}) {
+export async function panel(context) {
   const [state, gates, snapshot, board] = await Promise.all([
     status(context, { verbosity: "full" }),
     pendingDecisions(context, { limit: 10 }),
@@ -35,12 +35,45 @@ export async function panel(context, args = {}) {
     decisions: { pending: gates.structuredContent.pending, items: gates.structuredContent.items },
     humanAuthorityActorId: gates.structuredContent.humanAuthorityActorId,
     teams: buildTeams(snapshot),
-    flow: buildFlow(snapshot, board)
+    flow: buildFlow(snapshot, board),
+    blockages: buildBlockages(snapshot, board)
   };
   return {
     structuredContent,
-    text: `${state.text}\n\nThe control tower panel is open, showing both teams and where the work currently sits.`
+    text: `${state.text}\n\nThe control tower panel is open, showing both teams, where the work currently sits, and anything it is stuck behind.`
   };
+}
+
+/**
+ * Where the cycle is stuck, and what would move it.
+ *
+ * A count of blocked cards tells the product owner that something is wrong without telling them
+ * whether it is theirs to fix. The board already records why each card stopped and what would
+ * release it, so the panel says that instead — and names the team holding it, because "who do I
+ * talk to" is usually the owner's actual next question.
+ */
+function buildBlockages(snapshot, board) {
+  const byId = new Map(board.records.map((task) => [task.task_id, task]));
+  return (snapshot.tasks ?? [])
+    .filter((task) => task.status === "blocked" || (task.status === "ready" && task.human_gate))
+    .slice(0, 12)
+    .map((task) => {
+      const waitingOn = dependencyState(task, byId).incomplete.slice(0, 3);
+      return {
+        taskId: task.task_id,
+        roleId: task.owner_role,
+        team: teamName(task.owner_role),
+        title: untrusted(task.title, { source: "taskboard", id: task.task_id, limit: 120 }),
+        // Whether this is the owner's to clear is the distinction that matters: a gate is theirs,
+        // a dependency is the coordinator's, and conflating them wastes their attention.
+        kind: task.human_gate ? "awaiting_decision" : (waitingOn.length > 0 ? "awaiting_dependency" : "stopped"),
+        humanGate: task.human_gate || null,
+        reason: untrusted(task.blocked_reason, { source: "taskboard", id: task.task_id, limit: 300 }),
+        unblockCondition: untrusted(task.unblock_condition, { source: "taskboard", id: task.task_id, limit: 300 }),
+        waitingOn,
+        nextTeam: task.next_owner_role ? teamName(task.next_owner_role) : null
+      };
+    });
 }
 
 /**

@@ -64,11 +64,17 @@ try {
   }
 
   runNpm(["install", "--ignore-scripts", "--no-audit", "--no-fund"], packageRoot);
-  for (const script of ["check", "smoke", "licenses:check", "sbom:check"]) {
+  // The parts of `check` that say something about the published package, minus the lint step.
+  //
+  // Linting here would mean shipping the lint configuration, and adding one file to the published
+  // set made `npm pack` and `git archive` produce different tarballs — the two paths this
+  // repository requires to agree. A consumer never lints what they install; style is a property of
+  // the source tree, and it is gated there.
+  for (const script of ["clean-room:check", "test", "portability", "smoke", "licenses:check", "sbom:check"]) {
     runNpm(
       ["run", script],
       packageRoot,
-      script === "check"
+      script === "test"
         ? { env: { ...process.env, PRODUCT_OPS_PACKED_ARTIFACT: "1" } }
         : undefined
     );

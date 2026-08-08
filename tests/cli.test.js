@@ -11,6 +11,7 @@ import {
   planWrites,
   summarizeWrites
 } from "../src/file-writer.js";
+import { readSuppliedJson } from "../src/runtime/io.js";
 import { captureIo, makeTempDirectory, readJson, writeJson } from "./helpers.js";
 
 test("init creates the canonical 13-role, 23-tab project and validate accepts it", async (t) => {
@@ -772,3 +773,36 @@ test("initializer committed-cleanup retention is fail-closed and reports recover
 function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
+
+test("a JSON file written by PowerShell is accepted", async (t) => {
+  // `Set-Content -Encoding utf8` writes a byte-order mark, so the ordinary way a Windows user
+  // creates an intake or answers file produced a parse error about an invisible character — at the
+  // first real command a newcomer runs. Found by walking the guide, not by reading the code.
+  const parent = await makeTempDirectory("product-ops-bom-");
+  t.after(() => fs.rm(parent, { recursive: true, force: true }));
+  const file = path.join(parent, "idea.json");
+  const idea = {
+    type: "new_idea",
+    title: "Jumping over a cactus should feel fair",
+    description: "Players press jump in time and still collide.",
+    source: "usability session"
+  };
+  await fs.writeFile(file, `﻿${JSON.stringify(idea, null, 2)}
+`, "utf8");
+
+  const parsed = await readSuppliedJson(file, "Intake file");
+  assert.equal(parsed.title, idea.title, "the mark carries no meaning and must not reach the parser");
+});
+
+test("an unreadable or malformed supplied file says which file and why", async (t) => {
+  const parent = await makeTempDirectory("product-ops-bom-");
+  t.after(() => fs.rm(parent, { recursive: true, force: true }));
+  const broken = path.join(parent, "broken.json");
+  await fs.writeFile(broken, "{ not json", "utf8");
+
+  await assert.rejects(readSuppliedJson(broken, "Intake file"), /Intake file is not valid JSON/);
+  await assert.rejects(
+    readSuppliedJson(path.join(parent, "absent.json"), "Intake file"),
+    /Intake file not found/
+  );
+});

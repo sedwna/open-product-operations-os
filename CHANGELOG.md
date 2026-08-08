@@ -4,6 +4,80 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+- Added static analysis over the whole tree, which had none. Rules are listed explicitly rather than
+  extended from a preset, so what counts as a defect here changes by decision rather than by
+  upgrade. It immediately found six dead bindings and a duplicated import that had been read past
+  for months.
+- Held the dashboard's escaping with tests. It escaped record text in fourteen places and embedded
+  the whole snapshot as JSON inside a script tag, and none of it was pinned — the one surface where
+  injected text sits next to a real control had no test saying so.
+- Scoped the licence gate to what actually ships. It walked every directory under `node_modules`,
+  which was the same set only while the repository had no development dependencies; the first one
+  added made it refuse a licence on tooling no consumer installs.
+- Made the bill of materials name every shipped dependency and no others. Asking npm to omit the
+  development tree silently dropped a production dependency that a development one also required,
+  so the lockfile is now the authority for both gates and they are checked against each other.
+- Corrected the portability gate, which claimed configurable locales. There is no locale mechanism
+  and the interface is Persian throughout. The claim is withdrawn and recorded as an unmet gate: an
+  unevidenced claim in the document that governs evidence is worse than the gap it describes.
+
+- Made the panel say where the cycle is stuck, not only how much of it is. A count of blocked cards
+  tells the product owner something is wrong without telling them whether it is theirs to fix, so the
+  panel now reads the reason and the unblocking condition already recorded on each card, and names
+  the team holding it — "who do I talk to" being the owner's usual next question.
+- Separated a blockage waiting on the owner from one waiting on a dependency. Both belong on the
+  panel, because the owner asked where work is stuck and not only where they are needed, but a
+  dependency must not read as another thing demanding their attention.
+
+- Adopted an existing repository completely rather than sampling it. `product_ops_adopt` accounts for
+  every path found: each is either assigned to the boundary that must read it or excluded for a named
+  reason, and `coverage.complete` goes false the moment that stops adding up. A survey that hit its
+  ceiling reports itself as incomplete instead of passing for a full reading.
+- Kept surveying and interpreting apart. The survey is mechanical and draws no conclusions; what the
+  product is, who it serves, and what is wrong with it come from the teams, one bounded brief at a
+  time. A machine's guess about a product and its owner's decision must not end up in the same record
+  with nothing to tell them apart.
+- Recorded what a repository admits about itself — in-code markers, churn, history, stacks — as
+  located facts with their sources, never as graded findings. Grading them would be deciding product
+  priority, which is not a survey's job.
+- Refused to follow a symbolic link out of the repository while still counting it, so adoption cannot
+  quietly pull files from elsewhere on the filesystem into the product record, and ran the whole
+  survey through the credential scan before it can become canonical.
+
+- Let the host perform the work. The coordinator loop could only drive a spawned provider CLI, so a
+  host whose subagents are its own to start had no way to take part. `product_ops_next_work` hands
+  out one team's bounded brief and `product_ops_submit_work` takes the result back, inverting control
+  so the host asks for work rather than being handed it.
+- Ran both performers through one contract. The submitted result passes the same schema validation,
+  the same dispatch-identity check, the same credential scan, and the same sealing as anything a
+  provider CLI produced, because it enters through the same function — a delegated subagent gains a
+  performer, not an exemption.
+- Required a claim issued by the work handout, keyed to the task's status as well as its identity, so
+  a task identifier lifted from a record cannot reach the run store and a claim held across a state
+  change no longer verifies.
+- Kept the development boundary out of the handout. Dispatching engineering work crosses the
+  Product/Development authority line, and a chat message is not where that should start.
+- Retired the platform launcher delivery path: three graphical launchers with a committed Windows
+  executable, the one-click onboarding wizard, the portable Node bootstrap, and the launcher
+  integrity gate. The host launches the server now, which is what the architecture document said
+  would make them redundant. The prior revision is preserved at tag `v0.8.1-launcher-era`.
+
+- Made the control-plane write lease actually exclusive. It granted a fixed term and never extended
+  it, so a holder whose work outlasted the term was judged abandoned while it was still writing and
+  the surface that reclaimed it joined it inside the critical section. A healthy holder now keeps its
+  term current, and expiry once again means the holder is gone or wedged.
+- Stopped a lease being destroyed by the act of reading it. Creating it exclusively was not the same
+  as creating it atomically: the file appeared before its contents did, and a contender reading in
+  that window saw zero bytes, could not parse them, and reclaimed a live lease as corrupt. The lease
+  is now linked into place already complete, and an observation that fails to parse is only believed
+  when it survives a second look. A genuinely corrupt lease still does not wedge the control plane.
+- Made a displaced holder fail its write rather than race the surface that replaced it. Every
+  canonical write now confirms, against the file rather than a cached flag, that the lease is still
+  ours; a holder that lost it reports the failure instead of returning a result nobody can vouch for.
+- Kept a transient filesystem failure from masquerading as displacement, so a write that was never in
+  danger is not refused: a replace or read that fails while the term still has time left is retried
+  rather than treated as evidence that someone else owns the lease.
+
 - Made engineering planning put its workstreams on the engineering board. The board is the
   canonical record of what engineering is carrying, and the documented planning path created
   workstreams inside a plan file while leaving the board empty, so work existed that no surface

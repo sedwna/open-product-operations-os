@@ -5,13 +5,9 @@ import { fileURLToPath } from "node:url";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const statePath = path.join(root, ".product-ops-pack-mode-state.json");
-const targets = [
-  "launchers/common/bootstrap-node.sh",
-  "launchers/linux/open-product-os.sh",
-  "launchers/macos/OpenProductOS.command",
-  "scripts/one-click-onboarding.mjs",
-  "src/development-cli.js"
-];
+// Files carrying an executable bit, whose mode must be normalised so a pack produces the same bytes
+// on every host. With the platform launchers gone this is the only one left.
+const targets = ["src/development-cli.js"];
 const operation = process.argv[2];
 
 if (!["prepare", "restore"].includes(operation)) {

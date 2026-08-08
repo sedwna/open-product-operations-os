@@ -40,32 +40,14 @@ export async function runProductAgent(
   const inputFile = path.join(runDirectory, `${attemptPrefix}-input.json`);
   const attemptOutputFile = path.join(runDirectory, `${attemptPrefix}-result.json`);
   const providerSchemaFile = path.join(runDirectory, `${attemptPrefix}-schema.json`);
-  const payload = {
-    schemaVersion: "1.0.0",
-    cycleId,
-    linkedApplication: applicationRoot ? { root: path.resolve(applicationRoot) } : null,
-    operationalArtifacts,
-    project: config.project,
-    task,
-    role: {
-      id: role.id,
-      actorId: role.actorId,
-      name: role.name,
-      purpose: role.role,
-      responsibilities: role.responsibilities,
-      prohibitedActions: role.prohibitedActions
-    },
+  const payload = buildProductAgentRequest(config, task, role, {
     intake,
-    cycleHistory: cycleHistory.slice(-3),
-    priorRuns: priorRuns.map(compactPriorRun),
-    policy: {
-      preserveHumanProductAuthority: true,
-      noDirectRepositoryWrites: true,
-      noProductionActions: true,
-      noCredentialMaterial: true,
-      evidenceBeforeClaims: true
-    }
-  };
+    priorRuns,
+    cycleHistory,
+    cycleId,
+    applicationRoot,
+    operationalArtifacts
+  });
   assertNoCredentialMaterial("Product agent input", payload);
   await writeExclusiveOrEqual(inputFile, payload);
   await writeCodexCompatibleSchema(
@@ -101,6 +83,60 @@ export async function runProductAgent(
     inputFile: path.relative(absoluteRoot, inputFile).replaceAll("\\", "/"),
     outputFile: path.relative(absoluteRoot, outputFile).replaceAll("\\", "/")
   };
+}
+
+/**
+ * The brief a performer needs to carry out one product task, whatever performs it.
+ *
+ * Both execution paths build it from here: the spawned-provider path writes it to a file for a CLI
+ * to read, and the host-delegated path returns it to the coordinator so it can hand the work to a
+ * subagent. One definition means a team's boundary cannot mean one thing to one performer and
+ * something else to another.
+ */
+export function buildProductAgentRequest(
+  config,
+  task,
+  role,
+  { intake, priorRuns = [], cycleHistory = [], cycleId, applicationRoot = null, operationalArtifacts = null } = {}
+) {
+  return {
+    schemaVersion: "1.0.0",
+    cycleId,
+    linkedApplication: applicationRoot ? { root: path.resolve(applicationRoot) } : null,
+    operationalArtifacts,
+    project: config.project,
+    task,
+    role: {
+      id: role.id,
+      actorId: role.actorId,
+      name: role.name,
+      purpose: role.role,
+      responsibilities: role.responsibilities,
+      prohibitedActions: role.prohibitedActions
+    },
+    intake,
+    cycleHistory: cycleHistory.slice(-3),
+    priorRuns: priorRuns.map(compactPriorRun),
+    policy: {
+      preserveHumanProductAuthority: true,
+      noDirectRepositoryWrites: true,
+      noProductionActions: true,
+      noCredentialMaterial: true,
+      evidenceBeforeClaims: true
+    }
+  };
+}
+
+/**
+ * Perform a task with a result the caller already has.
+ *
+ * This is what makes host delegation safe rather than a second way in. A coordinator that had its
+ * subagent do the work submits the result through `runProductAgent` with this executor, so the
+ * submission passes the same schema validation, the same dispatch-identity check, the same
+ * credential scan, and the same sealing as anything a spawned provider produced.
+ */
+export function submittedResultExecutor(result) {
+  return async () => result;
 }
 
 function productExecutor(provider) {

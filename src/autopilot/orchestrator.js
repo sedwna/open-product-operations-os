@@ -11,6 +11,7 @@ import { CONTROL_PLANE_LEASE_FILE } from "../runtime/control-plane-lease.js";
 import { runEngineeringDelivery } from "./engineering.js";
 import { runProductAgent } from "./product-agent.js";
 import { materializeCycleWorkbook, materializeWriterCheckpoint } from "./workbook.js";
+import { PRODUCT_RUN_ROOT, applyRunOutcome } from "./cycle.js";
 import { runGit, safeId, writeJson } from "./shared.js";
 import {
   acquireAutopilotLease,
@@ -25,7 +26,6 @@ import {
 
 const MAX_ATTEMPTS = 3;
 const MAX_TRANSIENT_ATTEMPTS = 8;
-const PRODUCT_RUN_ROOT = ".product-ops/runtime/autopilot/product-runs";
 const REPORT_ROOT = ".product-ops/runtime/autopilot/reports";
 
 export async function runPendingAutopilotCycle(
@@ -121,7 +121,7 @@ export async function runPendingAutopilotCycle(
         return { status: "completed", cycleId, report, revision };
       }
 
-      let runnable = selectRunnableTasks(tasks, approvals.requests).find((task) => task.event_id === intake.eventId);
+      const runnable = selectRunnableTasks(tasks, approvals.requests).find((task) => task.event_id === intake.eventId);
       if (!runnable) {
         const gated = eventTasks.find((task) => task.status === "ready" && task.human_gate);
         if (gated) {
@@ -185,24 +185,11 @@ export async function runPendingAutopilotCycle(
         run = executed.result;
       }
 
+      await applyRunOutcome(root, headers, tasks, runnable, run, { now: now() });
       if (run.status !== "completed") {
-        await markTask(root, headers, tasks, runnable.task_id, {
-          status: "blocked",
-          blocked_reason: run.summary,
-          evidence_refs: (run.evidence ?? []).join("|"),
-          updated_at: now().toISOString()
-        });
         await patchAutopilotState(root, { status: "blocked", lastError: run.summary }, now());
         return { status: "blocked", task: runnable, run };
       }
-      const resultRef = `${PRODUCT_RUN_ROOT}/${runnable.task_id}-result.json`;
-      await markTask(root, headers, tasks, runnable.task_id, {
-        status: "done",
-        blocked_reason: "",
-        canonical_output_refs: resultRef,
-        evidence_refs: unique([resultRef, ...(run.evidence ?? [])]).join("|"),
-        updated_at: now().toISOString()
-      });
       await appendAutopilotEvent(root, event("task_completed", cycleId, intake, runnable, run.summary));
     }
   } catch (error) {
@@ -331,7 +318,7 @@ async function refreshCycleRouting(root, now) {
   const loaded = await loadTaskboard(root);
   let tasks = loaded.records;
   let changed = false;
-  let byId = new Map(tasks.map((task) => [task.task_id, task]));
+  const byId = new Map(tasks.map((task) => [task.task_id, task]));
   tasks = tasks.map((task) => {
     if (task.status !== "backlog" || !dependencyState(task, byId).satisfied) return task;
     changed = true;

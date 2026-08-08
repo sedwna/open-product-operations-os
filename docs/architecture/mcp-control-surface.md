@@ -144,6 +144,37 @@ workstream summary, and is still bounded.
 | `product_ops_intake` | Normalize and record an idea, finding, incident, or feedback | `apply: false` |
 | `product_ops_operate` | One bounded control-plane scheduling cycle | `apply: false` |
 | `product_ops_autopilot` | `start \| pause \| resume \| retry` on the local coordinator | guarded |
+| `product_ops_next_work` | Hand out one team's bounded brief for the host to delegate | reads only |
+| `product_ops_submit_work` | Record what the host's subagent produced | `apply: false` |
+
+## Who performs the work
+
+Two executors sit behind one seam. They differ only in who performs a task; both build the same
+brief with `buildProductAgentRequest`, and both return through the same validation, dispatch-identity
+check, credential scan, and sealing in `runProductAgent`.
+
+| Executor | Performer | Driven by | Suits |
+| --- | --- | --- | --- |
+| **Host-delegated** (default) | A subagent of the host, one per team boundary | The host — it takes work, delegates, and returns the result | Supervised sessions, any MCP-capable host |
+| **Spawned provider** | A Codex or Claude Code CLI process | The coordinator loop, which picks work and runs the CLI itself | Unattended runs, CI, nightly cycles |
+
+A host cannot be driven the way the loop drives a CLI, because its subagents are its own to start.
+That is the whole reason for the split: the host-delegated path inverts control so the host asks for
+work rather than being handed it.
+
+The provider readiness probes in `src/codex/` and `src/claude/` belong to the spawned executor alone.
+Nothing on the host-delegated path detects, installs, or authenticates a CLI — the host already
+knows who it is.
+
+`product_ops_next_work` never hands out the development boundary. Dispatching engineering work
+crosses the Product/Development authority line and stays out of this surface, exactly as
+`product_ops_operate` fixes `executeDevelopment` to false.
+
+### The claim
+
+`submit_work` requires a `claimToken` that only `next_work` issues, so a task identifier lifted from
+a record cannot reach the run store. The token is keyed to the task's identity *and its status*, so
+a claim held across a state change no longer verifies: it described work that has since moved.
 
 `autopilotAuthorized` defaults to `false` on `product_ops_intake`. Submitting an idea through a chat
 window must not silently authorize an autonomous engineering cycle; that stays an explicit opt-in,
@@ -222,6 +253,10 @@ than racing.
 
 ## Host configuration
 
+The package is not published to npm yet, so these launch the server from a clone. The `product-ops-mcp`
+bin exists and an `npx --package=open-product-operations-os` form will work once it is published; until
+then that form returns a 404 and must not appear in the setup instructions.
+
 ### Claude Code — project scoped
 
 `.mcp.json` at the product-operations repository root:
@@ -230,8 +265,8 @@ than racing.
 {
   "mcpServers": {
     "product-ops": {
-      "command": "npx",
-      "args": ["-y", "--package=open-product-operations-os", "product-ops-mcp", "--project", "."]
+      "command": "node",
+      "args": ["/absolute/path/to/open-product-operations-os/src/mcp/server.js", "--project", "."]
     }
   }
 }
@@ -243,8 +278,8 @@ than racing.
 
 ```toml
 [mcp_servers.product_ops]
-command = "npx"
-args = ["-y", "--package=open-product-operations-os", "product-ops-mcp", "--project", "."]
+command = "node"
+args = ["/absolute/path/to/open-product-operations-os/src/mcp/server.js", "--project", "."]
 ```
 
 Per-tool approval modes should be set so that `product_ops_decide` always prompts. Confirm the exact
@@ -297,14 +332,15 @@ path existing at all.
 
 ## Effect on the platform-specific surface
 
-Once the host launches the server, the graphical launchers, the portable Node bootstrap, and the
-provider CLI readiness probes stop being the primary delivery path.
+This section predicted that once the host launched the server, the graphical launchers and the
+portable Node bootstrap would stop being the delivery path. They have since been removed; the
+prior revision is preserved at tag `v0.8.1-launcher-era`.
 
-| Concern | Today | With this surface |
+| Concern | Before | Now |
 | --- | --- | --- |
 | Delivery | Three native launchers plus a per-platform archive | One npm package |
-| User prerequisite | None; a portable Node runtime is downloaded and checksummed | Node 20 or newer |
-| Platform-specific code | Launchers, runtime bootstrap, CLI readiness probes, filesystem semantics | Filesystem semantics only |
+| User prerequisite | None; a portable Node runtime was downloaded and checksummed | Node 20 or newer |
+| Platform-specific code | Launchers, runtime bootstrap, CLI readiness probes, filesystem semantics | Filesystem semantics, plus the readiness probes the spawned-provider executor still needs |
 
 What does **not** become platform-independent: path separators, Windows reserved filenames, CRLF
 handling in CSV records, rename atomicity, and case-sensitivity differences. Those are properties of

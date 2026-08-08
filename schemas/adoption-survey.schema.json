@@ -1,0 +1,130 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://open-product-operations-os.local/schemas/adoption-survey.schema.json",
+  "title": "Adoption Survey",
+  "description": "A mechanical account of an existing application repository, produced before any interpretation of it. Every path is either assigned to a boundary for reading or excluded for a named reason, so coverage is checkable rather than claimed.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "applicationRoot", "surveyedAt", "coverage", "stacks", "entryPoints", "documentation", "signals", "assignments"],
+  "properties": {
+    "schemaVersion": { "const": "1.0.0" },
+    "applicationRoot": { "type": "string", "minLength": 1 },
+    "surveyedAt": { "type": "string", "format": "date-time" },
+    "revision": { "type": ["string", "null"], "maxLength": 80 },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["totalPaths", "examinedPaths", "excludedPaths", "complete", "exclusionsByReason"],
+      "properties": {
+        "totalPaths": { "type": "integer", "minimum": 0 },
+        "examinedPaths": { "type": "integer", "minimum": 0 },
+        "excludedPaths": { "type": "integer", "minimum": 0 },
+        "truncated": { "type": "boolean" },
+        "complete": {
+          "type": "boolean",
+          "description": "True only when examined + excluded accounts for every path found. A false value means the survey must not be presented as a complete reading of the repository."
+        },
+        "exclusionsByReason": {
+          "type": "object",
+          "additionalProperties": { "type": "integer", "minimum": 0 },
+          "propertyNames": { "enum": ["dependency", "build_output", "version_control", "binary_asset", "vendored", "generated", "oversized", "unreadable"] }
+        }
+      }
+    },
+    "stacks": {
+      "type": "array",
+      "maxItems": 40,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["manifest", "ecosystem"],
+        "properties": {
+          "manifest": { "type": "string", "minLength": 1 },
+          "ecosystem": { "type": "string", "minLength": 1 },
+          "name": { "type": ["string", "null"], "maxLength": 200 },
+          "declaredDependencies": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "languages": {
+      "type": "object",
+      "additionalProperties": { "type": "integer", "minimum": 0 }
+    },
+    "entryPoints": { "$ref": "#/$defs/paths" },
+    "documentation": { "$ref": "#/$defs/paths" },
+    "tests": { "$ref": "#/$defs/paths" },
+    "configuration": { "$ref": "#/$defs/paths" },
+    "signals": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["markers", "churn"],
+      "properties": {
+        "markers": {
+          "type": "array",
+          "maxItems": 500,
+          "description": "In-code admissions of unfinished work. Recorded as located text, never interpreted here.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "line", "kind", "text"],
+            "properties": {
+              "path": { "type": "string", "minLength": 1 },
+              "line": { "type": "integer", "minimum": 1 },
+              "kind": { "enum": ["TODO", "FIXME", "HACK", "XXX", "DEPRECATED"] },
+              "text": { "type": "string", "maxLength": 400 }
+            }
+          }
+        },
+        "churn": {
+          "type": "array",
+          "maxItems": 50,
+          "description": "Most frequently changed paths. High churn is a question to ask, not a defect to report.",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "commits"],
+            "properties": {
+              "path": { "type": "string", "minLength": 1 },
+              "commits": { "type": "integer", "minimum": 1 }
+            }
+          }
+        },
+        "history": {
+          "type": ["object", "null"],
+          "additionalProperties": false,
+          "properties": {
+            "commits": { "type": "integer", "minimum": 0 },
+            "firstCommitAt": { "type": ["string", "null"] },
+            "lastCommitAt": { "type": ["string", "null"] },
+            "contributors": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "assignments": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 13,
+      "description": "Every examined path is assigned to at least one product boundary to read. The assignment is what makes the reading complete; the reading itself is done by whoever performs the work.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["roleId", "question", "paths"],
+        "properties": {
+          "roleId": { "type": "string", "pattern": "^RB-(?:0[1-9]|1[0-3])$" },
+          "question": { "type": "string", "minLength": 10, "maxLength": 400 },
+          "paths": { "$ref": "#/$defs/paths" },
+          "pathCount": { "type": "integer", "minimum": 0 },
+          "truncated": { "type": "boolean", "description": "True when pathCount exceeds the paths listed. The boundary still owns every one of them." }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "paths": {
+      "type": "array",
+      "maxItems": 400,
+      "items": { "type": "string", "minLength": 1, "maxLength": 400 }
+    }
+  }
+}

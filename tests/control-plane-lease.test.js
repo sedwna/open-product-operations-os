@@ -12,6 +12,7 @@ import { loadTaskboard, replaceTaskboard } from "../src/runtime/taskboard.js";
 import {
   CONTROL_PLANE_LEASE_FILE,
   ControlPlaneLeaseError,
+  ControlPlaneLeaseLostError,
   acquireControlPlaneLease,
   controlPlaneSurface,
   readControlPlaneLease,
@@ -208,7 +209,6 @@ test("separate processes contending for one gate all reach a definite outcome", 
   // the lease and report an outcome. An unref'd poll timer lets it exit mid-wait, writing nothing
   // and reporting nothing, which reads as success to a caller.
   const root = await makeProject(t);
-  const config = await loadConfig(root);
   const { records } = await loadTaskboard(root);
   await requestApproval(root, {
     taskId: records[0].task_id,
@@ -260,6 +260,107 @@ test("separate processes contending for one gate all reach a definite outcome", 
   const stored = (await loadApprovals(root)).requests.find((item) => item.requestId === request.requestId);
   assert.equal(stored.status, "approved");
   assert.equal(await readControlPlaneLease(root), null, "every process must release what it took");
+});
+
+test("a holder whose work outlives the term keeps the lease", async (t) => {
+  // A term that is never extended is a deadline on the work rather than a lock: the holder is still
+  // writing when the lease is judged abandoned, and the surface that reclaims it joins it inside the
+  // critical section. Under full-suite load that is how two writers once met on the approval store.
+  const root = await makeProject(t);
+  let contender = null;
+
+  await withControlPlaneLease(root, async () => {
+    await new Promise((resolve) => { setTimeout(resolve, 1_400); }); // several terms at this TTL
+    contender = await acquireControlPlaneLease(root, { waitMs: 0 })
+      .then((lease) => releaseControlPlaneLease(lease).then(() => "acquired"))
+      .catch((error) => error.code);
+  }, { ttlMs: 300 });
+
+  assert.equal(contender, "WRITE_LEASE_HELD", "a beating holder must not be displaced mid-write");
+  assert.equal(await readControlPlaneLease(root), null, "the holder must still release its own lease");
+});
+
+test("a displaced holder fails its write instead of racing the surface that replaced it", async (t) => {
+  const root = await makeProject(t);
+  const { headers, records } = await loadTaskboard(root);
+
+  await assert.rejects(
+    withControlPlaneLease(root, async (lease) => {
+      // Whatever the cause — a stalled term, an operator deleting the file — the lease is now
+      // someone else's. The write must not proceed on the strength of having once held it.
+      await fs.rm(lease.file, { force: true });
+      const usurper = await acquireControlPlaneLease(root, { waitMs: 0 });
+      t.after(() => releaseControlPlaneLease(usurper));
+      await replaceTaskboard(root, headers, records, { dryRun: false });
+    }),
+    (error) => error instanceof ControlPlaneLeaseLostError && error.code === "WRITE_LEASE_LOST"
+  );
+});
+
+test("a lease is never observable half-written", async (t) => {
+  // An exclusive create is not an atomic one: it makes the file, then fills it. A contender reading
+  // in between sees zero bytes, cannot parse them, and treats a live lease as corrupt.
+  const root = await makeProject(t);
+  const file = leasePath(root);
+  let torn = 0;
+  let complete = 0;
+  let stop = false;
+
+  const reader = (async () => {
+    while (!stop) {
+      let text;
+      try {
+        text = await fs.readFile(file, "utf8");
+      } catch {
+        // Absent, or locked by a concurrent unlink. Neither is a half-written lease.
+        continue;
+      }
+      try {
+        JSON.parse(text);
+        complete += 1;
+      } catch {
+        torn += 1;
+      }
+    }
+  })();
+
+  for (let index = 0; index < 200; index += 1) {
+    await releaseControlPlaneLease(await acquireControlPlaneLease(root, { waitMs: 2_000 }));
+  }
+  stop = true;
+  await reader;
+
+  assert.ok(complete > 0, "the reader must have observed the lease at least once");
+  assert.equal(torn, 0, `a reader observed ${torn} unparseable lease states`);
+});
+
+test("one unreadable observation does not destroy a live lease", async (t) => {
+  // Belt and braces behind the atomic create. "Unreadable" is evidence of corruption only when it
+  // stays unreadable; a single bad read is evidence of a concurrent writer.
+  const root = await makeProject(t);
+  const holder = await acquireControlPlaneLease(root, { ttlMs: 60_000 });
+  t.after(() => releaseControlPlaneLease(holder));
+
+  const real = fs.readFile;
+  let tornOnce = false;
+  t.mock.method(fs, "readFile", async (...args) => {
+    if (!tornOnce && String(args[0]) === leasePath(root)) {
+      tornOnce = true;
+      return "";
+    }
+    return real.apply(fs, args);
+  });
+
+  await assert.rejects(
+    acquireControlPlaneLease(root, { waitMs: 0 }),
+    (error) => error.code === "WRITE_LEASE_HELD"
+  );
+  assert.ok(tornOnce, "the torn read must actually have been served");
+  assert.equal(
+    (await readControlPlaneLease(root))?.holderId,
+    holder.holderId,
+    "the live holder must still own the lease"
+  );
 });
 
 test("the lease file never reaches a validated project tree as canonical state", async (t) => {

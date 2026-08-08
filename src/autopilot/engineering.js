@@ -162,7 +162,7 @@ async function reuseExportedDevelopmentRequest(productRoot, candidate) {
 }
 
 async function ensureDevelopmentApproval(root, config, task, { autoApprove, now, context }) {
-  let store = await loadApprovals(root);
+  const store = await loadApprovals(root);
   let approval = store.requests.find((candidate) => candidate.taskId === task.task_id && candidate.gate === "development-export");
   if (!approval) {
     approval = (await requestApproval(root, {
@@ -179,7 +179,7 @@ async function ensureDevelopmentApproval(root, config, task, { autoApprove, now,
       requestId: approval.requestId,
       decision: "approved",
       actorId: config.project.humanAuthorityActorId,
-      rationale: "The owner explicitly authorized the initial autonomous idea-to-implementation cycle during one-click onboarding."
+      rationale: "The owner explicitly authorized the initial autonomous idea-to-implementation cycle when the workspace was set up."
     }, { dryRun: false, now })).request;
   }
   return approval;

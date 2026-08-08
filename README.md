@@ -17,11 +17,11 @@
   </p>
 
   <p>
-    <a href="docs/onboarding/one-click.md"><strong>Launch in one click</strong></a>
+    <a href="START-HERE.md"><strong>Start here</strong></a>
     ·
-    <a href="START-HERE.md">Start here</a>
+    <a href="docs/architecture/mcp-control-surface.md">Control surface</a>
     ·
-    <a href="docs/runtime/README.md">Run the control tower</a>
+    <a href="docs/runtime/README.md">Runtime guide</a>
     ·
     <a href="docs/architecture/overview.md">Explore the architecture</a>
     ·
@@ -68,10 +68,19 @@ If a link is missing, the system does not silently call the work complete.
 | **Provider boundary** | Disabled-by-default adapters for GitHub, GitLab, Jira, Linear, Azure DevOps, Sheets, Graph, and Airtable |
 | **Portable proof** | Cross-host package checks, clean-clone/archive tests, SBOM generation, license checks, and secret scans |
 
-## The control tower
+## Two ways to watch and decide
 
-The dashboard is generated from the same durable records that drive the control plane. It is not a
-second source of truth.
+There is one control plane and two windows onto it. Which you use depends on where you work, not on
+what you are allowed to do — both read the same durable records, and neither is a second source of
+truth.
+
+| | The panel | The local dashboard |
+| --- | --- | --- |
+| **Where** | Inside your agent host, in the conversation | A browser, on a loopback address |
+| **For** | Anyone driving the work through Claude, Codex, or another MCP host | Anyone who would rather not, and anyone without such a host |
+| **Opens with** | `product_ops_panel` | `product-ops dashboard ./my-product --serve` |
+
+The dashboard is generated from the same durable records that drive the control plane.
 
 - **Snapshot mode** creates a self-contained RTL report you can open locally.
 - **Live mode** serves the current project on a loopback address with search, filters, detail
@@ -94,20 +103,54 @@ product-ops dashboard ./my-product --serve --apply
 
 Read the [runtime guide](docs/runtime/README.md) for the complete operating and safety contract.
 
+## Getting started
+
+Do not read a setup guide. Hand the repository to your coding agent and ask it to do the work.
+
+```bash
+git clone https://github.com/sedwna/open-product-operations-os.git
+cd open-product-operations-os
+```
+
+Open Claude Code, Codex, or another capable agent in that folder and say:
+
+> Set me up with a new product.
+
+The agent reads [`AGENTS.md`](AGENTS.md), which is a runbook rather than an explanation, and works
+through it: checks your Node version, installs, creates and validates the workspace, writes the MCP
+configuration with the right absolute path, records your first idea, and routes it to the teams.
+
+It will ask you three or four questions — what you are building, who it is for, what it must do,
+and the first thing you want to change. Nothing about folders, flags, or configuration fields. Those
+are its problem.
+
+You finish with a validated workspace, a routed board, and the first decision waiting on you.
+
+<details>
+<summary><strong>If you would rather do it by hand</strong></summary>
+
+<br>
+
+Everything the runbook does is an ordinary command; see the
+[five-minute manual start](#five-minute-manual-start) below and the
+[runtime guide](docs/runtime/README.md).
+
+</details>
+
 ## Run it from Claude or Codex
 
-Point your coding agent at the project and supervise from inside the conversation. The control
-surface speaks the Model Context Protocol, so the same setup serves Claude Code, Claude Desktop,
-the ChatGPT desktop app, Codex CLI, and any compliant IDE.
+The control surface speaks the Model Context Protocol, so the same configuration serves Claude Code,
+Claude Desktop, the ChatGPT desktop app, Codex CLI, and any compliant IDE.
 
-`.mcp.json` for Claude Code, or `.codex/config.toml` for Codex:
+Not published to npm yet, so clone it and point your host at the clone. `.mcp.json` for Claude
+Code, or `.codex/config.toml` for Codex:
 
 ```json
 {
   "mcpServers": {
     "product-ops": {
-      "command": "npx",
-      "args": ["-y", "--package=open-product-operations-os", "product-ops-mcp", "--project", "."]
+      "command": "node",
+      "args": ["/absolute/path/to/open-product-operations-os/src/mcp/server.js", "--project", "."]
     }
   }
 }
@@ -131,37 +174,24 @@ reasoning and attributes the record to you.
 
 Read the [MCP control surface](docs/architecture/mcp-control-surface.md) for the authority model.
 
-## One-click start
+## Setting a workspace up
 
-Clone the repository, or download and fully extract the complete release archive for your platform,
-then open its launcher. Do not run a launcher from inside a compressed archive or copy the Windows
-executable away from its adjacent files. The graphical wizard asks for the folder names, product
-definition, and optional first idea. For a new application it initializes
-and validates both Product Operations OS and the independent Development Operations OS, creates
-separate Git histories, and opens the writable loopback-only live dashboard. Existing application repositories
-receive Development Operations OS files only after explicit opt-in.
+Ask your agent for `/product-ops:start`. It works through the setup with you rather than running
+ahead, and takes one of two paths.
 
-| Windows | macOS | Linux |
-| --- | --- | --- |
-| Double-click [`OpenProductOS.exe`](launchers/windows/OpenProductOS.exe) | Open [`OpenProductOS.command`](launchers/macos/OpenProductOS.command) | Open [`OpenProductOS.desktop`](launchers/linux/OpenProductOS.desktop) |
+| You have | What happens |
+| --- | --- |
+| **An existing project** | The repository is read, what the product already is gets derived from it — domains, journeys, open issues, technical debt — and the boards are seeded. Every derived row records its source and stays an observation until you accept it. |
+| **Only an idea** | The idea is recorded as intake and the product teams begin analysing it. |
 
-No administrator access is required. If Node.js is missing, the launcher downloads a portable
-Node.js 22 runtime from the official distribution and verifies its SHA-256 checksum before use.
-Release archives include the exact locked runtime dependencies; if they are missing or stale, the
-launcher repairs them from the lockfile without running package lifecycle scripts.
-See the [one-click onboarding guide](docs/onboarding/one-click.md) for first-open notes, the safety
-contract, recovery, and distributable bundles.
+Adding the Development Operations OS namespace to an application repository someone already relies
+on is the owner's call: the agent shows what it will create and waits.
 
 The [Autonomous Product Factory architecture](docs/automation/README.md) documents the implemented
 continuous loop: read-only product agents, dependency-ordered engineering workstreams, durable
 leases and retries, content-addressed evidence return, controlled workbook insertion, product
 verification, reports, and separate Git branches. Production release and destructive actions remain
 separately gated.
-
-```text
-# Universal command-line fallback
-npm run onboard
-```
 
 ## Five-minute manual start
 
@@ -212,7 +242,6 @@ templates/    canonical governance, role, workbook, workflow, and release contra
 schemas/      published validation contracts
 examples/     fictional end-to-end evidence
 docs/         architecture, security, migration, runtime, and verification guidance
-site/         public read-only dashboard demonstration with fictional data
 ```
 
 ## Development integration
@@ -223,20 +252,24 @@ It uses versioned request/result contracts and content-addressed receipts to syn
 Product Operations repository without merging their authority or canonical state.
 
 ```text
+# Give the application its engineering boundaries
 development-os init ./my-application --dry-run
 development-os init ./my-application
 development-os validate ./my-application
+
+# Then tell the product workspace which repository it operates
+product-ops link ./my-product --application ./my-application --apply
 ```
 
-The graphical one-click path performs these initialization and validation commands automatically
-for a new application. Use the manual commands above when adding Development Operations OS later
-or when you prefer command-line control. In manual initialization specialist executors remain
-disabled until separately configured, tested, and authorized. In one-click automation mode, the
-wizard can select Codex or Claude Code explicitly, or automatically choose the authenticated local
-provider. Readiness checks activate the matching product and engineering executors, and the linked
-local dashboard starts the continuous coordinator.
+Until that link exists the workspace has no engineering side: adoption has nothing to read and the
+coordinator has nothing to coordinate. Linking names the repository and stops there — executors and
+the coordinator stay disabled until separately enabled.
 
-The original command-runner adapter remains available as a lower-level bounded integration.
+`/product-ops:start` runs these initialization and validation commands for you when you confirm
+them; the commands above are there for scripting, CI, or when you prefer direct control. Specialist
+executors stay disabled until separately configured, tested, and authorized either way.
+
+The command-runner adapter remains available as a lower-level bounded integration.
 
 Development is a governed adapter, not an implicit side effect. The development role receives an
 approved delivery contract, acceptance criteria, dependencies, evidence, a validation recipe, and

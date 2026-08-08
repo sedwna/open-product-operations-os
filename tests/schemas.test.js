@@ -18,6 +18,7 @@ test("all public JSON schemas parse and declare Draft 2020-12", async () => {
     .sort();
 
   assert.deepEqual(files, [
+    "adoption-survey.schema.json",
     "agent-registry.schema.json",
     "approval-store.schema.json",
     "automation-link.schema.json",

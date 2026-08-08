@@ -7,8 +7,8 @@ them through validated, content-addressed contracts.
 
 ## Product promise
 
-After one-click onboarding, the dashboard must answer five questions without requiring the user to
-inspect files or terminals:
+After setup, the control panel must answer five questions without requiring the user to inspect
+files or terminals:
 
 1. What is happening now?
 2. Which role created each task?
@@ -51,7 +51,7 @@ The runtime has four layers:
 
 ## Automation-provider readiness contract
 
-One-click onboarding checks these states in order:
+Setup checks these states in order:
 
 | State | Meaning | Allowed action |
 | --- | --- | --- |
@@ -103,7 +103,7 @@ The default execution sequence is:
 ### Stage 1 — truthful connection status (implemented)
 
 - Detect installed, executable, authenticated, and ready states for Codex and Claude Code separately.
-- Offer only the selected official CLI installation and provider-native browser authentication during one-click onboarding.
+- Offer only the selected official CLI installation and provider-native browser authentication during setup.
 - Support explicit Codex, explicit Claude Code, or deterministic automatic provider selection.
 - Configure and enable all engineering role executors only after readiness passes.
 - Persist a credential-free automation status record.
@@ -128,7 +128,7 @@ The default execution sequence is:
 
 ### Stage 4 — complete local engineering loop (implemented)
 
-- All 15 engineering boundaries are selected from declared impact; one-click full-coverage requests
+- All 15 engineering boundaries are selected from declared impact; full-coverage requests
   activate architecture, frontend, backend, clients, database, data/AI, platform/network, security,
   QA, SRE, delivery, SEO, documentation, and independent verification.
 - Work runs in dependency order on a dedicated cycle branch. Final changes are rejected outside the

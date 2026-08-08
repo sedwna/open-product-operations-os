@@ -82,7 +82,7 @@ test("a standalone loop stays alive between cycles; a hosted one does not hold t
     runner: async () => ({ status: "idle" }),
     onCycle: (result) => observed.push(result.status)
   });
-  await new Promise((resolve) => setTimeout(resolve, 60));
+  await new Promise((resolve) => { setTimeout(resolve, 60); });
   await hosted.close();
   const hostedTimer = setTimeout(() => {}, 0);
   assert.equal(typeof hostedTimer.unref, "function");
@@ -95,7 +95,7 @@ test("a standalone loop stays alive between cycles; a hosted one does not hold t
     runner: async () => ({ status: "completed", cycleId: "CYCLE-1" }),
     onCycle: (result) => reported.push(result.status)
   });
-  await new Promise((resolve) => setTimeout(resolve, 80));
+  await new Promise((resolve) => { setTimeout(resolve, 80); });
   await standalone.close();
   assert.ok(reported.length >= 2, `a live loop must keep cycling, saw ${reported.length}`);
   assert.equal(reported.every((status) => status === "completed"), true);
@@ -110,7 +110,7 @@ test("a reporter that throws cannot stop the loop", async (t) => {
     runner: async () => { cycles += 1; return { status: "idle" }; },
     onCycle: () => { throw new Error("the reporter exploded"); }
   });
-  await new Promise((resolve) => setTimeout(resolve, 80));
+  await new Promise((resolve) => { setTimeout(resolve, 80); });
   await loop.close();
   assert.ok(cycles >= 2, `the loop must survive a failing reporter, ran ${cycles} cycle(s)`);
 });
@@ -122,12 +122,12 @@ test("closing waits for the agent already running rather than killing it mid-wri
     intervalMs: 5,
     keepAlive: true,
     runner: async () => {
-      await new Promise((resolve) => setTimeout(resolve, 120));
+      await new Promise((resolve) => { setTimeout(resolve, 120); });
       finished = true;
       return { status: "completed" };
     }
   });
-  await new Promise((resolve) => setTimeout(resolve, 20));
+  await new Promise((resolve) => { setTimeout(resolve, 20); });
   await loop.close();
   assert.equal(finished, true, "stopping must be cooperative, as it is everywhere else in this system");
 });

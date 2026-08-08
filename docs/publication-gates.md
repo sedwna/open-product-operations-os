@@ -10,7 +10,8 @@ A green build alone is not a release decision.
 | Legal | License and third-party attribution approved |
 | Clean room | Source-to-target extraction ledger complete |
 | Privacy | Secret, personal-data, path, URL, and image scan reports zero source-product leakage |
-| Portability | Product names, IDs, roles, tabs, statuses, locales, and repositories are configurable |
+| Portability | Product names, IDs, roles, tabs, statuses, and repositories are configurable |
+| Interface language | See the limitation below. Not met. |
 | Contracts | Configuration and artifact schemas validate |
 | Bootstrap | Blank-project initialization and repeat execution are idempotent |
 | Safety | Writers default to dry-run and prove scope, read-back, replay, and rollback |
@@ -47,6 +48,23 @@ BLOCKED
 
 Only an independent release-control role may promote a candidate after inspecting the required
 proof. Producers may report readiness but may not certify their own output.
+
+## Known limitation: interface language
+
+The operator-facing surfaces — the control panel, the local dashboard, the setup walkthrough, and
+the coordinator's own reporting — are written in Persian, and there is no locale mechanism. An
+adopter who does not read Persian gets a Persian interface.
+
+The portability gate above previously claimed locales were configurable. They are not, and were
+never made so; the claim was corrected rather than quietly kept, because an unevidenced claim in the
+document that governs evidence is worse than the missing capability it describes.
+
+What *is* portable is everything the gate now lists: product names, identifiers, role registries,
+workbook tabs, statuses, and repository layout. The canonical records themselves carry no interface
+language.
+
+Adding a locale layer is deferred until there is an adopter who needs it. That is a scheduling
+decision, not an assessment that it does not matter, and this gate stays unmet until it is done.
 
 ## Current evidence
 

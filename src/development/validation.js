@@ -3,6 +3,7 @@ import path from "node:path";
 import { parseCsv } from "../csv.js";
 import { assertNoCredentialMaterial } from "../runtime/security.js";
 import { validatePublishedSchema } from "../schema-validation.js";
+import { DEVELOPMENT_NAMESPACE } from "./catalog.js";
 import { canonicalJson, contractDigest } from "./contracts.js";
 import { loadDevelopmentConfig, validateDevelopmentConfig } from "./config.js";
 import { DEVELOPMENT_REQUIRED_FILES } from "./generator.js";
@@ -148,7 +149,7 @@ function identityForSchema(schema, value) {
 }
 
 async function scanManagedTree(root, errors) {
-  for (const relative of ["engineering", ".development-os", "DEVELOPMENT.md", "development-os.config.json"]) {
+  for (const relative of DEVELOPMENT_NAMESPACE) {
     await visit(path.join(root, relative), relative);
   }
   async function visit(absolute, relative) {

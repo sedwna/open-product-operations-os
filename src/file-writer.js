@@ -13,6 +13,7 @@ import {
   resolveInside,
   toPosixPath
 } from "./paths.js";
+import { assertControlPlaneLeaseHeld } from "./runtime/control-plane-lease.js";
 
 export async function planWrites(
   root,
@@ -99,6 +100,10 @@ export async function applyWrites(
   if (typeof transactionObserver !== "function") {
     throw new Error("transactionObserver must be a function when provided.");
   }
+  // Guarding the single apply path covers every surface at once. A caller writing without the
+  // control-plane lease — init, generation — is unaffected; a caller that took one and has since
+  // lost it is stopped here rather than racing the surface that now holds it.
+  await assertControlPlaneLeaseHeld(root);
   for (const operation of operations) {
     if (["unchanged", "preserved"].includes(operation.action)) {
       continue;
