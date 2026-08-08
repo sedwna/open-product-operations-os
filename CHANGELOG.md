@@ -4,6 +4,23 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+- Removed every surface the old delivery model left behind: the local HTTP dashboard and its
+  writable loopback mode, the HTML setup wizard, the engineering dashboard page, the Codex and
+  Claude CLI readiness probes, and the spawned-provider product executors. One delivery model
+  remains — the host adopts the operating model over MCP — and one window onto it, the control
+  tower panel in the conversation.
+- Required a performer for every product agent run. Work is done by whoever the host delegates it
+  to; the run function owns the contract around the work, never the doing.
+- Kept the Windows `claude.cmd` shim resolution and moved it into the development boundary that
+  needs it: running a batch file means running the command interpreter, which stays out of a path
+  that takes contract text.
+- Renamed the workspace snapshot module to what it is, and dropped the `mode` and `writable`
+  fields no reader used.
+- Split the control-plane receipt into `advanced` and `awaitingPerformer`, and made both the CLI
+  and the MCP surface say plainly when a cycle routed work and nothing performed it. The dashboard's
+  cycle button used to report success forever against a board that never moved; the silence that
+  allowed that is now impossible in the surfaces that remain.
+
 - Added static analysis over the whole tree, which had none. Rules are listed explicitly rather than
   extended from a preset, so what counts as a defect here changes by decision rather than by
   upgrade. It immediately found six dead bindings and a duplicated import that had been read past
