@@ -103,11 +103,44 @@ product-ops dashboard ./my-product --serve --apply
 
 Read the [runtime guide](docs/runtime/README.md) for the complete operating and safety contract.
 
+## Getting started
+
+Do not read a setup guide. Hand the repository to your coding agent and ask it to do the work.
+
+```bash
+git clone https://github.com/sedwna/open-product-operations-os.git
+cd open-product-operations-os
+```
+
+Open Claude Code, Codex, or another capable agent in that folder and say:
+
+> Set me up with a new product.
+
+The agent reads [`AGENTS.md`](AGENTS.md), which is a runbook rather than an explanation, and works
+through it: checks your Node version, installs, creates and validates the workspace, writes the MCP
+configuration with the right absolute path, records your first idea, and routes it to the teams.
+
+It will ask you three or four questions — what you are building, who it is for, what it must do,
+and the first thing you want to change. Nothing about folders, flags, or configuration fields. Those
+are its problem.
+
+You finish with a validated workspace, a routed board, and the first decision waiting on you.
+
+<details>
+<summary><strong>If you would rather do it by hand</strong></summary>
+
+<br>
+
+Everything the runbook does is an ordinary command; see the
+[five-minute manual start](#five-minute-manual-start) below and the
+[runtime guide](docs/runtime/README.md).
+
+</details>
+
 ## Run it from Claude or Codex
 
-Point your coding agent at the project and supervise from inside the conversation. The control
-surface speaks the Model Context Protocol, so the same setup serves Claude Code, Claude Desktop,
-the ChatGPT desktop app, Codex CLI, and any compliant IDE.
+The control surface speaks the Model Context Protocol, so the same configuration serves Claude Code,
+Claude Desktop, the ChatGPT desktop app, Codex CLI, and any compliant IDE.
 
 Not published to npm yet, so clone it and point your host at the clone. `.mcp.json` for Claude
 Code, or `.codex/config.toml` for Codex:

@@ -16,6 +16,16 @@ For the governed path from an idea to continuously claimed engineering work, rea
 
 ---
 
+## The short way
+
+Clone the repository, open your coding agent in it, and say **"set me up with a new product."**
+
+It reads [`AGENTS.md`](AGENTS.md) and does the whole thing — installs, creates the workspace,
+configures it, writes the MCP entry, records your first idea, routes the board. It asks you three or
+four questions about your product and none about mechanics.
+
+The rest of this page is what it does on your behalf, for when you want to know or do it yourself.
+
 ## What this is
 
 This repository is not an application you install. It is an operating model your coding agent
