@@ -109,14 +109,15 @@ Point your coding agent at the project and supervise from inside the conversatio
 surface speaks the Model Context Protocol, so the same setup serves Claude Code, Claude Desktop,
 the ChatGPT desktop app, Codex CLI, and any compliant IDE.
 
-`.mcp.json` for Claude Code, or `.codex/config.toml` for Codex:
+Not published to npm yet, so clone it and point your host at the clone. `.mcp.json` for Claude
+Code, or `.codex/config.toml` for Codex:
 
 ```json
 {
   "mcpServers": {
     "product-ops": {
-      "command": "npx",
-      "args": ["-y", "--package=open-product-operations-os", "product-ops-mcp", "--project", "."]
+      "command": "node",
+      "args": ["/absolute/path/to/open-product-operations-os/src/mcp/server.js", "--project", "."]
     }
   }
 }

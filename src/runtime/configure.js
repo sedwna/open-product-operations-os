@@ -1,12 +1,11 @@
-import fs from "node:fs/promises";
-import path from "node:path";
 import { validateConfig, validateConfigRelationships } from "../config.js";
+import { readSuppliedJson } from "./io.js";
 import { CONFIG_FILE } from "../constants.js";
 import { applyWrites, planWrites } from "../file-writer.js";
 import { buildProjectFiles } from "../generator.js";
 
 export async function configureProject(root, config, answersFile, { dryRun = true } = {}) {
-  const answers = JSON.parse(await fs.readFile(path.resolve(answersFile), "utf8"));
+  const answers = await readSuppliedJson(answersFile, "Configuration answer file");
   const allowed = new Set(["name", "vision", "targetUsers", "environments", "humanAuthorityActorId", "developmentAdapter"]);
   const unknown = Object.keys(answers).filter((key) => !allowed.has(key));
   if (unknown.length > 0) throw new Error(`Unknown configuration answer "${unknown[0]}".`);

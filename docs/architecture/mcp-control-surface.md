@@ -253,6 +253,10 @@ than racing.
 
 ## Host configuration
 
+The package is not published to npm yet, so these launch the server from a clone. The `product-ops-mcp`
+bin exists and an `npx --package=open-product-operations-os` form will work once it is published; until
+then that form returns a 404 and must not appear in the setup instructions.
+
 ### Claude Code — project scoped
 
 `.mcp.json` at the product-operations repository root:
@@ -261,8 +265,8 @@ than racing.
 {
   "mcpServers": {
     "product-ops": {
-      "command": "npx",
-      "args": ["-y", "--package=open-product-operations-os", "product-ops-mcp", "--project", "."]
+      "command": "node",
+      "args": ["/absolute/path/to/open-product-operations-os/src/mcp/server.js", "--project", "."]
     }
   }
 }
@@ -274,8 +278,8 @@ than racing.
 
 ```toml
 [mcp_servers.product_ops]
-command = "npx"
-args = ["-y", "--package=open-product-operations-os", "product-ops-mcp", "--project", "."]
+command = "node"
+args = ["/absolute/path/to/open-product-operations-os/src/mcp/server.js", "--project", "."]
 ```
 
 Per-tool approval modes should be set so that `product_ops_decide` always prompts. Confirm the exact

@@ -32,16 +32,28 @@ you ──▶ your agent host ──MCP──▶ this operating model ──▶ 
 
 ## Install
 
-Node.js 20 or newer is the only prerequisite. Add one block to your host's MCP configuration.
+Node.js 20 or newer is the only prerequisite.
 
-**Claude Code** — `.mcp.json` at the root of your product-operations repository:
+> [!IMPORTANT]
+> This package is **not published to npm yet**, so `npx --package=open-product-operations-os`
+> returns a 404. Clone the repository and point your host at the clone; the entries below do that.
+> When the package is published, an `npx` form will replace them.
+
+```text
+git clone https://github.com/sedwna/open-product-operations-os.git
+cd open-product-operations-os
+npm ci
+```
+
+**Claude Code** — `.mcp.json` at the root of your product-operations workspace, with an absolute
+path to the clone:
 
 ```json
 {
   "mcpServers": {
     "product-ops": {
-      "command": "npx",
-      "args": ["-y", "--package=open-product-operations-os", "product-ops-mcp", "--project", "."]
+      "command": "node",
+      "args": ["/absolute/path/to/open-product-operations-os/src/mcp/server.js", "--project", "."]
     }
   }
 }
@@ -51,8 +63,8 @@ Node.js 20 or newer is the only prerequisite. Add one block to your host's MCP c
 
 ```toml
 [mcp_servers.product_ops]
-command = "npx"
-args = ["-y", "--package=open-product-operations-os", "product-ops-mcp", "--project", "."]
+command = "node"
+args = ["/absolute/path/to/open-product-operations-os/src/mcp/server.js", "--project", "."]
 ```
 
 The same entry serves Claude Code, Claude Desktop, the ChatGPT desktop app, Codex CLI, the Codex IDE

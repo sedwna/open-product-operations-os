@@ -1,4 +1,3 @@
-import fs from "node:fs/promises";
 import { queueProviderItem, syncProvider } from "../adapters/provider-sync.js";
 import { loadConfig, validateConfig, validateConfigRelationships } from "../config.js";
 import { decideApproval, loadApprovals } from "../runtime/approvals.js";
@@ -9,6 +8,7 @@ import { startDashboardServer } from "../runtime/dashboard-server.js";
 import { runDevelopmentTask } from "../runtime/development-runner.js";
 import { exportDevelopmentRequest, importEngineeringResult } from "../development/product-sync.js";
 import { ingestRecord } from "../runtime/intake.js";
+import { readSuppliedJson } from "../runtime/io.js";
 import { migrateProject } from "../runtime/migrations.js";
 import { buildSetupWizard } from "../runtime/setup-wizard.js";
 import { setControlPlaneSurface } from "../runtime/control-plane-lease.js";
@@ -63,7 +63,7 @@ export async function developmentImportCommand(target, options) {
 
 export async function intakeCommand(target, options) {
   if (!options.file) throw new Error("intake requires --file <json-file>.");
-  const input = JSON.parse(await fs.readFile(options.file, "utf8"));
+  const input = await readSuppliedJson(options.file, "Intake file");
   const result = await ingestRecord(target, input, { dryRun: runtimeDryRun(options) });
   return [
     `${result.dryRun ? "Planned" : "Recorded"} intake ${result.record.intakeId}.`,
@@ -96,7 +96,7 @@ export async function decideCommand(target, options) {
 
 export async function providerQueueCommand(target, options) {
   if (!options.file) throw new Error("provider-queue requires --file <json-file>.");
-  const item = JSON.parse(await fs.readFile(options.file, "utf8"));
+  const item = await readSuppliedJson(options.file, "Provider item file");
   const result = await queueProviderItem(target, item, { dryRun: runtimeDryRun(options) });
   return [`${result.dryRun ? "Planned" : "Queued"} provider item ${result.item.id} for ${result.item.provider}.`];
 }
