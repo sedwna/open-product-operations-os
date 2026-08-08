@@ -4,7 +4,7 @@ import { assertNoLinkTraversal, resolveInside } from "../paths.js";
 import { validatePublishedSchema } from "../schema-validation.js";
 import { readJsonOptional, utcTimestamp, writeJson } from "../runtime/io.js";
 import fs from "node:fs/promises";
-import { assertNoCredentialMaterial } from "../runtime/security.js";
+import { assertNoCredentialMaterial } from "../runtime/security.js";
 
 export async function loadProviderCatalog(root) {
   const file = resolveInside(root, "adapters/providers.json", "Provider catalog");
