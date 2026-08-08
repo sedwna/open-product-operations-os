@@ -121,7 +121,7 @@ Twelve tools maximum. Descriptions stay under two lines each; bulk data lives in
 | `product_ops_validate` | "Is the project structurally sound?" | — |
 
 `product_ops_status` is the primary entry point. It is a **projection**, not the raw snapshot:
-[`loadDashboardSnapshot`](../../src/runtime/dashboard.js) returns every task, every intake record, and
+[`loadWorkspaceSnapshot`](../../src/runtime/snapshot.js) returns every task, every intake record, and
 the last 100 autopilot events. Returning that verbatim would consume thousands of tokens per call.
 
 The `brief` projection contains only:
@@ -240,10 +240,8 @@ Debounce at 500 ms; ignore the orchestrator lease file, which is written on ever
 
 ## Concurrency with the dashboard
 
-Open issue that must be resolved before tier B ships. The dashboard server already refuses a manual
-control-plane cycle when the continuous orchestrator owns routing
-([`dashboard-server.js`](../../src/runtime/dashboard-server.js)), but approval and task-board writes
-are not leased.
+Open issue that must be resolved before tier B ships. A manual control-plane cycle is refused while
+the continuous orchestrator owns routing, but approval and task-board writes are not leased.
 
 Two writers (a live dashboard and an MCP session) can now target the same files. Resolution: extend
 the existing autopilot lease in [`src/autopilot/state.js`](../../src/autopilot/state.js) into a

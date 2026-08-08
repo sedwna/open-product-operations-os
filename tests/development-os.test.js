@@ -13,7 +13,6 @@ import { planDevelopmentRequest } from "../src/development/planner.js";
 import { completeDevelopmentResult } from "../src/development/result.js";
 import { validateDevelopmentOs } from "../src/development/validation.js";
 import { effectiveCodexSandboxArguments, extractClaudeStructuredOutput, runEngineeringWorkstream } from "../src/development/runner.js";
-import { buildDevelopmentDashboard } from "../src/development/dashboard.js";
 import { TASKBOARD_COLUMNS } from "../src/constants.js";
 import { main as developmentMain } from "../src/development-cli.js";
 import { decideApproval, requestApproval } from "../src/runtime/approvals.js";
@@ -157,10 +156,6 @@ test("specialist execution is disabled by default, shell-free, attributed, and v
   assert.equal(preview.payload.policy.isolation, "external-required");
   const executed = await runEngineeringWorkstream(root, plan.planId, "WS-01", { dryRun: false });
   assert.equal(executed.result.status, "completed");
-  const dashboard = await buildDevelopmentDashboard(root, { dryRun: false });
-  const html = await fs.readFile(path.join(root, dashboard.output), "utf8");
-  assert.match(html, /برج کنترل مهندسی/);
-  assert.match(html, /ENG-06/);
   const validation = await validateDevelopmentOs(root);
   assert.deepEqual(validation.errors, []);
   assert.equal(validation.contractCounts.runs, 1);

@@ -10,7 +10,7 @@ import { loadDevelopmentConfig, validateDevelopmentConfig } from "./config.js";
 import { resolveExecutable } from "./executor-setup.js";
 import { writeCodexCompatibleSchema } from "../codex/structured-output-schema.js";
 import { effectiveCodexSandboxArguments } from "../codex/sandbox-profile.js";
-import { resolveClaudeCommand } from "../claude/readiness.js";
+import { resolveDevelopmentCommand } from "./command-resolution.js";
 export { effectiveCodexSandboxArguments } from "../codex/sandbox-profile.js";
 
 const MAX_EXECUTOR_OUTPUT_BYTES = 1024 * 1024;
@@ -295,7 +295,7 @@ async function windowsCommand(executable, args) {
   if (!isCodexShim && !isClaudeShim) {
     throw new Error("Windows batch executors are not supported because their arguments cross a command-interpreter boundary.");
   }
-  if (isClaudeShim) return resolveClaudeCommand(executable, args);
+  if (isClaudeShim) return resolveDevelopmentCommand(executable, args);
   const javascriptLauncher = isCodexShim
     ? path.join(path.dirname(executable), "node_modules", "@openai", "codex", "bin", "codex.js")
     : null;

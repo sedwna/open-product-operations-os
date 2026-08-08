@@ -8,7 +8,6 @@ import { planDevelopmentRequest } from "./development/planner.js";
 import { completeDevelopmentResult } from "./development/result.js";
 import { validateDevelopmentOs } from "./development/validation.js";
 import { runEngineeringWorkstream } from "./development/runner.js";
-import { buildDevelopmentDashboard } from "./development/dashboard.js";
 import { configureDevelopmentExecutors, doctorDevelopmentExecutors } from "./development/executor-setup.js";
 
 const HELP = `Open Development Operations OS CLI
@@ -21,7 +20,6 @@ Usage:
   development-os execute <target> --plan <plan-id> --workstream <workstream-id> [--apply]
   development-os executor-setup <target> --provider <codex|claude|command> --role <ENG-01|all> [options] [--enable] [--apply]
   development-os executor-doctor <target> [--role <ENG-01|all>]
-  development-os dashboard <target> [--output <html-file>] [--apply]
   development-os status <target>
 
 Commands:
@@ -32,7 +30,6 @@ Commands:
   execute   Dispatch one dependency-ready workstream through its disabled-by-default specialist executor.
   executor-setup  Safely configure disabled-by-default Codex or command executors; activation requires --enable and a passing doctor.
   executor-doctor Read-only executor, schema, path, environment, and isolation diagnostics.
-  dashboard Generate a local Persian RTL engineering control-tower snapshot.
   status    Report synchronized request, plan, result, and receipt counts.
 
 Safety:
@@ -110,11 +107,6 @@ export async function main(argv = process.argv.slice(2), io = console) {
     io.log(`Executor doctor passed for ${result.checkedRoles.join(", ")}; no files were changed.`);
     return 0;
   }
-  if (parsed.command === "dashboard") {
-    const result = await buildDevelopmentDashboard(target, { dryRun: !parsed.apply, output: parsed.output });
-    io.log(`${result.dryRun ? "Planned" : "Generated"} engineering dashboard at ${result.output} (${result.bytes} bytes).`);
-    return 0;
-  }
   if (parsed.command === "status") {
     const result = await validateDevelopmentOs(target);
     if (result.errors.length) throw new Error(`Development OS validation failed:\n- ${result.errors.join("\n- ")}`);
@@ -168,7 +160,6 @@ function validateOptions(parsed) {
     execute: ["plan", "workstream", "apply"],
     "executor-setup": ["provider", "role", "executable", "arguments", "workingDirectory", "timeoutMs", "enable", "apply", "dryRun"],
     "executor-doctor": ["role"],
-    dashboard: ["output", "apply"],
     status: []
   }[parsed.command];
   if (!allowed) return;

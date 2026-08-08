@@ -6,14 +6,14 @@ import test from "node:test";
 import { run } from "../src/cli.js";
 import { parseCsv } from "../src/csv.js";
 import { boundedUnique, classifyAutopilotError, runPendingAutopilotCycle, transientRetryDelay } from "../src/autopilot/orchestrator.js";
-import { executeClaudeProductAgent, runProductAgent } from "../src/autopilot/product-agent.js";
+import { runProductAgent } from "../src/autopilot/product-agent.js";
 import { buildEngineeringResult, createGateEvidence, dependencyOrderedWorkstreams } from "../src/autopilot/engineering.js";
 import { emptyAutopilotState, readAutopilotState, writeAutomationLink, writeAutopilotState } from "../src/autopilot/state.js";
 import { loadConfig } from "../src/config.js";
 import { initializeDevelopmentOs } from "../src/development/init.js";
 import { ingestRecord } from "../src/runtime/intake.js";
 import { runControlTower } from "../src/runtime/control-tower.js";
-import { loadDashboardSnapshot } from "../src/runtime/dashboard.js";
+import { loadWorkspaceSnapshot } from "../src/runtime/snapshot.js";
 import { loadTaskboard, replaceTaskboard } from "../src/runtime/taskboard.js";
 import { materializeWriterCheckpoint } from "../src/autopilot/workbook.js";
 import { captureIo, makeTempDirectory } from "./helpers.js";
@@ -99,7 +99,7 @@ test("autopilot completes the product-development-product loop and records a dur
   const receiptAudit = parseCsv(await fs.readFile(path.join(productRoot, "workbook", "22-writer-receipts.csv"), "utf8"));
   assert.equal(manifestAudit.length - 2, report.workbook.manifests.length);
   assert.equal(receiptAudit.length - 2, report.workbook.receipts.length);
-  const dashboard = await loadDashboardSnapshot(productRoot, { now: new Date("2026-08-02T02:00:00.000Z") });
+  const dashboard = await loadWorkspaceSnapshot(productRoot, { now: new Date("2026-08-02T02:00:00.000Z") });
   assert.equal(dashboard.autopilot.latestReport.cycleId, result.cycleId);
   assert.deepEqual(dashboard.autopilot.latestReport.implementation.changedComponents, ["src/feature.js"]);
   assert.match(await fs.readFile(path.join(productRoot, result.report.markdown), "utf8"), /گزارش چرخهٔ خودکار/);
@@ -221,7 +221,7 @@ test("controlled writer checkpoint creates a replay-safe manifest and receipt be
   assert.match(await fs.readFile(path.join(root, first.target), "utf8"), /LIN-WRITER-20260802-900/);
 });
 
-test("product agent retries use isolated artifacts and a Codex-compatible output schema", async (t) => {
+test("product agent retries use isolated artifacts and never re-run a sealed result", async (t) => {
   const parent = await makeTempDirectory("product-ops-agent-retry-");
   t.after(() => fs.rm(parent, { recursive: true, force: true }));
   const productRoot = path.join(parent, "retry-product");
@@ -248,13 +248,12 @@ test("product agent retries use isolated artifacts and a Codex-compatible output
     autopilotAuthorized: true
   };
   let executions = 0;
-  const execute = async ({ schemaFile, task, role, now }) => {
+  const execute = async ({ inputFile, task, role, now }) => {
     executions += 1;
-    const providerSchema = JSON.parse(await fs.readFile(schemaFile, "utf8"));
-    assert.doesNotMatch(JSON.stringify(providerSchema), /uniqueItems/);
-    assert.equal(providerSchema.properties.schemaVersion.type, "string");
-    assert.equal(providerSchema.properties.status.type, "string");
-    assert.equal(providerSchema.properties.impacts.items.type, "string");
+    // The performer receives the brief on disk, and each attempt gets its own file.
+    const brief = JSON.parse(await fs.readFile(inputFile, "utf8"));
+    assert.equal(brief.task.task_id, task.task_id);
+    assert.equal(brief.policy.noDirectRepositoryWrites, true);
     return productAgentResult(task, role, executions === 1 ? "failed" : "completed", now);
   };
 
@@ -290,48 +289,10 @@ test("product agent retries use isolated artifacts and a Codex-compatible output
 
   const files = await fs.readdir(path.join(productRoot, ".product-ops", "runtime", "autopilot", "product-runs"));
   assert.equal(files.filter((file) => file.endsWith("-input.json")).length, 2);
-  assert.equal(files.filter((file) => file.endsWith("-schema.json")).length, 2);
   assert.equal(files.filter((file) => /-attempt-.*-result\.json$/.test(file)).length, 1);
   assert.ok(files.includes("RTP-0002-result.json"));
 });
 
-test("Claude product executor uses bounded read-only structured output", async (t) => {
-  const parent = await makeTempDirectory("product-ops-claude-agent-");
-  t.after(() => fs.rm(parent, { recursive: true, force: true }));
-  const productRoot = path.join(parent, "claude-product");
-  assert.equal(await run(["init", productRoot], captureIo().io), 0);
-  const config = await loadConfig(productRoot);
-  const role = config.agents.find((candidate) => candidate.id === "RB-02");
-  const task = {
-    task_id: "CLD-0001",
-    event_id: "EVT-CLAUDE-001",
-    owner_role: role.id
-  };
-  const resultValue = productAgentResult(task, role, "completed", new Date("2026-08-02T01:03:00.000Z"));
-  const result = await executeClaudeProductAgent({
-    root: productRoot,
-    inputFile: path.join(productRoot, ".product-ops", "runtime", "claude-input.json"),
-    schemaFile: path.join(productRoot, "schemas", "product-agent-run.schema.json"),
-    task,
-    role,
-    applicationRoot: null,
-    operationalArtifacts: null
-  }, {
-    inspectClaude: async () => ({ canAutomate: true, executable: "claude", message: "ready" }),
-    executeClaude: async (_executable, args, options) => {
-      assert.ok(args.includes("--bare"));
-      assert.ok(args.includes("--no-session-persistence"));
-      assert.equal(args[args.indexOf("--permission-mode") + 1], "dontAsk");
-      assert.equal(args[args.indexOf("--tools") + 1], "Read,Glob,Grep");
-      assert.doesNotMatch(args[args.indexOf("--allowedTools") + 1], /\b(?:Edit|Write|Bash)\b/);
-      assert.equal(options.cwd, productRoot);
-      const schema = JSON.parse(args[args.indexOf("--json-schema") + 1]);
-      assert.equal(schema.title, "Product Agent Run");
-      return { ok: true, stdout: JSON.stringify({ structured_output: resultValue }), stderr: "" };
-    }
-  });
-  assert.deepEqual(result, resultValue);
-});
 
 async function stubProductAgent(root, config, task, { now }) {
   const role = config.agents.find((candidate) => candidate.id === task.owner_role);

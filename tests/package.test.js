@@ -60,7 +60,7 @@ test("npm package inspection is isolated and contains promised public files", as
     "src/mcp/server.js",
     "src/mcp/registry.js",
     "src/adapters/provider-sync.js",
-    "src/claude/readiness.js",
+    "src/mcp/tools/work.js",
     "schemas/approval-store.schema.json",
     "schemas/development-run.schema.json",
     "schemas/development-os-config.schema.json",
