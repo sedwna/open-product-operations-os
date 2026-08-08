@@ -32,7 +32,6 @@
     "scripts",
     "tests",
     ".gitattributes",
-    "eslint.config.mjs",
     "npm-shrinkwrap.json",
     "AGENTS.md",
     "CHANGELOG.md",
