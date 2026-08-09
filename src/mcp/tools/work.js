@@ -45,7 +45,8 @@ export async function nextWork(context) {
         },
         text: [
           `The next card, ${atBoundary[0].task_id}, is the hand-off to engineering, and this surface does not dispatch it.`,
-          "Crossing from product into development is a separate authority, exercised deliberately rather than as the next step in a loop: use `product-ops development` once the owner is ready, or the coordinator if one is configured to run unattended."
+          "Crossing from product into development is a separate authority, exercised deliberately rather than as the next step in a loop.",
+          "Run product_ops_operate. If no application repository is connected, that opens a decision for the owner describing what would be created; it will then appear in product_ops_pending_decisions like any other gate. Do not ask the owner to run commands — put the decision to them and act on their answer."
         ].join("\n")
       };
     }

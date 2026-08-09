@@ -192,6 +192,7 @@ export async function validateProject(target, config) {
   }
 
   const inventory = await inventoryTree(root, config.validation.excludedDirectories, errors);
+  validateEventRecords(contents, config, inventory.files.map((file) => file.relativePath), errors);
   for (const file of inventory.files) {
     const buffer = await fs.readFile(file.absolutePath);
     const searchable = searchableText(buffer);
@@ -227,6 +228,42 @@ export async function validateProject(target, config) {
     checkedFiles: inventory.files.length,
     binaryFiles: inventory.binaryFiles
   };
+}
+
+/**
+ * Every event the board works under must have a canonical record behind it.
+ *
+ * This is the chain rule the whole model rests on, and nothing checked it. A real product ran six
+ * cards to a sealed delivery contract under an event that appeared in no event file and no workbook
+ * row, and validation passed the workspace every time it was asked. A missing link that every gate
+ * waves through is worse than no gate.
+ */
+function validateEventRecords(contents, config, files, errors) {
+  if (!contents.has(TASKBOARD_FILE)) return;
+  const tasks = rowsToObjects(parseCsv(contents.get(TASKBOARD_FILE))).records;
+  const referenced = [...new Set(tasks
+    .map((task) => task.event_id)
+    .filter((eventId) => eventId && !isPlaceholder(eventId)))];
+  if (referenced.length === 0) return;
+
+  const eventSheet = config.workbook.sheets.find((sheet) => sheet.key === "events");
+  const recordedInWorkbook = new Set(
+    eventSheet && contents.has(eventSheet.file)
+      ? rowsToObjects(parseCsv(contents.get(eventSheet.file))).records
+        .map((row) => row.event_id)
+        .filter((eventId) => eventId && !isPlaceholder(eventId))
+      : []
+  );
+  const documented = files.filter((relative) => relative.startsWith("events/"));
+
+  for (const eventId of referenced) {
+    const hasFile = documented.some((relative) => relative.includes(eventId));
+    if (!hasFile && !recordedInWorkbook.has(eventId)) {
+      errors.push(
+        `Task board works under event "${eventId}", which has no record in events/ and no row in the events workbook.`
+      );
+    }
+  }
 }
 
 function validateCrossWorkbookRelationships(contents, config, errors) {

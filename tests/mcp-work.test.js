@@ -249,3 +249,48 @@ test("reaching the engineering hand-off is reported as a boundary, not as an emp
   assert.match(result.content[0].text, /hand-off to engineering/);
   assert.doesNotMatch(result.content[0].text, /Nothing is ready/);
 });
+
+test("reaching engineering with nowhere to send it opens a decision, not a dead end", async (t) => {
+  // The board used to stop and report a boundary, leaving the owner to already know that an
+  // application repository must exist, that development-os init writes the engineering model into
+  // it, and that link connects the two — and then to ask for all three themselves.
+  const { root, handlers } = await workspace(t);
+  const config = await loadConfig(root);
+  const { headers, records } = await loadTaskboard(root);
+  const { replaceTaskboard } = await import("../src/runtime/taskboard.js");
+  await replaceTaskboard(root, headers, records.map((task) => ({
+    ...task,
+    owner_role: config.separation.developmentRole,
+    status: "ready",
+    human_gate: ""
+  })), { dryRun: false });
+
+  await call(handlers, "product_ops_operate", { apply: true });
+
+  const gates = (await call(handlers, "product_ops_pending_decisions")).structuredContent;
+  const crossing = gates.items.find((item) => item.gate === "development_boundary_crossing");
+  assert.ok(crossing, "the owner must be asked, not left to work it out");
+  assert.match(String(crossing.question), /application repository/i);
+  // Creating a repository is not authorising agents to write code in it.
+  assert.match(String(crossing.context), /separate decision/i);
+});
+
+test("the crossing decision is asked once, not on every cycle", async (t) => {
+  const { root, handlers } = await workspace(t);
+  const config = await loadConfig(root);
+  const { headers, records } = await loadTaskboard(root);
+  const { replaceTaskboard } = await import("../src/runtime/taskboard.js");
+  await replaceTaskboard(root, headers, records.map((task) => ({
+    ...task,
+    owner_role: config.separation.developmentRole,
+    status: "ready",
+    human_gate: ""
+  })), { dryRun: false });
+
+  await call(handlers, "product_ops_operate", { apply: true });
+  await call(handlers, "product_ops_operate", { apply: true });
+
+  const gates = (await call(handlers, "product_ops_pending_decisions")).structuredContent;
+  const crossings = gates.items.filter((item) => item.gate === "development_boundary_crossing");
+  assert.equal(crossings.length, 1, "a pending decision must not be reopened underneath the owner");
+});

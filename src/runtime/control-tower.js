@@ -1,5 +1,6 @@
 import { INTAKE_STORE_FILE, SCHEMA_VERSION } from "../constants.js";
 import { loadApprovals, requestApproval } from "./approvals.js";
+import { readAutomationLink } from "../autopilot/state.js";
 import { runDevelopmentTask } from "./development-runner.js";
 import { readJsonOptional, utcTimestamp, writeJson } from "./io.js";
 import { withControlPlaneLease } from "./control-plane-lease.js";
@@ -124,6 +125,46 @@ async function controlTowerCycle(
       }
     }
   }
+  // Reaching engineering with nowhere to send the work is a decision, not a dead end. The board
+  // used to stop here and report a boundary, leaving the owner to already know that an application
+  // repository must exist, that `development-os init` writes the engineering boundaries into it,
+  // and that `link` connects the two — and then to ask for all three. A gate states what would be
+  // created and waits, like every other decision that is theirs.
+  //
+  // Creating the repository is not authorising agents to work inside it. That stays a later,
+  // separate decision, and this gate says so rather than quietly bundling them.
+  const bridgeTasks = tasks.filter((task) =>
+    task.status === "ready" && task.owner_role === config.separation.developmentRole && !task.human_gate);
+  if (bridgeTasks.length > 0 && !(await hasLinkedApplication(root))) {
+    for (const task of bridgeTasks) {
+      const gate = "development_boundary_crossing";
+      const already = approvalStore.requests.find(
+        (request) => request.taskId === task.task_id && request.gate === gate
+      );
+      if (already) continue;
+      actions.push({ type: "request_human_approval", taskId: task.task_id, gate });
+      if (!dryRun) {
+        await requestApproval(root, {
+          taskId: task.task_id,
+          gate,
+          question: "The work has reached engineering and no application repository is connected. Create one and connect it?",
+          context: [
+            `Approving creates an application repository beside this workspace and writes the engineering operating model into it:`,
+            "fifteen engineering boundaries, quality gates, and its own Git history, kept entirely separate from this one.",
+            "It does not let any agent write code there. Enabling the engineering executors is a separate decision, asked later.",
+            `Rejecting leaves ${task.task_id} waiting; the product side can continue, but nothing crosses into implementation.`
+          ].join(" "),
+          options: ["approved", "rejected"],
+          recommendedOption: "approved",
+          risks: [
+            "An application repository someone already relies on gains a new namespace; on a fresh repository this is inert.",
+            "No code is written and no agent is authorised by this decision alone."
+          ]
+        }, { dryRun: false, now });
+      }
+    }
+  }
+
   const effectiveApprovals = dryRun ? approvalStore.requests : (await loadApprovals(root)).requests;
   for (const task of selectRunnableTasks(tasks, effectiveApprovals)) {
     const action = {
@@ -191,4 +232,19 @@ function fallbackSteps(route) {
 
 function actorFor(config, role) {
   return config.agents.find((agent) => agent.id === role)?.actorId ?? "";
+}
+
+/**
+ * Whether an application repository is connected and still resolvable.
+ *
+ * `readAutomationLink` throws when the link names a directory that has gone or has no Development
+ * OS configuration, which is the same answer as never having linked one for this purpose: there is
+ * nowhere to send engineering work.
+ */
+async function hasLinkedApplication(root) {
+  try {
+    return Boolean((await readAutomationLink(root)).applicationRoot);
+  } catch {
+    return false;
+  }
 }

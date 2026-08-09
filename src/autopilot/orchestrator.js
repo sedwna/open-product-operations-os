@@ -553,6 +553,17 @@ export function classifyAutopilotError(error) {
 export function transientRetryDelay(attempt) {
   return Math.min(60_000, 1_000 * (2 ** Math.max(0, attempt - 1)));
 }
+/**
+ * Paths the cycle itself writes. Anything else in the tree belongs to someone the coordinator did
+ * not consult, and it stops rather than sweeping the change into its own commit.
+ *
+ * `events/` joined the list when intake began recording the event it opens: the file is part of the
+ * very intake being processed, and treating it as a stranger's edit halted the cycle it belonged to.
+ */
 function isManagedProductPath(file) {
-  return file.startsWith(".product-ops/") || file === "taskboard/tasks.csv" || file.startsWith("product-intake/") || file.startsWith("workbook/");
+  return file.startsWith(".product-ops/")
+    || file === "taskboard/tasks.csv"
+    || file.startsWith("product-intake/")
+    || file.startsWith("events/")
+    || file.startsWith("workbook/");
 }
