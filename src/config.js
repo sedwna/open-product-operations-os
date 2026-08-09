@@ -163,6 +163,10 @@ export function validateConfigRelationships(config) {
         `Route "${route.event}" output "${route.output}" has no ownership assignment.`
       );
     }
+    // Keys are resolved as the route is walked, so a step may only wait on one written before it.
+    // A forward or self reference would silently collapse to "wait for the previous step", which
+    // routes the work but not the way the route says it does.
+    const seenStepKeys = new Set();
     for (const [index, step] of (route.steps ?? []).entries()) {
       if (!agentIds.has(step.role)) {
         errors.push(`Route "${route.event}" step ${index + 1} references unknown role "${step.role}".`);
@@ -172,6 +176,17 @@ export function validateConfigRelationships(config) {
         !(canonicalCatalog.human_gates ?? []).includes(step.humanGate)
       ) {
         errors.push(`Route "${route.event}" step ${index + 1} references unknown human gate "${step.humanGate}".`);
+      }
+      for (const dependency of step.after ?? []) {
+        if (!seenStepKeys.has(dependency)) {
+          errors.push(`Route "${route.event}" step ${index + 1} waits on "${dependency}", which is not an earlier step in this route.`);
+        }
+      }
+      if (step.key) {
+        if (seenStepKeys.has(step.key)) {
+          errors.push(`Route "${route.event}" uses step key "${step.key}" more than once.`);
+        }
+        seenStepKeys.add(step.key);
       }
     }
   }

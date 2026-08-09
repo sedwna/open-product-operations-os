@@ -36,7 +36,7 @@ export const PROMPTS = Object.freeze([
       "Set this product workspace up for its owner. Work through it with them; do not run ahead.",
       "",
       "First, find out where they are. Call product_ops_validate.",
-      "- If the project is not initialised, they need `product-ops init` before anything else here applies. Say so plainly and stop.",
+      "- If the project is not initialised, initialise it yourself by following the setup runbook in AGENTS.md. Do not hand the owner a command to run; the whole point of this surface is that they do not have to.",
       "- If it validates, report what already exists rather than re-explaining the system.",
       "",
       application

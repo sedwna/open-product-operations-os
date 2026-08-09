@@ -11,6 +11,18 @@ All notable changes to this project will be documented here.
   tower panel in the conversation.
 - Required a performer for every product agent run. Work is done by whoever the host delegates it
   to; the run function owns the contract around the work, never the doing.
+- Stopped routing every event as a queue of one. A route's steps each waited on the step written
+  before them, whatever they actually needed, so the board never offered more than one card and
+  validation design sat behind the implementation it was supposed to specify. A step now names what
+  it waits on by key, and the delivery contract fans out to validation design, risk audit, and
+  implementation at once, rejoining at QA. Risk and logic audit is asked on ordinary deliveries for
+  the first time; it had only ever appeared on workbook and governance routes, so an idea could
+  reach release with nobody having challenged its assumptions. Operating model version 3, with a
+  migration that upgrades routes the owner has not touched and leaves edited ones exactly as
+  written — see `docs/migration/operating-model-v3.md`.
+- Stopped sending the owner to a terminal to settle a gate. When a host cannot open a dialog, the
+  refusal now points at the control tower panel's composer and the conversation, which is where the
+  decision was always meant to happen.
 - Gave engineering the same host-delegated path the product side already had. The two halves had
   been running on different execution models: a product could be driven all the way to an approved
   delivery contract and then stop dead, because the only way to perform engineering work was to

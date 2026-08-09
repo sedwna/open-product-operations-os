@@ -40,6 +40,30 @@ export function migrateConfig(config, defaults = null) {
     });
     changes.push("operating_model_v1_to_v2");
   }
+  if (current < 3) {
+    updated.operations.modelVersion = 3;
+    // Routing gained step keys, so a step can wait on what it actually needs instead of on whoever
+    // was written before it. A route the project has not touched is upgraded to the current default;
+    // one that has been edited is left exactly as its owner wrote it, because a routing table is a
+    // statement about how that product works and this migration has no standing to rewrite it.
+    if (defaults) {
+      let upgraded = 0;
+      let kept = 0;
+      updated.routing = updated.routing.map((route) => {
+        const canonical = defaults.routing.find((candidate) => candidate.event === route.event);
+        if (!canonical) return route;
+        if (!isUnmodifiedRoute(route.event, route.steps)) {
+          kept += 1;
+          return route;
+        }
+        upgraded += 1;
+        return { ...route, steps: structuredClone(canonical.steps) };
+      });
+      if (upgraded > 0) changes.push(`routing_steps_parallelised:${upgraded}`);
+      if (kept > 0) changes.push(`routing_steps_left_as_customised:${kept}`);
+    }
+    changes.push("operating_model_v2_to_v3");
+  }
   const schemaErrors = validateConfig(updated);
   const errors = [...schemaErrors, ...(schemaErrors.length === 0 ? validateConfigRelationships(updated) : [])];
   if (errors.length > 0) throw new Error(`Migrated project configuration is invalid:\n- ${errors.join("\n- ")}`);
@@ -56,6 +80,29 @@ export async function migrateProject(root, config, { dryRun = true, now = new Da
   const operations = await planWrites(root, buildProjectFiles(migration.config, { includeConfig: true }), { force: true });
   if (!dryRun) await applyWrites(root, operations);
   return { dryRun, runId, ...migration, config: undefined, operations: operations.map(({ action, relativePath }) => ({ action, relativePath })) };
+}
+
+/**
+ * The routing every version-2 project was generated with.
+ *
+ * A migration has to know the shape it is migrating *from*, and the current defaults no longer
+ * describe it. Recording the old sequences here is what lets the upgrade tell an untouched route
+ * from one its owner has deliberately changed.
+ */
+const VERSION_2_ROUTE_ROLES = Object.freeze({
+  new_idea: ["RB-02", "RB-03", "RB-02", "RB-04", "RB-05", "RB-06", "RB-07", "RB-13", "RB-09", "RB-10", "RB-12", "RB-11"],
+  user_finding: ["RB-05", "RB-06", "RB-07", "RB-13", "RB-09", "RB-10", "RB-12", "RB-11"],
+  delivery_ready_issue: ["RB-06", "RB-07", "RB-13", "RB-09", "RB-10", "RB-12", "RB-11"],
+  qa_retest: ["RB-07", "RB-09", "RB-10", "RB-12", "RB-11"],
+  workbook_or_status_change: ["RB-10", "RB-08", "RB-12"],
+  release_transition: ["RB-11", "RB-12"],
+  governance_or_role_change: ["RB-01", "RB-08", "RB-12"]
+});
+
+function isUnmodifiedRoute(event, steps) {
+  const baseline = VERSION_2_ROUTE_ROLES[event];
+  if (!baseline || !Array.isArray(steps) || steps.length !== baseline.length) return false;
+  return steps.every((step, index) => step.role === baseline[index] && !step.key && !step.after);
 }
 
 function upgradeAdapter(adapter, defaults) {

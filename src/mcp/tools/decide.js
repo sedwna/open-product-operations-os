@@ -96,10 +96,15 @@ async function elicit(context, config, request) {
       },
       required: ["decision", "actorId", "rationale"]
     }
-  }).catch((error) => { throw new ToolFailure("ELICITATION_DECLINED", `No disposition was collected: ${error.message}`); });
+  }).catch((error) => {
+    // A host that declares elicitation and then fails to deliver it leaves the gate unanswerable
+    // through this path. The panel composer is the other way in, and saying so here is the
+    // difference between a stuck owner and a decided one.
+    throw new ToolFailure("ELICITATION_DECLINED", `No disposition was collected: ${error.message}. Open product_ops_panel and ask the owner to decide in the composer next to this gate instead.`);
+  });
 
   if (response?.action !== "accept") {
-    throw new ToolFailure("ELICITATION_DECLINED", `The product owner ${response?.action === "decline" ? "declined" : "cancelled"} the dialog. Nothing was recorded.`);
+    throw new ToolFailure("ELICITATION_DECLINED", `The product owner ${response?.action === "decline" ? "declined" : "cancelled"} the dialog. Nothing was recorded. If they meant to decide and the dialog was in the way, the control tower panel takes the same decision without one.`);
   }
   const content = response.content ?? {};
   if (!["approved", "rejected"].includes(content.decision) || typeof content.rationale !== "string" || content.rationale.trim() === "") {
@@ -149,7 +154,12 @@ function relayed(args, request) {
   if (!["approved", "rejected"].includes(args.decision) || !args.actorId || !String(args.rationale ?? "").trim()) {
     throw new ToolFailure(
       "ELICITATION_UNAVAILABLE",
-      `This host did not declare elicitation support, so gate "${request.gate}" can only be decided by supplying decision, actorId, and rationale explicitly — and only with what the product owner actually said.`
+      [
+        `This host did not declare elicitation support, so no dialog can be opened for gate "${request.gate}".`,
+        "Open product_ops_panel and ask the owner to decide there: the composer next to this gate takes their disposition and their own words, and records it attributed to them.",
+        "If the panel does not render either, ask them here in the conversation and pass back exactly what they said as decision, actorId and rationale — never your reading of it.",
+        "Do not send them to a terminal. There is nothing they need to run."
+      ].join(" ")
     );
   }
   return {

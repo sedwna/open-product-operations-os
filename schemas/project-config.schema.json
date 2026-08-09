@@ -117,7 +117,18 @@
               "properties": {
                 "role": { "type": "string", "pattern": "^RB-[0-9]{2}$" },
                 "title": { "type": "string", "minLength": 1 },
-                "humanGate": { "type": "string" }
+                "humanGate": { "type": "string" },
+                "key": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9-]{0,39}$",
+                  "description": "Names this step so later steps can wait on it. Unique within the route."
+                },
+                "after": {
+                  "type": "array",
+                  "uniqueItems": true,
+                  "items": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{0,39}$" },
+                  "description": "Keys of earlier steps in this route that must finish first. An empty array starts with the event. Omit it entirely to wait on the step written before this one."
+                }
               }
             }
           }

@@ -61,9 +61,12 @@ async function controlTowerCycle(
     }
     const existing = tasks.filter((task) => task.event_id === record.eventId);
     if (existing.length === 0) {
-      let dependencyId = "";
-      for (const step of route.steps ?? fallbackSteps(route)) {
+      const steps = route.steps ?? fallbackSteps(route);
+      const idByKey = new Map();
+      const createdIds = [];
+      for (const [index, step] of steps.entries()) {
         const taskId = nextTaskId(config, tasks);
+        const dependencies = stepDependencies(step, index, idByKey, createdIds);
         const verifierRole =
           step.role === config.separation.independentVerifierRole
             ? config.separation.verificationOfVerifierRole ?? "RB-08"
@@ -74,9 +77,9 @@ async function controlTowerCycle(
           title: step.title,
           owner_role: step.role,
           owner_actor_id: actorFor(config, step.role),
-          status: dependencyId ? "backlog" : "ready",
+          status: dependencies.length > 0 ? "backlog" : "ready",
           priority: record.priority,
-          dependency_ids: dependencyId,
+          dependency_ids: dependencies.join("|"),
           blocked_reason: "",
           next_owner_role: "",
           unblock_condition: "",
@@ -90,7 +93,8 @@ async function controlTowerCycle(
           updated_at: timestamp
         };
         tasks.push(task);
-        dependencyId = taskId;
+        createdIds.push(taskId);
+        if (step.key) idByKey.set(step.key, taskId);
         actions.push({ type: "create_task", taskId, eventId: record.eventId, ownerRole: step.role });
       }
       taskboardChanged = true;
@@ -220,6 +224,26 @@ async function controlTowerCycle(
     await writeJson(root, `.product-ops/runtime/control-plane/${runId}.json`, receipt, { dryRun: false });
   }
   return receipt;
+}
+
+/**
+ * What a routed step waits on.
+ *
+ * A step that declares `after` waits on exactly the steps it names, so work that shares a
+ * predecessor runs together instead of queueing behind whichever one happened to be written first.
+ * A step that declares nothing waits on the step before it, which is how every route behaved before
+ * keys existed and how a route written without them still behaves.
+ *
+ * An unresolved key is treated as the conservative case — wait for the previous step — rather than
+ * as no dependency at all. A typo must never make work start earlier than intended; configuration
+ * validation reports it separately.
+ */
+function stepDependencies(step, index, idByKey, createdIds) {
+  const previous = index === 0 ? [] : [createdIds[index - 1]];
+  if (!Array.isArray(step.after)) return previous;
+  const resolved = step.after.map((key) => idByKey.get(key));
+  if (resolved.some((id) => !id)) return previous;
+  return [...new Set(resolved)];
 }
 
 function fallbackSteps(route) {
