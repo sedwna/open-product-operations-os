@@ -9,6 +9,7 @@ import { projectStatus, renderStatusText } from "../projection.js";
 import { untrusted, untrustedList } from "../untrusted.js";
 import { ToolFailure } from "../authority.js";
 import { ENGINEERING_ROLE_IDS, PRODUCT_ROLE_IDS, describeTeam, teamName } from "../app/teams.js";
+import { PANEL_MIME_TYPE, PANEL_URI, renderPanel } from "../app/panel.js";
 
 const MAX_FINDINGS = 50;
 
@@ -38,9 +39,18 @@ export async function panel(context) {
     flow: buildFlow(snapshot, board),
     blockages: buildBlockages(snapshot, board)
   };
+  // Hand the host the panel itself, not a promise that it exists. Whether it draws it is the host's
+  // to decide; claiming it did without attaching anything was how the owner ended up reading a
+  // prose summary of a control tower nobody had opened.
   return {
     structuredContent,
-    text: `${state.text}\n\nThe control tower panel is open, showing both teams, where the work currently sits, and anything it is stuck behind.`
+    resources: [{ uri: PANEL_URI, mimeType: PANEL_MIME_TYPE, text: renderPanel() }],
+    text: [
+      state.text,
+      "",
+      "The control tower panel is attached to this result: both teams, where the work sits, what it is stuck behind, and a composer for each decision waiting on the owner.",
+      "If your host cannot render an MCP app it will not appear — say so plainly and read the figures above instead of describing a panel the owner cannot see."
+    ].join("\n")
   };
 }
 
@@ -95,8 +105,13 @@ function buildTeams(snapshot) {
     };
   });
 
+  // An engineering side that exists but has no work yet is not the same as no engineering side, and
+  // deriving the teams purely from workstreams made the two identical. A linked application with a
+  // validated operating model reported `engineering: []` — indistinguishable from never having one —
+  // and that ambiguity sent a coordinator chasing a connection fault that did not exist.
   const workstreams = snapshot.autopilot?.engineering?.workstreams ?? [];
-  const engineering = workstreams.length === 0 ? [] : ENGINEERING_ROLE_IDS.map((roleId) => {
+  const linked = Boolean(snapshot.autopilot?.engineering) || workstreams.length > 0;
+  const engineering = !linked ? [] : ENGINEERING_ROLE_IDS.map((roleId) => {
     const owned = workstreams.filter((item) => item.ownerRole === roleId);
     return {
       ...describeTeam(roleId, "engineering"),
@@ -106,7 +121,7 @@ function buildTeams(snapshot) {
       done: owned.filter((item) => item.status === "completed").length,
       current: owned.find((item) => ["claimed", "in_progress"].includes(item.status))?.id ?? null
     };
-  }).filter((team) => team.total > 0);
+  });
 
   return { product, engineering };
 }

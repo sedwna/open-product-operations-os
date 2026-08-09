@@ -7,7 +7,7 @@ import { initCommand } from "../src/commands/init.js";
 import { requestApproval } from "../src/runtime/approvals.js";
 import { loadTaskboard, replaceTaskboard } from "../src/runtime/taskboard.js";
 import { createHandlers, createServerContext } from "../src/mcp/server.js";
-import { renderPanel } from "../src/mcp/app/panel.js";
+import { PANEL_MIME_TYPE, PANEL_URI, renderPanel } from "../src/mcp/app/panel.js";
 import { makeTempDirectory } from "./helpers.js";
 
 /**
@@ -310,4 +310,50 @@ test("a blocked card cannot inject markup through its reason", async (t) => {
   const rendered = document.getElementById("root").innerHTML;
   assert.match(rendered, /pending export/, "the reason itself must still reach the reader");
   assert.doesNotMatch(rendered, /<img src=x/, "record text is data, never markup");
+});
+
+test("the panel is attached to the result, not merely announced", async (t) => {
+  // The tool used to return its data plus the sentence "the control tower panel is open" and hand
+  // over nothing, so the owner read the coordinator's prose summary of a panel nobody had drawn.
+  const { root } = await mountPanel(t);
+  const context = await createServerContext({ project: root, allowWrites: true });
+  const handlers = createHandlers(context, { version: "test" });
+  handlers.initialize({ protocolVersion: "2026-07-28", capabilities: {} });
+
+  const result = await handlers["tools/call"]({ name: "product_ops_panel", arguments: {} });
+  const attached = result.content.filter((entry) => entry.type === "resource");
+  assert.equal(attached.length, 1, "the panel itself must travel with the result");
+  assert.equal(attached[0].resource.uri, PANEL_URI);
+  assert.equal(attached[0].resource.mimeType, PANEL_MIME_TYPE);
+  assert.match(attached[0].resource.text, /<!doctype html>/i);
+
+  const spoken = result.content.find((entry) => entry.type === "text").text;
+  assert.match(spoken, /attached/, "the wording must describe what was handed over");
+  assert.doesNotMatch(spoken, /panel is open/, "it must not claim an outcome the host may not produce");
+});
+
+test("a linked application shows its teams as idle rather than absent", async (t) => {
+  // "no engineering side" and "engineering side with no work yet" rendered identically, which sent
+  // a coordinator chasing a connection fault that did not exist.
+  const parent = await makeTempDirectory("product-ops-panel-linked-");
+  t.after(() => fs.rm(parent, { recursive: true, force: true }));
+  const product = path.join(parent, "ops");
+  const application = path.join(parent, "app");
+  await initCommand(product, {});
+  await fs.mkdir(application, { recursive: true });
+  const { initializeDevelopmentOs } = await import("../src/development/init.js");
+  const { linkCommand } = await import("../src/commands/link.js");
+  await initializeDevelopmentOs(application, { dryRun: false });
+  await linkCommand(product, { application, apply: true });
+
+  const context = await createServerContext({ project: product, allowWrites: true });
+  const handlers = createHandlers(context, { version: "test" });
+  handlers.initialize({ protocolVersion: "2026-07-28", capabilities: {} });
+  const payload = (await handlers["tools/call"]({ name: "product_ops_panel", arguments: {} })).structuredContent;
+
+  assert.equal(payload.teams.engineering.length, 15, "a linked application has fifteen teams, idle or not");
+  for (const team of payload.teams.engineering) {
+    assert.equal(team.total, 0, "no workstreams have been planned yet");
+    assert.notEqual(team.name, team.id, "each engineering team is named, not coded");
+  }
 });
