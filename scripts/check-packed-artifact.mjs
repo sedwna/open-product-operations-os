@@ -56,7 +56,7 @@ try {
     "src/runtime/control-tower.js",
     "src/runtime/development-runner.js",
     "src/adapters/provider-sync.js",
-    "src/claude/readiness.js",
+    "src/mcp/tools/work.js",
     "schemas/provider-outbox-item.schema.json",
     "docs/runtime/README.md"
   ]) {
@@ -113,9 +113,7 @@ try {
   runInstalledCli(["init", generatedTarget], consumer);
   runInstalledCli(["validate", generatedTarget], consumer);
   runInstalledCli(["operate", generatedTarget], consumer);
-  runInstalledCli(["setup", generatedTarget, "--apply"], consumer);
   runInstalledCli(["metrics", generatedTarget, "--apply"], consumer);
-  runInstalledCli(["dashboard", generatedTarget, "--apply"], consumer);
   runInstalledCli(["validate", generatedTarget], consumer);
   runInstalledCli(["init", generatedTarget, "--force"], consumer);
   runInstalledCli(["validate", generatedTarget], consumer);
@@ -123,10 +121,9 @@ try {
   assert.match(developmentHelp.stdout, /Open Development Operations OS CLI/);
   runInstalledDevelopmentCli(["init", generatedDevelopmentTarget], consumer);
   runInstalledDevelopmentCli(["validate", generatedDevelopmentTarget], consumer);
-  runInstalledDevelopmentCli(["dashboard", generatedDevelopmentTarget, "--apply"], consumer);
   runInstalledDevelopmentCli(["status", generatedDevelopmentTarget], consumer);
   console.log(
-    `Packed artifact ${tarballSha256} matched the cross-host hash; its installed Product and Development CLIs completed initialization, validation, dashboards, runtime operations, and package checks.`
+    `Packed artifact ${tarballSha256} matched the cross-host hash; its installed Product and Development CLIs completed initialization, validation, runtime operations, and package checks.`
   );
 } finally {
   await fs.rm(temporary, { recursive: true, force: true });

@@ -7,7 +7,7 @@
   <img alt="Node 20 or newer" src="https://img.shields.io/badge/node-20%2B-67b99a?style=flat-square">
   <img alt="Apache 2.0" src="https://img.shields.io/badge/license-Apache--2.0-4c82c3?style=flat-square">
   <img alt="Dry run first" src="https://img.shields.io/badge/writes-dry--run%20first-f26b4f?style=flat-square">
-  <img alt="RTL dashboard" src="https://img.shields.io/badge/dashboard-interactive%20RTL-e1a64a?style=flat-square">
+  <img alt="In-conversation control tower" src="https://img.shields.io/badge/control%20tower-in%20conversation-e1a64a?style=flat-square">
 
   <h3>A vendor-neutral operating system for evidence-backed product work.</h3>
 
@@ -57,49 +57,26 @@ If a link is missing, the system does not silently call the work complete.
 
 | Surface | What it gives you |
 | --- | --- |
-| **Interactive control tower** | A calm RTL workspace for tasks, decisions, intake, risks, evidence, roles, and release readiness |
+| **In-conversation control tower** | The panel your host renders inline: both organisations as named teams, the hand-off chain, blockages with whose they are to clear, and a composer for each decision waiting on you |
 | **13 role boundaries** | Explicit authority for discovery, decisions, delivery, QA, writes, verification, release, and development |
 | **23-tab product workbook** | Portable CSV records spanning idea, discovery, issues, tickets, evidence, QA, lineage, and readiness |
 | **Autonomous product factory** | A resumable idea → product analysis → engineering → product verification → report loop with live role and task visibility |
 | **Development adapter** | A bounded handoff to an engineering agent or team through the dedicated development role |
-| **Automation Center** | Live phase, role, task, event history, retry state, pause/resume controls, Codex or Claude Code readiness, and the latest cycle result |
 | **Independent Development OS** | A 15-boundary engineering package for architecture, frontend, backend, database, data, infrastructure, network, security, QA, SRE, delivery, SEO, documentation, and verification |
 | **Controlled writers** | Precondition checks, authorization, complete read-back, replay protection, and guarded rollback |
 | **Provider boundary** | Disabled-by-default adapters for GitHub, GitLab, Jira, Linear, Azure DevOps, Sheets, Graph, and Airtable |
 | **Portable proof** | Cross-host package checks, clean-clone/archive tests, SBOM generation, license checks, and secret scans |
 
-## Two ways to watch and decide
+## Watching and deciding
 
-There is one control plane and two windows onto it. Which you use depends on where you work, not on
-what you are allowed to do — both read the same durable records, and neither is a second source of
-truth.
+The control tower panel renders inside your conversation, from the same durable records every other
+surface reads. Ask for `product_ops_panel` and you get both organisations as named teams, the
+hand-off chain for the cycle in flight, where the work is stuck and whose it is to clear, and a
+composer for each gate waiting on you. Deciding stays yours: the panel collects your reasoning and
+attributes the record to you, and a model cannot supply a disposition on your behalf.
 
-| | The panel | The local dashboard |
-| --- | --- | --- |
-| **Where** | Inside your agent host, in the conversation | A browser, on a loopback address |
-| **For** | Anyone driving the work through Claude, Codex, or another MCP host | Anyone who would rather not, and anyone without such a host |
-| **Opens with** | `product_ops_panel` | `product-ops dashboard ./my-product --serve` |
-
-The dashboard is generated from the same durable records that drive the control plane.
-
-- **Snapshot mode** creates a self-contained RTL report you can open locally.
-- **Live mode** serves the current project on a loopback address with search, filters, detail
-  drawers, intake, human decisions, and control-plane execution.
-- **Read-only is the default.** Live writes require an explicit authorization flag and a
-  per-session local request token.
-- **Hosted demos stay fictional.** Real project data and write authority never leave the local
-  project boundary.
-
-```text
-# Create a safe snapshot
-product-ops dashboard ./my-product --apply
-
-# Open the interactive panel without write authority
-product-ops dashboard ./my-product --serve
-
-# Allow attributed local intake, decisions, and bounded control-plane cycles
-product-ops dashboard ./my-product --serve --apply
-```
+There is no second interface. One control plane, one window, in the conversation where the work
+already happens.
 
 Read the [runtime guide](docs/runtime/README.md) for the complete operating and safety contract.
 
@@ -204,9 +181,6 @@ node ./src/cli.js init ./my-product --dry-run
 # Create and validate the project
 node ./src/cli.js init ./my-product
 node ./src/cli.js validate ./my-product
-
-# Open the product-owner dashboard
-node ./src/cli.js dashboard ./my-product --serve
 ```
 
 Then add a safe local intake and inspect the next workflow cycle:
@@ -237,7 +211,7 @@ flowchart LR
 The repository is intentionally layered:
 
 ```text
-src/          executable initializer, validator, runtime, adapters, and dashboard
+src/          executable initializer, validator, runtime, adapters, and control surface
 templates/    canonical governance, role, workbook, workflow, and release contracts
 schemas/      published validation contracts
 examples/     fictional end-to-end evidence
@@ -332,7 +306,7 @@ producer evidence; it is not a substitute for an independent release verdict.
 - local public schemas for handoffs, evidence, approvals, development results, providers, and
   controlled writes;
 - disabled Git, spreadsheet, development, and external-provider adapters;
-- runtime stores for intake, approvals, receipts, metrics, and dashboard output;
+- runtime stores for intake, approvals, receipts, and metrics;
 - a configuration wizard, migration contract, and synthetic example project.
 
 Forced regeneration preserves valid configuration and operational rows. It rejects path escapes,
@@ -347,7 +321,7 @@ links, unsafe replacement races, and ambiguous recovery states.
 | Bootstrap a product | [Start here](START-HERE.md) |
 | Understand ownership and separation | [Architecture overview](docs/architecture/overview.md) |
 | Follow one event end to end | [Event lifecycle](docs/architecture/event-lifecycle.md) |
-| Operate the dashboard and agents | [Runtime guide](docs/runtime/README.md) |
+| Operate approvals, intake, and the coordinator | [Runtime guide](docs/runtime/README.md) |
 | Read the control plane from Claude or Codex | [MCP control surface](docs/architecture/mcp-control-surface.md) |
 | Connect a development agent | [Development runner](docs/runtime/development-runner.md) |
 | Initialize the complete engineering system | [Development OS](docs/development/README.md) |

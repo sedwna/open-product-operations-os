@@ -311,8 +311,7 @@ Delegates to `runControlTower(root, config, { dryRun: !apply, executeDevelopment
 `executeDevelopment` is fixed to `false` and is not exposed. Dispatching development work is a
 cross-boundary action that belongs behind its own review, not behind a chat message.
 
-Refuses with `WRITE_LEASE_HELD` when the continuous orchestrator owns routing, matching the existing
-`409` behaviour in [`dashboard-server.js`](../../src/runtime/dashboard-server.js).
+Refuses with `WRITE_LEASE_HELD` when the continuous orchestrator owns routing.
 
 ### 5.3 `product_ops_autopilot`
 

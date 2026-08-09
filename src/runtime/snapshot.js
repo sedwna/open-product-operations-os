@@ -3,16 +3,19 @@ import path from "node:path";
 import { INTAKE_STORE_FILE } from "../constants.js";
 import { loadConfig } from "../config.js";
 import { parseCsv } from "../csv.js";
-import { applyWrites, planWrites } from "../file-writer.js";
 import { assertNoLinkTraversal, resolveInside } from "../paths.js";
 import { loadApprovals } from "./approvals.js";
-import { renderDashboard } from "./dashboard-view.js";
 import { readJsonOptional, writeJson } from "./io.js";
 import { calculateMetrics } from "./metrics.js";
 import { loadTaskboard, visibleTaskboardRecords } from "./taskboard.js";
 import { readAutomationLink, readAutopilotEvents, readAutopilotState } from "../autopilot/state.js";
 
-export async function loadDashboardSnapshot(root, { now = new Date(), mode = "snapshot", writable = false } = {}) {
+/**
+ * One coherent picture of the workspace: project, board, approvals, risks, automation state, and
+ * the linked engineering side. The panel renders it; nothing else is built from it. It is a view
+ * over the canonical records, never a second source of truth.
+ */
+export async function loadWorkspaceSnapshot(root, { now = new Date() } = {}) {
   const [config, metrics, taskboard, approvals, intake, automation, autopilotState, autopilotEvents] = await Promise.all([
     loadConfig(root),
     calculateMetrics(root, { now }),
@@ -62,8 +65,6 @@ export async function loadDashboardSnapshot(root, { now = new Date(), mode = "sn
   return {
     schemaVersion: "1.0.0",
     generatedAt: now.toISOString(),
-    mode,
-    writable,
     project: {
       id: config.project.id,
       name: config.project.name,
@@ -156,17 +157,6 @@ async function loadLatestAutopilotReport(root, state) {
   if (!markdown.startsWith(reportRoot) || !markdown.endsWith(".md")) return null;
   const json = `${markdown.slice(0, -3)}.json`;
   return readJsonOptional(root, json, null);
-}
-
-export async function buildDashboard(
-  root,
-  { dryRun = true, output = ".product-ops/runtime/dashboard.html", now = new Date() } = {}
-) {
-  const snapshot = await loadDashboardSnapshot(root, { now });
-  const html = renderDashboard(snapshot);
-  const operations = await planWrites(root, new Map([[output, html]]), { force: true });
-  if (!dryRun) await applyWrites(root, operations);
-  return { dryRun, output, metrics: snapshot.metrics, bytes: Buffer.byteLength(html) };
 }
 
 export async function exportMetrics(root, { dryRun = true, output = ".product-ops/runtime/metrics.json" } = {}) {

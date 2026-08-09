@@ -10,7 +10,6 @@ import { validateCommand } from "./commands/validate.js";
 import {
   approvalsCommand,
   configureCommand,
-  dashboardCommand,
   decideCommand,
   developmentCommand,
   developmentExportCommand,
@@ -21,8 +20,7 @@ import {
   coordinatorCommand,
   operateCommand,
   providerQueueCommand,
-  providerSyncCommand,
-  setupCommand
+  providerSyncCommand
 } from "./commands/runtime.js";
 
 const HELP = `Product Operations OS CLI
@@ -42,10 +40,7 @@ Usage:
   product-ops decide <target> --request <id> --decision <approved|rejected> --actor <id> [--apply]
   product-ops provider-queue <target> --file <json-file> [--apply]
   product-ops provider-sync <target> --provider <name> [--apply]
-  product-ops dashboard <target> [--output <file>] [--apply]
-  product-ops dashboard <target> --serve [--port <number>] [--apply]
   product-ops metrics <target> [--output <file>] [--apply]
-  product-ops setup <target> [--output <file>] [--apply]
   product-ops configure <target> --answers <json-file> [--apply]
   product-ops migrate <target> [--apply]
 
@@ -64,9 +59,7 @@ Commands:
   decide             Record an attributed human approval or rejection.
   provider-queue     Queue a bounded external-provider operation.
   provider-sync      Plan or apply queued provider operations.
-  dashboard          Generate or serve the local interactive right-to-left dashboard.
   metrics            Export operational metrics.
-  setup              Generate the local configuration wizard.
   configure          Apply a validated wizard answer file.
   migrate            Plan or apply operating-model migrations.
 
@@ -118,12 +111,8 @@ export async function run(argv, io = console) {
       lines = await providerQueueCommand(target, options);
     } else if (command === "provider-sync") {
       lines = await providerSyncCommand(target, options);
-    } else if (command === "dashboard") {
-      lines = await dashboardCommand(target, options);
     } else if (command === "metrics") {
       lines = await metricsCommand(target, options);
-    } else if (command === "setup") {
-      lines = await setupCommand(target, options);
     } else if (command === "configure") {
       lines = await configureCommand(target, options);
     } else if (command === "migrate") {
@@ -150,8 +139,8 @@ function parseArguments(argv) {
   const options = {};
   const providedOptions = new Set();
   const positional = [];
-  const flags = new Set(["--dry-run", "--force", "--apply", "--execute-development", "--serve"]);
-  const values = new Set(["--task", "--file", "--request", "--decision", "--actor", "--rationale", "--provider", "--output", "--answers", "--port", "--application"]);
+  const flags = new Set(["--dry-run", "--force", "--apply", "--execute-development"]);
+  const values = new Set(["--task", "--file", "--request", "--decision", "--actor", "--rationale", "--provider", "--output", "--answers", "--application"]);
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (flags.has(argument)) {
@@ -175,7 +164,6 @@ function parseArguments(argv) {
   options.force ??= false;
   options.apply ??= false;
   options.executeDevelopment ??= false;
-  options.serve ??= false;
   if (options.apply && options.dryRun) throw new Error("--apply and --dry-run cannot be used together.");
   if (positional.length !== 2) {
     throw new Error("Expected a command and target. Use --help for usage.");
@@ -211,9 +199,7 @@ function validateCommandOptions(command, provided) {
     decide: [...runtime, "request", "decision", "actor", "rationale"],
     "provider-queue": [...runtime, "file"],
     "provider-sync": [...runtime, "provider"],
-    dashboard: [...runtime, "output", "serve", "port"],
     metrics: [...runtime, "output"],
-    setup: [...runtime, "output"],
     configure: [...runtime, "answers"],
     migrate: runtime
   }[command];

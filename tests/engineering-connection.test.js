@@ -14,7 +14,7 @@ import { exportDevelopmentRequest, importEngineeringResult } from "../src/develo
 import { validateDevelopmentOs } from "../src/development/validation.js";
 import { decideApproval, loadApprovals, requestApproval } from "../src/runtime/approvals.js";
 import { runControlTower } from "../src/runtime/control-tower.js";
-import { loadDashboardSnapshot } from "../src/runtime/dashboard.js";
+import { loadWorkspaceSnapshot } from "../src/runtime/snapshot.js";
 import { ingestRecord } from "../src/runtime/intake.js";
 import { loadTaskboard, replaceTaskboard } from "../src/runtime/taskboard.js";
 import { createHandlers, createServerContext } from "../src/mcp/server.js";
@@ -232,7 +232,7 @@ test("the product owner sees the engineering teams once an application is linked
 
   // The coordinator records the application root only after it has run. A workspace that planned
   // through the CLI has a link and no coordinator, and the engineering side must still be visible.
-  const snapshot = await loadDashboardSnapshot(product);
+  const snapshot = await loadWorkspaceSnapshot(product);
   assert.equal(snapshot.autopilot.state.applicationRoot, null, "no cycle has run");
   assert.ok(snapshot.autopilot.engineering, "the engineering side is found through the link");
 
@@ -330,7 +330,7 @@ test("an unlinked workspace says so rather than inventing an engineering side", 
   const { product, application, requestFile } = await connect(t, { link: false });
   await planDevelopmentRequest(application, requestFile, { dryRun: false });
 
-  const snapshot = await loadDashboardSnapshot(product);
+  const snapshot = await loadWorkspaceSnapshot(product);
   assert.equal(snapshot.autopilot.engineering, null, "work exists, but this workspace is not linked to it");
 
   const context = await createServerContext({ project: product });

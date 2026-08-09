@@ -160,12 +160,19 @@ async function controlTowerCycle(
     await replaceTaskboard(root, headers, tasks, { dryRun: false });
   }
   const runId = `CTR-${utcTimestamp(now).replace(/[-:.TZ]/g, "")}`;
+  // A cycle routes and promotes; it does not perform. `dispatch_task` means a card is runnable, not
+  // that anyone ran it, and without that distinction a surface can report a successful cycle for the
+  // hundredth time while the board has not moved since the first. Saying how much the cycle actually
+  // changed, and how much is merely waiting for a performer, is what lets a caller tell those apart.
+  const advanced = actions.filter((action) => action.type !== "dispatch_task").length;
   const receipt = {
     schemaVersion: SCHEMA_VERSION,
     runId,
     kind: "control_plane",
     dryRun,
     actions,
+    advanced,
+    awaitingPerformer: actions.filter((action) => action.type === "dispatch_task").length,
     createdAt: utcTimestamp(now)
   };
   if (!dryRun) {

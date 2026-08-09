@@ -11,12 +11,10 @@ import { run } from "../src/cli.js";
 import { decideApproval, loadApprovals } from "../src/runtime/approvals.js";
 import { configureProject } from "../src/runtime/configure.js";
 import { runControlTower } from "../src/runtime/control-tower.js";
-import { buildDashboard, exportMetrics, loadEngineeringProgress } from "../src/runtime/dashboard.js";
-import { startDashboardServer } from "../src/runtime/dashboard-server.js";
+import { exportMetrics, loadEngineeringProgress } from "../src/runtime/snapshot.js";
 import { runDevelopmentTask } from "../src/runtime/development-runner.js";
 import { ingestRecord } from "../src/runtime/intake.js";
 import { migrateProject } from "../src/runtime/migrations.js";
-import { buildSetupWizard } from "../src/runtime/setup-wizard.js";
 import { captureIo, makeTempDirectory, readJson, writeJson } from "./helpers.js";
 
 async function initializedProject(t, name = "runtime-product") {
@@ -28,7 +26,7 @@ async function initializedProject(t, name = "runtime-product") {
   return { parent, target, output };
 }
 
-test("dashboard summarizes the linked engineering taskboard", async (t) => {
+test("the workspace snapshot summarizes the linked engineering taskboard", async (t) => {
   const root = await makeTempDirectory("product-ops-engineering-progress-");
   t.after(() => fs.rm(root, { recursive: true, force: true }));
   const directory = path.join(root, "engineering", "taskboard");
@@ -235,71 +233,6 @@ test("workbook provider writes require controls and verify complete read-back", 
   assert.equal(result.receipts[0].readbackSha256, item.controls.expectedReadbackSha256);
 });
 
-test("dashboard, metrics, and setup wizard generate local RTL artifacts", async (t) => {
-  const { target } = await initializedProject(t, "dashboard-product");
-  await buildDashboard(target, { dryRun: false });
-  await exportMetrics(target, { dryRun: false });
-  await buildSetupWizard(target, { dryRun: false });
-  const dashboard = await fs.readFile(path.join(target, ".product-ops/runtime/dashboard.html"), "utf8");
-  assert.match(dashboard, /dir="rtl"/);
-  assert.match(dashboard, /برج کنترل/);
-  assert.match(dashboard, /مرکز خودکارسازی/);
-  assert.match(dashboard, /continuousOrchestrator/);
-  assert.match(dashboard, /engineering\.completed/);
-  assert.match(dashboard, /dataset\.action='intake'/);
-  assert.match(dashboard, /window\.__PRODUCT_OPS__/);
-  assert.match(dashboard, /prefers-reduced-motion/);
-  assert.equal((await readJson(path.join(target, ".product-ops/runtime/metrics.json"))).totals.tasks, 1);
-  assert.match(await fs.readFile(path.join(target, ".product-ops/setup.html"), "utf8"), /product-ops-answers\.json/);
-});
-
-test("interactive dashboard server is loopback-only, read-only by default, and CSRF guarded", async (t) => {
-  const { target } = await initializedProject(t, "dashboard-server-product");
-  const readOnly = await startDashboardServer(target, { port: 0 });
-  t.after(() => readOnly.close());
-  assert.match(readOnly.url, /^http:\/\/127\.0\.0\.1:/);
-  assert.deepEqual(await (await fetch(`${readOnly.url}/health`)).json(), { status: "ok", writable: false });
-  const snapshotResponse = await fetch(`${readOnly.url}/api/snapshot`);
-  assert.equal(snapshotResponse.status, 200);
-  assert.equal((await snapshotResponse.json()).project.name, "Dashboard Server Product");
-  const refused = await fetch(`${readOnly.url}/api/intake`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-product-ops-csrf": "wrong" },
-    body: JSON.stringify({ type: "new_idea", title: "No write", description: "Read only", source: "test" })
-  });
-  assert.equal(refused.status, 403);
-  await assert.rejects(
-    startDashboardServer(target, { port: 0, host: "0.0.0.0" }),
-    /loopback/
-  );
-});
-
-test("writable dashboard records bounded intake with its local authorization token", async (t) => {
-  const { target } = await initializedProject(t, "dashboard-write-product");
-  const dashboard = await startDashboardServer(target, { port: 0, writable: true });
-  t.after(() => dashboard.close());
-  const page = await fetch(dashboard.url);
-  assert.match(page.headers.get("content-security-policy"), /script-src 'self' 'nonce-[A-Za-z0-9_-]+'/);
-  assert.doesNotMatch(page.headers.get("content-security-policy"), /script-src[^;]*unsafe-inline/);
-  const html = await page.text();
-  assert.match(html, /const form=event\.currentTarget/);
-  assert.doesNotMatch(html, /event\.currentTarget\.reset/);
-  const token = html.match(/name="product-ops-csrf" content="([^"]+)"/)[1];
-  const response = await fetch(`${dashboard.url}/api/intake`, {
-    method: "POST",
-    headers: { "content-type": "application/json", "x-product-ops-csrf": token },
-    body: JSON.stringify({
-      type: "new_idea",
-      title: "Synthetic dashboard idea",
-      description: "A bounded synthetic dashboard write.",
-      source: "local test",
-      priority: "P2"
-    })
-  });
-  assert.equal(response.status, 201);
-  assert.equal((await response.json()).record.status, "proposed");
-  assert.equal((await readJson(path.join(target, ".product-ops/runtime/intake.json"))).records.length, 1);
-});
 
 test("configuration answers refresh scaffold while preserving operational rows", async (t) => {
   const { parent, target, output } = await initializedProject(t, "configured-product");
@@ -337,4 +270,11 @@ test("migration upgrades a legacy generated project with a recoverable configura
   assert.ok((await readJson(configPath)).routing.every((route) => route.steps.length > 0));
   await fs.access(path.join(target, ".product-ops/migrations", result.runId, CONFIG_FILE));
   assert.equal(await run(["validate", target], output.io), 0);
+});
+
+test("metrics still produce their local artifact", async (t) => {
+  // Covered only by the dashboard test until the dashboard went; the feature outlived it.
+  const { target } = await initializedProject(t, "artifacts-product");
+  await exportMetrics(target, { dryRun: false });
+  assert.equal((await readJson(path.join(target, ".product-ops/runtime/metrics.json"))).totals.tasks, 1);
 });

@@ -3,14 +3,12 @@ import { loadConfig, validateConfig, validateConfigRelationships } from "../conf
 import { decideApproval, loadApprovals } from "../runtime/approvals.js";
 import { configureProject } from "../runtime/configure.js";
 import { runControlTower } from "../runtime/control-tower.js";
-import { buildDashboard, exportMetrics } from "../runtime/dashboard.js";
-import { startDashboardServer } from "../runtime/dashboard-server.js";
+import { exportMetrics } from "../runtime/snapshot.js";
 import { runDevelopmentTask } from "../runtime/development-runner.js";
 import { exportDevelopmentRequest, importEngineeringResult } from "../development/product-sync.js";
 import { ingestRecord } from "../runtime/intake.js";
 import { readSuppliedJson } from "../runtime/io.js";
 import { migrateProject } from "../runtime/migrations.js";
-import { buildSetupWizard } from "../runtime/setup-wizard.js";
 import { setControlPlaneSurface } from "../runtime/control-plane-lease.js";
 import { startAutopilotLoop } from "../autopilot/orchestrator.js";
 import { readAutomationLink, readAutopilotState } from "../autopilot/state.js";
@@ -24,7 +22,22 @@ export async function operateCommand(target, options) {
   return [
     `${receipt.dryRun ? "Planned" : "Executed"} control-plane run ${receipt.runId}.`,
     `Actions: ${receipt.actions.length}.`,
-    ...receipt.actions.map((action) => `  ${action.type}: ${action.taskId ?? action.intakeId ?? "n/a"}`)
+    ...receipt.actions.map((action) => `  ${action.type}: ${action.taskId ?? action.intakeId ?? "n/a"}`),
+    ...waitingForPerformer(receipt)
+  ];
+}
+
+/**
+ * A cycle that only dispatched has moved nothing, and running it again will move nothing either.
+ * Saying so is the difference between a surface that reports work and one that reports success.
+ */
+function waitingForPerformer(receipt) {
+  if (receipt.advanced > 0 || receipt.awaitingPerformer === 0) return [];
+  return [
+    "",
+    `${receipt.awaitingPerformer} card(s) are ready and nothing performed them; another cycle will do the same.`,
+    "A cycle routes work, it does not do it. Hand a card to your agent with product_ops_next_work, or",
+    "run `product-ops development` for the engineering boundary."
   ];
 }
 
@@ -110,23 +123,6 @@ export async function providerSyncCommand(target, options) {
   ];
 }
 
-export async function dashboardCommand(target, options) {
-  if (options.serve) {
-    if (options.output) throw new Error("dashboard --serve does not accept --output.");
-    const result = await startDashboardServer(target, {
-      port: options.port ?? 4173,
-      writable: options.apply === true
-    });
-    return [
-      `Dashboard available at ${result.url}.`,
-      `Mode: ${result.writable ? "writable" : "read-only"}. Press Ctrl+C to stop.`
-    ];
-  }
-  if (options.port) throw new Error("dashboard --port requires --serve.");
-  const result = await buildDashboard(target, { dryRun: runtimeDryRun(options), output: options.output });
-  return [`${result.dryRun ? "Planned" : "Generated"} dashboard at ${result.output} (${result.bytes} bytes).`];
-}
-
 /**
  * Run the autonomous coordinator as its own process.
  *
@@ -201,11 +197,6 @@ export async function metricsCommand(target, options) {
     `${result.dryRun ? "Planned" : "Exported"} metrics at ${result.output}.`,
     `Tasks: ${result.metrics.totals.tasks}; completed: ${result.metrics.totals.completed}; blocked: ${result.metrics.totals.blocked}.`
   ];
-}
-
-export async function setupCommand(target, options) {
-  const result = await buildSetupWizard(target, { dryRun: runtimeDryRun(options), output: options.output });
-  return [`${result.dryRun ? "Planned" : "Generated"} setup wizard at ${result.output} (${result.bytes} bytes).`];
 }
 
 export async function configureCommand(target, options) {

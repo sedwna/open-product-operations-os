@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import { loadConfig, validateConfig, validateConfigRelationships } from "../../config.js";
 import { loadApprovals } from "../../runtime/approvals.js";
-import { loadDashboardSnapshot } from "../../runtime/dashboard.js";
+import { loadWorkspaceSnapshot } from "../../runtime/snapshot.js";
 import { readCsvRecords } from "../../runtime/io.js";
 import { dependencyState, loadTaskboard, visibleTaskboardRecords } from "../../runtime/taskboard.js";
 import { validateProject } from "../../validation.js";
@@ -13,7 +13,7 @@ import { ENGINEERING_ROLE_IDS, PRODUCT_ROLE_IDS, describeTeam, teamName } from "
 const MAX_FINDINGS = 50;
 
 export async function status(context, { verbosity = "brief" } = {}) {
-  const snapshot = await loadDashboardSnapshot(context.root);
+  const snapshot = await loadWorkspaceSnapshot(context.root);
   const projection = projectStatus(snapshot, { verbosity, ceiling: verbosity === "full" ? undefined : context.briefCeiling });
   return { structuredContent: projection, text: renderStatusText(projection) };
 }
@@ -27,7 +27,7 @@ export async function panel(context) {
   const [state, gates, snapshot, board] = await Promise.all([
     status(context, { verbosity: "full" }),
     pendingDecisions(context, { limit: 10 }),
-    loadDashboardSnapshot(context.root),
+    loadWorkspaceSnapshot(context.root),
     loadTaskboard(context.root)
   ]);
   const structuredContent = {
@@ -203,7 +203,7 @@ export async function task(context, { taskId } = {}) {
 }
 
 export async function cycleReport(context, { cycleId } = {}) {
-  const snapshot = await loadDashboardSnapshot(context.root);
+  const snapshot = await loadWorkspaceSnapshot(context.root);
   const report = snapshot.autopilot?.latestReport;
   if (!report) throw new ToolFailure("NOT_FOUND", "No autonomous cycle report has been produced yet.");
   if (cycleId && report.cycleId !== cycleId) {
@@ -266,7 +266,7 @@ export async function evidence(context, { taskId, eventId } = {}) {
 }
 
 export async function readiness(context) {
-  const snapshot = await loadDashboardSnapshot(context.root);
+  const snapshot = await loadWorkspaceSnapshot(context.root);
   const rows = (await readWorkbook(context.root, "workbook/19-readiness.csv"))
     .filter((row) => !isPlaceholder(row.readiness_id));
   const assessments = rows.slice(-5).map((row) => ({

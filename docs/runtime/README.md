@@ -4,7 +4,7 @@
 
 ### One bounded cycle at a time—from intake to evidence-backed readiness.
 
-[Dashboard](#interactive-dashboard) · [Typical cycle](#a-typical-cycle) ·
+[Control tower](#the-control-tower-panel) · [Typical cycle](#a-typical-cycle) ·
 [Safety contract](#safety-contract) · [Development](development-runner.md) ·
 [Providers](provider-adapters.md)
 
@@ -24,8 +24,8 @@ replace Git canonical state, semantic ownership, independent verification, or hu
 | **Unified intake** | Normalize and deduplicate ideas, findings, incidents, feedback, and requests | Plan only |
 | **Development runner** | Dispatch one eligible development task through a command contract | Disabled |
 | **Provider outbox** | Apply bounded HTTPS operations and retain projected, hash-backed receipts | Disabled |
-| **Control tower** | Show tasks, decisions, intake, risks, roles, evidence, and readiness | Read-only |
-| **Setup and migration** | Configure a generated project and upgrade the operating contract safely | Plan only |
+| **Control tower panel** | Show both teams, the hand-off chain, blockages, risks, and pending decisions inside the conversation | Read-only |
+| **Configuration and migration** | Apply a validated answers file and upgrade the operating contract safely | Plan only |
 | **Autonomous coordinator** | Claim dependency-ready product and engineering work, recover retries, return evidence, and write the cycle report | Enabled only by a verified Codex or Claude Code automation link |
 
 Runtime state is stored under:
@@ -42,55 +42,29 @@ Migration snapshots remain under:
 
 Both locations stay inside the bounded project tree and are scanned by validation.
 
-## Interactive dashboard
+## The control tower panel
 
-### Read-only live mode
+The panel renders inside your conversation whenever the MCP server is connected for the workspace.
+Ask for `product_ops_panel`.
 
-```text
-product-ops dashboard ./product --serve
-```
+It shows both organisations as named teams, the hand-off chain for the cycle in flight, where the
+work is stuck and whose it is to clear, open risks, and a composer for every gate waiting on the
+product owner. It reads the same canonical records as every other surface and is never a second
+source of truth.
 
-Use search, task filters, detailed task and decision drawers, role activity, risk review, evidence
-coverage, and release gates without changing project state.
-
-### Explicitly writable live mode
-
-```text
-product-ops dashboard ./product --serve --apply
-```
-
-This additionally permits:
-
-- normalized intake creation;
-- attributed approval or rejection by the configured human authority actor;
-- one bounded control-plane scheduling cycle;
-- start, cooperative pause, resume, and retry of the linked local autonomous cycle.
-
-When the workspace contains a verified automation link, the dashboard process also runs
-the continuous coordinator and can execute bounded development work in the separate application
-repository. It does **not** authorize provider calls, production deployment, destructive actions,
-production data, credentials, spending, or external publication.
-The server accepts local loopback traffic only, rejects oversized or non-JSON writes, and requires a
-random authorization token from the active dashboard session.
-
-### Portable snapshot
-
-```text
-product-ops dashboard ./product --apply
-```
-
-This writes a self-contained HTML snapshot. Its filters, search, navigation, theme, export, and
-detail views work locally, but mutation controls remain disabled because no runtime server is
-connected.
+Deciding stays with the person. The composer collects the owner's own reasoning and choice; where
+the host supports dialogs, the disposition is collected through the host's own dialog, and a model
+attempting to steer the outcome through tool arguments has no effect on what is recorded. On a
+read-only server the panel still renders — the decision tools are simply not registered.
 
 ## A typical cycle
 
 With Codex or Claude Code automation configured, the normal path is simply:
 
 ```text
-1. Open the local dashboard.
+1. Open the control tower panel in your conversation.
 2. Submit an idea or feedback.
-3. Watch the active product or engineering role in Automation Center.
+3. Watch the teams carry it in the panel.
 4. Read the generated report and inspect the workbook/evidence links.
 5. Submit a correction to begin the next linked cycle.
 ```

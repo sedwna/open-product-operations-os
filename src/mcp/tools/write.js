@@ -86,12 +86,21 @@ export async function operate(context, args = {}) {
     truncated: receipt.actions.length > 25
   };
   const summary = Object.entries(byType).map(([type, count]) => `${type} ×${count}`).join(", ") || "no action";
-  return {
-    structuredContent,
-    text: apply
+  const lines = [
+    apply
       ? `Ran control-plane cycle ${receipt.runId}: ${summary}.`
       : `Planned control-plane cycle ${receipt.runId}: ${summary}. Nothing was written; call again with apply true to run it.`
-  };
+  ];
+  // A cycle routes and promotes; it never performs. Reporting a dispatch as though it were progress
+  // is how a caller ends up running cycle after cycle against a board that cannot move.
+  if (receipt.advanced === 0 && receipt.awaitingPerformer > 0) {
+    lines.push(
+      `${receipt.awaitingPerformer} card(s) are ready and nothing performed them. Running this again will not change that — take a card with product_ops_next_work instead.`
+    );
+  }
+  structuredContent.advanced = receipt.advanced;
+  structuredContent.awaitingPerformer = receipt.awaitingPerformer;
+  return { structuredContent, text: lines.join("\n") };
 }
 
 export async function autopilot(context, args = {}) {
