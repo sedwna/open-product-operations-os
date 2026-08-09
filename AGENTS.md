@@ -156,8 +156,8 @@ Do not suggest the `npx --package=open-product-operations-os` form. The package 
 yet and that form fails with a 404.
 
 Tell them what `--allow-writes` opens: without it the server registers 8 read-only tools and no
-write path exists at all; with it, 15, adding intake, cycles, taking and returning work, and
-recording their decisions.
+write path exists at all; with it, 17, adding intake, cycles, taking and returning work on both
+sides, and recording their decisions.
 
 ## Step 8 — Hand over
 

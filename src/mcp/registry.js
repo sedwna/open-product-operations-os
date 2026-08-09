@@ -2,6 +2,7 @@ import { TIERS } from "./authority.js";
 import * as read from "./tools/read.js";
 import * as write from "./tools/write.js";
 import * as work from "./tools/work.js";
+import * as engineering from "./tools/engineering.js";
 import { adopt } from "./tools/adopt.js";
 import { decide } from "./tools/decide.js";
 import { PANEL_URI } from "./app/panel.js";
@@ -229,6 +230,38 @@ export const TOOL_DEFINITIONS = Object.freeze([
       additionalProperties: false
     },
     handler: work.submitWork
+  },
+  {
+    name: "product_ops_next_engineering_work",
+    title: "Take the next ready engineering workstream",
+    description: "Hand out one bounded engineering brief from the linked application for you to delegate. Reads only.",
+    tier: TIERS.PLAN,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    handler: engineering.nextEngineeringWork
+  },
+  {
+    name: "product_ops_submit_engineering_work",
+    title: "Return a completed engineering workstream",
+    description: "Record what your subagent produced for a claimed workstream. Plans by default; set apply true to record it.",
+    tier: TIERS.PLAN,
+    annotations: PLAN_ANNOTATIONS,
+    inputSchema: {
+      type: "object",
+      properties: {
+        workstreamId: { type: "string", minLength: 1, maxLength: 80 },
+        claimToken: { type: "string", minLength: 32, maxLength: 32, description: "Issued by product_ops_next_engineering_work; it cannot be constructed." },
+        result: {
+          type: "object",
+          description: "The subagent's output. Validated against engineering-workstream-run.schema.json and against the dispatched workstream; a mismatch is refused, not recorded.",
+          additionalProperties: true
+        },
+        apply: { type: "boolean", default: false, description: "Record the result. Omitted or false returns the plan only." }
+      },
+      required: ["workstreamId", "claimToken", "result"],
+      additionalProperties: false
+    },
+    handler: engineering.submitEngineeringWork
   },
   {
     name: "product_ops_decide",

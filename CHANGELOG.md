@@ -11,6 +11,14 @@ All notable changes to this project will be documented here.
   tower panel in the conversation.
 - Required a performer for every product agent run. Work is done by whoever the host delegates it
   to; the run function owns the contract around the work, never the doing.
+- Gave engineering the same host-delegated path the product side already had. The two halves had
+  been running on different execution models: a product could be driven all the way to an approved
+  delivery contract and then stop dead, because the only way to perform engineering work was to
+  spawn a CLI that most owners have not installed. `product_ops_next_engineering_work` and
+  `product_ops_submit_engineering_work` hand out and take back a workstream through exactly the
+  checks a spawned executor faced — schema, dispatch identity, ENG-15's read-only proof, sealing.
+  The boundary between the repositories was never the executor; it is the hashed contract, and it
+  is unchanged.
 - Kept the Windows `claude.cmd` shim resolution and moved it into the development boundary that
   needs it: running a batch file means running the command interpreter, which stays out of a path
   that takes contract text.

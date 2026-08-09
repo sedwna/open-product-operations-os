@@ -146,6 +146,8 @@ workstream summary, and is still bounded.
 | `product_ops_autopilot` | `start \| pause \| resume \| retry` on the local coordinator | guarded |
 | `product_ops_next_work` | Hand out one team's bounded brief for the host to delegate | reads only |
 | `product_ops_submit_work` | Record what the host's subagent produced | `apply: false` |
+| `product_ops_next_engineering_work` | Hand out one engineering workstream from the linked application | reads only |
+| `product_ops_submit_engineering_work` | Record what the host's engineering subagent produced | `apply: false` |
 
 ## Who performs the work
 
@@ -166,9 +168,25 @@ The provider readiness probes in `src/codex/` and `src/claude/` belong to the sp
 Nothing on the host-delegated path detects, installs, or authenticates a CLI — the host already
 knows who it is.
 
-`product_ops_next_work` never hands out the development boundary. Dispatching engineering work
-crosses the Product/Development authority line and stays out of this surface, exactly as
-`product_ops_operate` fixes `executeDevelopment` to false.
+`product_ops_next_work` never hands out the development boundary. A product task owned by the
+development role is not delegable through it, exactly as `product_ops_operate` fixes
+`executeDevelopment` to false — crossing that line is the owner's decision, and the control plane
+raises a `development_boundary_crossing` gate rather than stepping over it.
+
+### The engineering half
+
+Once the owner has approved the crossing and an application is linked, engineering work is delegated
+the same way product work is. `product_ops_next_engineering_work` reads the plan in the *linked
+application repository*, finds a workstream whose dependencies are satisfied, and returns its brief:
+the team, the contract's `writeBoundary`, and the prohibited paths. `product_ops_submit_engineering_work`
+returns the result through `runEngineeringWorkstream` — the same schema validation, the same
+dispatch-identity check, the same read-only proof for ENG-15, the same sealing that a spawned CLI
+would have faced.
+
+This is not a second boundary. It is the same one: what crosses between the repositories is the
+hashed contract with its `sourceDigest`, and that is unchanged by who performs the work. Only the
+performer moved — from a CLI this process starts to a subagent the host already has. Independent
+verification is handed out last, because ENG-15 reproduces claims the others have not yet made.
 
 ### The claim
 

@@ -162,20 +162,22 @@ test("exercising every read path leaves the project byte-identical", async (t) =
 test("write authorisation registers the plan and human-authority tiers, and nothing beyond them", async (t) => {
   const { handlers } = await handlersFor(t, { allowWrites: true });
   const { tools } = handlers["tools/list"]();
-  assert.equal(tools.length, 15);
+  assert.equal(tools.length, 17);
 
   const byTier = (tier) => TOOL_DEFINITIONS.filter((definition) => definition.tier === tier).map((definition) => definition.name).sort();
   assert.deepEqual(byTier("plan"), [
     "product_ops_adopt",
     "product_ops_autopilot",
     "product_ops_intake",
+    "product_ops_next_engineering_work",
     "product_ops_next_work",
     "product_ops_operate",
+    "product_ops_submit_engineering_work",
     "product_ops_submit_work"
   ]);
   assert.deepEqual(byTier("human_authority"), ["product_ops_decide"]);
   assert.equal(byTier("read").length, 8);
-  assert.equal(TOOL_DEFINITIONS.length, 15, "every definition belongs to a known tier");
+  assert.equal(TOOL_DEFINITIONS.length, 17, "every definition belongs to a known tier");
 
   for (const tool of tools.filter((entry) => entry.annotations.readOnlyHint === false)) {
     assert.equal(tool.annotations.destructiveHint, false, `${tool.name} must not be marked destructive`);
