@@ -78,6 +78,13 @@ node ./src/cli.js validate <workspace>
 Run the dry run yourself and read it; do not make them read 73 lines. Say how many files were
 created once it is done. `validate` must print `Validation passed` before you go on.
 
+`init` also starts a Git history for the workspace and commits it. That is not housekeeping:
+exporting an approved delivery contract to the engineering side stamps it with the workspace
+revision, and without one the export refuses at the moment the owner has just authorised crossing
+into engineering. If it reports that it could not — no `git` on the machine, or a refused commit —
+say so at the end of setup rather than letting them find out then. An existing repository is left
+untouched.
+
 ## Step 5 — Ask the two product questions
 
 Ask these separately, in their own words:

@@ -20,6 +20,12 @@ All notable changes to this project will be documented here.
   reach release with nobody having challenged its assumptions. Operating model version 3, with a
   migration that upgrades routes the owner has not touched and leaves edited ones exactly as
   written — see `docs/migration/operating-model-v3.md`.
+- Gave a new workspace a Git history at `init`. Exporting an approved delivery contract stamps it
+  with the workspace revision, so a workspace without a repository failed the export at the exact
+  moment the owner had just authorised crossing into engineering — a prerequisite nobody would think
+  to check, discovered at the worst possible point. An existing repository is never touched, a
+  missing `git` never fails initialisation, and a machine with no configured Git identity gets a
+  named workspace identity with the report saying so. `--no-git` opts out and states what it costs.
 - Let a gate carry the decision the owner actually made. A gate holds two things and they were
   being flattened into one: the board needs a binary — does this proceed — but the owner usually has
   more to say than yes. A disposition now records which of the offered options they chose and any

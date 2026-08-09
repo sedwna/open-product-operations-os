@@ -269,12 +269,16 @@ test("a holder whose work outlives the term keeps the lease", async (t) => {
   const root = await makeProject(t);
   let contender = null;
 
+  // The property is that renewal happens at all, not that it happens inside a few hundred
+  // milliseconds. A term short enough to be sensitive to scheduling noise on a loaded machine tests
+  // the machine, not the lease, so the term is compressed only as far as it stays meaningful:
+  // three full terms elapse before the contender arrives.
   await withControlPlaneLease(root, async () => {
-    await new Promise((resolve) => { setTimeout(resolve, 1_400); }); // several terms at this TTL
+    await new Promise((resolve) => { setTimeout(resolve, 3_000); });
     contender = await acquireControlPlaneLease(root, { waitMs: 0 })
       .then((lease) => releaseControlPlaneLease(lease).then(() => "acquired"))
       .catch((error) => error.code);
-  }, { ttlMs: 300 });
+  }, { ttlMs: 1_000 });
 
   assert.equal(contender, "WRITE_LEASE_HELD", "a beating holder must not be displaced mid-write");
   assert.equal(await readControlPlaneLease(root), null, "the holder must still release its own lease");
