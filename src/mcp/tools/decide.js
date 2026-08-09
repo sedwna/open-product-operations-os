@@ -23,7 +23,11 @@ export async function decide(context, args = {}) {
         requestId: request.requestId,
         taskId: request.taskId,
         gate: request.gate,
-        willAsk: ["decision", "actorId", "rationale"],
+        options: request.options ?? ["approved", "rejected"],
+        recommendedOption: request.recommendedOption ?? null,
+        willAsk: offeredOptions(request).binary
+          ? ["decision", "actorId", "rationale", "conditions"]
+          : ["decision", "selectedOption", "actorId", "rationale", "conditions"],
         humanAuthorityActorId: config.project.humanAuthorityActorId,
         question: untrusted(request.question, { source: "approval", id: request.requestId }),
         risks: untrustedList(request.risks, { source: "approval", id: request.requestId })
@@ -46,7 +50,9 @@ export async function decide(context, args = {}) {
     requestId: request.requestId,
     decision: collected.decision,
     actorId: collected.actorId,
-    rationale: collected.rationale
+    rationale: collected.rationale,
+    selectedOption: collected.selectedOption,
+    conditions: collected.conditions
   }, { dryRun: false });
 
   const structuredContent = {
@@ -55,12 +61,20 @@ export async function decide(context, args = {}) {
     taskId: result.request.taskId,
     gate: result.request.gate,
     decision: result.request.status,
+    selectedOption: result.request.selectedOption,
+    conditions: untrustedList(result.request.conditions ?? [], { source: "human-decision", id: result.request.requestId }),
     decidedByActorId: result.request.decidedByActorId,
     decidedAt: result.request.decidedAt,
     rationale: untrusted(result.request.rationale, { source: "human-decision", id: result.request.requestId }),
     attribution: collected.attribution
   };
   const lines = [`Recorded ${result.request.status} on gate "${result.request.gate}" for ${result.request.taskId}, attributed to ${result.request.decidedByActorId}.`];
+  if (result.request.selectedOption) {
+    lines.push(`They chose: ${result.request.selectedOption}.`);
+  }
+  if ((result.request.conditions ?? []).length > 0) {
+    lines.push(`It carries ${result.request.conditions.length} condition(s). An approval with conditions is not a bare approval — carry them into the work, and say so when you report it done.`);
+  }
   if (collected.attribution === "model_relayed") {
     lines.push("This host cannot open a dialog, so the rationale was relayed by a model rather than typed by the product owner. The record says the owner decided; treat that attribution with the caution it deserves.");
   }
@@ -84,17 +98,30 @@ async function pendingRequest(context, args) {
   return request;
 }
 
+/** A gate that offered real options asks which one, not just whether. */
+function offeredOptions(request) {
+  const options = request.options ?? ["approved", "rejected"];
+  const binary = options.length === 2 && options.includes("approved") && options.includes("rejected");
+  return { options, binary };
+}
+
 async function elicit(context, config, request) {
+  const { options, binary } = offeredOptions(request);
+  const properties = {
+    decision: { type: "string", enum: ["approved", "rejected"], title: "Disposition" },
+    actorId: { type: "string", title: "Deciding actor", default: config.project.humanAuthorityActorId },
+    rationale: { type: "string", title: "Rationale", minLength: 1, maxLength: 2000 },
+    conditions: { type: "string", title: "Conditions, one per line (optional)", maxLength: 2000 }
+  };
+  if (!binary) {
+    properties.selectedOption = { type: "string", enum: options, title: "Which option" };
+  }
   const response = await context.elicit({
     message: `Gate "${request.gate}" on task ${request.taskId}. ${String(request.question ?? "Approve or reject?").slice(0, 400)}`,
     requestedSchema: {
       type: "object",
-      properties: {
-        decision: { type: "string", enum: ["approved", "rejected"], title: "Disposition" },
-        actorId: { type: "string", title: "Deciding actor", default: config.project.humanAuthorityActorId },
-        rationale: { type: "string", title: "Rationale", minLength: 1, maxLength: 2000 }
-      },
-      required: ["decision", "actorId", "rationale"]
+      properties,
+      required: binary ? ["decision", "actorId", "rationale"] : ["decision", "selectedOption", "actorId", "rationale"]
     }
   }).catch((error) => {
     // A host that declares elicitation and then fails to deliver it leaves the gate unanswerable
@@ -110,12 +137,22 @@ async function elicit(context, config, request) {
   if (!["approved", "rejected"].includes(content.decision) || typeof content.rationale !== "string" || content.rationale.trim() === "") {
     throw new ToolFailure("ELICITATION_DECLINED", "The dialog returned an incomplete disposition. Nothing was recorded.");
   }
+  if (!binary && !options.includes(content.selectedOption)) {
+    throw new ToolFailure("ELICITATION_DECLINED", `The dialog returned no choice among ${options.join(", ")}. Nothing was recorded.`);
+  }
   return {
     decision: content.decision,
+    selectedOption: binary ? null : content.selectedOption,
+    conditions: splitConditions(content.conditions),
     actorId: String(content.actorId ?? config.project.humanAuthorityActorId),
     rationale: content.rationale.trim().slice(0, 2000),
     attribution: "human_entered"
   };
+}
+
+/** The dialog takes conditions as free text because a host's schema has no repeatable field. */
+function splitConditions(value) {
+  return String(value ?? "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean).slice(0, 20);
 }
 
 /**
@@ -138,8 +175,14 @@ function composed(args, config, request) {
   if (rationale === "") {
     throw new ToolFailure("ELICITATION_DECLINED", "A disposition without a rationale is not a durable decision. Write why.");
   }
+  const { options, binary } = offeredOptions(request);
+  if (!binary && !options.includes(args.selectedOption)) {
+    throw new ToolFailure("ELICITATION_DECLINED", `Gate "${request.gate}" offered ${options.join(", ")}. The panel must send back which one the owner picked.`);
+  }
   return {
     decision: args.decision,
+    selectedOption: binary ? null : args.selectedOption,
+    conditions: Array.isArray(args.conditions) ? args.conditions : [],
     actorId: String(args.actorId ?? config.project.humanAuthorityActorId),
     rationale: rationale.slice(0, 2000),
     attribution: "panel_entered"
@@ -151,6 +194,13 @@ function composed(args, config, request) {
  * applies, but the attribution is weaker and the result says so rather than hiding it.
  */
 function relayed(args, request) {
+  const { options, binary } = offeredOptions(request);
+  if (!binary && !options.includes(args.selectedOption)) {
+    throw new ToolFailure(
+      "ELICITATION_UNAVAILABLE",
+      `Gate "${request.gate}" asked the product owner to choose between ${options.join(", ")}. Ask them, and pass back the option they named as selectedOption.`
+    );
+  }
   if (!["approved", "rejected"].includes(args.decision) || !args.actorId || !String(args.rationale ?? "").trim()) {
     throw new ToolFailure(
       "ELICITATION_UNAVAILABLE",
@@ -164,6 +214,8 @@ function relayed(args, request) {
   }
   return {
     decision: args.decision,
+    selectedOption: binary ? null : args.selectedOption,
+    conditions: Array.isArray(args.conditions) ? args.conditions : [],
     actorId: String(args.actorId),
     rationale: String(args.rationale).trim().slice(0, 2000),
     attribution: "model_relayed"

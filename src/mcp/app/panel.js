@@ -63,7 +63,11 @@ display:flex;flex-direction:column;gap:7px}
 textarea{font:inherit;font-size:12px;width:100%;min-height:62px;resize:vertical;padding:7px 9px;border-radius:7px;
 border:1px solid var(--color-border-primary,light-dark(#c9c4bb,#3a4048));
 background:var(--color-background-primary,light-dark(#fff,#15181d));color:inherit}
-textarea:focus{outline:2px solid light-dark(#8fa9c6,#3d5a86);outline-offset:-1px}
+textarea:focus,select:focus{outline:2px solid light-dark(#8fa9c6,#3d5a86);outline-offset:-1px}
+textarea.cond{min-height:42px;margin-top:6px}
+select{font:inherit;font-size:12px;width:100%;padding:6px 9px;border-radius:7px;margin-bottom:6px;
+border:1px solid var(--color-border-primary,light-dark(#c9c4bb,#3a4048));
+background:var(--color-background-primary,light-dark(#fff,#15181d));color:inherit}
 button.yes{background:light-dark(#1d6b3f,#2f8a55);color:#fff;border-color:transparent}
 button.no{background:light-dark(#a33a33,#b6483f);color:#fff;border-color:transparent}
 .flow{display:flex;gap:0;overflow-x:auto;padding-bottom:3px}
@@ -114,21 +118,30 @@ window.addEventListener("message",function(e){
 });
 function adopt(data){if(data&&data.counts){state=data;render();schedule();}}
 
-// A refresh rebuilds the interface, which would throw away a rationale the owner is halfway
-// through writing. Drafts are captured before the rebuild and put back after it.
+// A refresh rebuilds the interface, which would throw away a rationale, a set of conditions, or a
+// chosen option the owner is halfway through. All three are captured before the rebuild and put
+// back after it.
+var DRAFT_FIELDS=["t-","c-","o-"];
 function captureDrafts(){
   if(!state||!state.decisions)return;
   state.decisions.items.forEach(function(item){
-    var box=document.getElementById("t-"+item.requestId);
-    if(box&&typeof box.value==="string"&&box.value!=="")drafts[item.requestId]=box.value;
+    DRAFT_FIELDS.forEach(function(prefix){
+      var box=document.getElementById(prefix+item.requestId);
+      if(box&&typeof box.value==="string"&&box.value!=="")drafts[prefix+item.requestId]=box.value;
+    });
   });
 }
 function restoreDrafts(){
   if(!state||!state.decisions)return;
   state.decisions.items.forEach(function(item){
-    var box=document.getElementById("t-"+item.requestId);
-    if(box&&drafts[item.requestId])box.value=drafts[item.requestId];
+    DRAFT_FIELDS.forEach(function(prefix){
+      var box=document.getElementById(prefix+item.requestId);
+      if(box&&drafts[prefix+item.requestId])box.value=drafts[prefix+item.requestId];
+    });
   });
+}
+function clearDrafts(requestId){
+  DRAFT_FIELDS.forEach(function(prefix){delete drafts[prefix+requestId];});
 }
 /** Poll faster while something is moving or waiting on the owner, slower when nothing is. */
 function schedule(){
@@ -248,11 +261,22 @@ function gate(item){
   // dir="auto" per record string: a question or a risk may be written in any language, and letting
   // each pick its own direction keeps punctuation where its author put it.
   var id=esc(item.requestId);
+  // A gate that offered real options is asking which one, not merely whether. Collapsing that to a
+  // yes throws the answer away and records the owner as having simply agreed.
+  var opts=item.options&&item.options.length?item.options:["approved","rejected"];
+  var choose=!(opts.length===2&&opts.indexOf("approved")>-1&&opts.indexOf("rejected")>-1);
+  var chooser=choose?'<div class="note">کدام گزینه؟</div><select id="o-'+id+'" dir="auto">'
+    +opts.map(function(o){return '<option value="'+esc(o)+'"'
+      +(item.recommendedOption===o?" selected":"")+">"+esc(o)
+      +(item.recommendedOption===o?" — پیشنهاد سیستم":"")+"</option>";}).join("")
+    +"</select>":"";
   return '<div class="gate"><div class="gate-q" dir="auto">'+plain(item.question)+'</div>'
     +'<div class="muted">'+esc(teamOf(ownerOf(item.taskId)))+' · <code>'+esc(item.gate)+"</code> · "+esc(item.taskId)+"</div>"
     +(item.context?'<div class="note" dir="auto">'+plain(item.context)+"</div>":"")
     +(item.risks&&item.risks.length?'<ul class="risks">'+item.risks.map(function(r){return '<li dir="auto">'+plain(r)+"</li>";}).join("")+"</ul>":"")
+    +chooser
     +'<textarea id="t-'+id+'" dir="auto" placeholder="دلیل تصمیم‌تان را بنویسید — همین متن در پروندهٔ محصول ثبت و به شما نسبت داده می‌شود."></textarea>'
+    +'<textarea id="c-'+id+'" dir="auto" class="cond" placeholder="شرط‌ها (اختیاری) — هر شرط در یک خط. تأیید مشروط با تأیید ساده یکی نیست."></textarea>'
     +'<div class="row"><button class="yes" id="y-'+id+'">تأیید</button>'
     +'<button class="no" id="n-'+id+'">رد</button>'
     +'<span class="note" id="m-'+id+'">بدون دلیل، تصمیم ثبت نمی‌شود.</span></div></div>';
@@ -299,14 +323,20 @@ function submit(item,decision){
     if(box)box.focus();
     return;
   }
+  var chooser=document.getElementById("o-"+item.requestId);
+  var conditionBox=document.getElementById("c-"+item.requestId);
+  var conditions=conditionBox&&conditionBox.value?conditionBox.value.split(/\\r?\\n/).map(function(line){
+    return line.trim();}).filter(Boolean).slice(0,20):[];
   busy=true;
   if(poll)clearTimeout(poll);
   var yes=document.getElementById("y-"+item.requestId),no=document.getElementById("n-"+item.requestId);
   if(yes)yes.disabled=true;if(no)no.disabled=true;
   if(note)note.textContent="در حال ثبت…";
-  delete drafts[item.requestId];
+  clearDrafts(item.requestId);
   call("product_ops_decide",{requestId:item.requestId,decisionToken:item.decisionToken,apply:true,
     source:"panel",decision:decision,rationale:rationale,
+    selectedOption:chooser?chooser.value:undefined,
+    conditions:conditions.length?conditions:undefined,
     actorId:state&&state.humanAuthorityActorId?state.humanAuthorityActorId:undefined})
     .then(function(){busy=false;refresh();})
     .catch(function(e){busy=false;fail(e);});

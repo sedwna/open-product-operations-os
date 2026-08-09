@@ -294,3 +294,42 @@ test("the crossing decision is asked once, not on every cycle", async (t) => {
   const crossings = gates.items.filter((item) => item.gate === "development_boundary_crossing");
   assert.equal(crossings.length, 1, "a pending decision must not be reopened underneath the owner");
 });
+
+/**
+ * A gate settled with conditions is the owner setting terms for the work, not merely letting it
+ * through. Recording the terms and then delegating the task without them drops the decision that
+ * authorised it.
+ */
+test("conditions the owner attached to a gate travel with the delegated brief", async (t) => {
+  const { root, handlers } = await workspace(t);
+  const config = await loadConfig(root);
+  const { records } = await loadTaskboard(root);
+  const task = records[0];
+
+  const { requestApproval, decideApproval } = await import("../src/runtime/approvals.js");
+  const { request } = await requestApproval(root, {
+    taskId: task.task_id,
+    gate: "product_direction_or_priority",
+    question: "Ship it?"
+  }, { dryRun: false });
+  await decideApproval(root, config, {
+    requestId: request.requestId,
+    decision: "approved",
+    actorId: config.project.humanAuthorityActorId,
+    rationale: "Worth doing, but not at any cost.",
+    conditions: ["Keep the existing default working", "No data migration in this cycle"]
+  }, { dryRun: false });
+
+  const claim = (await call(handlers, "product_ops_next_work")).structuredContent;
+  assert.equal(claim.available, true);
+  const decision = claim.ownerDecisions.find((entry) => entry.gate === "product_direction_or_priority");
+  assert.ok(decision, "the owner's decision on this event reaches the team that works it");
+  assert.equal(decision.decision, "approved");
+  assert.equal(decision.conditions.length, 2);
+});
+
+test("a brief with nothing decided carries no decisions rather than an empty claim", async (t) => {
+  const { handlers } = await workspace(t);
+  const claim = (await call(handlers, "product_ops_next_work")).structuredContent;
+  assert.deepEqual(claim.ownerDecisions, []);
+});

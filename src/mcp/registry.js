@@ -280,6 +280,13 @@ export const TOOL_DEFINITIONS = Object.freeze([
         apply: { type: "boolean", default: false, description: "Open the dialog and record the answer. Omitted or false describes what would be asked." },
         source: { type: "string", enum: ["panel"], description: "Set only by the control tower panel, where the product owner composed the disposition themselves. Never set this yourself." },
         decision: { type: "string", enum: ["approved", "rejected"], description: "Only from the panel, or from a host that cannot open a dialog. Supply only what the product owner actually said." },
+        selectedOption: { type: "string", maxLength: 200, description: "Which of the gate's offered options the owner chose. Required when the gate offered more than approve or reject." },
+        conditions: {
+          type: "array",
+          maxItems: 20,
+          items: { type: "string", minLength: 1, maxLength: 400 },
+          description: "What the owner attached to the disposition, in their words. An approval with conditions is not a bare approval."
+        },
         actorId: { type: "string", maxLength: 80, description: "Must be the configured human authority actor." },
         rationale: { type: "string", maxLength: 2000, description: "The owner's own reasoning, not your summary of it." }
       },

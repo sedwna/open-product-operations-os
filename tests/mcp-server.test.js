@@ -566,7 +566,7 @@ test("decide plans without opening a dialog and without recording anything", asy
   });
   assert.equal(planned.isError, false, planned.content[0].text);
   assert.equal(planned.structuredContent.applied, false);
-  assert.deepEqual(planned.structuredContent.willAsk, ["decision", "actorId", "rationale"]);
+  assert.deepEqual(planned.structuredContent.willAsk, ["decision", "actorId", "rationale", "conditions"]);
   assert.equal(asked, 0, "planning must not put a dialog in front of a person");
   assert.match(planned.content[0].text, /You are not being asked to choose; you are asking them to/);
 
@@ -610,6 +610,87 @@ test("decide records what the person entered, not what the model supplied", asyn
   const stored = (await loadApprovals(root)).requests.find((item) => item.requestId === gate.requestId);
   assert.equal(stored.status, "rejected");
   assert.equal(stored.decidedByActorId, "human-product-owner");
+});
+
+/**
+ * A gate carries two things and they were being flattened into one. The board needs a binary; the
+ * owner often has more to say than that. Recording only the binary threw the answer away and left
+ * the record claiming they had simply agreed.
+ */
+test("a gate that offered real options refuses a bare yes", async (t) => {
+  let seen = null;
+  const { root, handlers } = await handlersFor(t, {
+    allowWrites: true,
+    elicit: async (params) => {
+      seen = params;
+      return {
+        action: "accept",
+        content: {
+          decision: "approved",
+          selectedOption: "per_workspace",
+          actorId: "human-product-owner",
+          rationale: "Teams in different timezones already asked for it.",
+          conditions: "Existing jobs migrate first\nOne global default stays available"
+        }
+      };
+    }
+  });
+  const gate = await openGate(root, handlers, {
+    options: ["per_workspace", "one_global_default", "rejected"],
+    recommendedOption: "per_workspace"
+  });
+
+  const result = await handlers["tools/call"]({
+    name: "product_ops_decide",
+    arguments: { requestId: gate.requestId, decisionToken: gate.decisionToken, apply: true }
+  });
+  assert.equal(result.isError, false, result.content[0].text);
+  assert.deepEqual(seen.requestedSchema.required, ["decision", "selectedOption", "actorId", "rationale"]);
+  assert.deepEqual(seen.requestedSchema.properties.selectedOption.enum, ["per_workspace", "one_global_default", "rejected"]);
+
+  const stored = (await loadApprovals(root)).requests.find((item) => item.requestId === gate.requestId);
+  assert.equal(stored.status, "approved", "the board still reads a binary");
+  assert.equal(stored.selectedOption, "per_workspace", "and the record keeps which option they actually chose");
+  assert.deepEqual(stored.conditions, ["Existing jobs migrate first", "One global default stays available"]);
+  assert.match(result.content[0].text, /per_workspace/);
+  assert.match(result.content[0].text, /condition/i);
+});
+
+test("an option the gate never offered is not recordable", async (t) => {
+  const { root, handlers } = await handlersFor(t, {
+    allowWrites: true,
+    elicit: async () => ({
+      action: "accept",
+      content: { decision: "approved", selectedOption: "something_else", actorId: "human-product-owner", rationale: "Because." }
+    })
+  });
+  const gate = await openGate(root, handlers, { options: ["per_workspace", "one_global_default", "rejected"] });
+
+  const result = await handlers["tools/call"]({
+    name: "product_ops_decide",
+    arguments: { requestId: gate.requestId, decisionToken: gate.decisionToken, apply: true }
+  });
+  assert.equal(result.isError, true);
+  const stored = (await loadApprovals(root)).requests.find((item) => item.requestId === gate.requestId);
+  assert.equal(stored.status, "pending");
+});
+
+test("a plain approve-or-reject gate still takes a plain answer", async (t) => {
+  const { root, handlers } = await handlersFor(t, {
+    allowWrites: true,
+    elicit: async () => ({
+      action: "accept",
+      content: { decision: "approved", actorId: "human-product-owner", rationale: "Go." }
+    })
+  });
+  const gate = await openGate(root, handlers);
+  const result = await handlers["tools/call"]({
+    name: "product_ops_decide",
+    arguments: { requestId: gate.requestId, decisionToken: gate.decisionToken, apply: true }
+  });
+  assert.equal(result.isError, false, result.content[0].text);
+  assert.equal(result.structuredContent.selectedOption, null);
+  assert.deepEqual(result.structuredContent.conditions, []);
 });
 
 test("declining, cancelling, or answering incompletely records nothing", async (t) => {

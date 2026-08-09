@@ -26,7 +26,17 @@
           "requestedAt": { "type": "string", "format": "date-time" },
           "decidedAt": { "type": ["string", "null"], "format": "date-time" },
           "decidedByActorId": { "type": ["string", "null"] },
-          "rationale": { "type": ["string", "null"] }
+          "rationale": { "type": ["string", "null"] },
+          "selectedOption": {
+            "type": ["string", "null"],
+            "description": "Which of the offered options the product owner chose. Null on a plain approve-or-reject gate."
+          },
+          "conditions": {
+            "type": "array",
+            "uniqueItems": true,
+            "items": { "type": "string", "minLength": 1 },
+            "description": "What the product owner attached to the disposition. An approval with conditions is not the same record as a bare approval."
+          }
         }
       }
     }

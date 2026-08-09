@@ -20,6 +20,13 @@ All notable changes to this project will be documented here.
   reach release with nobody having challenged its assumptions. Operating model version 3, with a
   migration that upgrades routes the owner has not touched and leaves edited ones exactly as
   written — see `docs/migration/operating-model-v3.md`.
+- Let a gate carry the decision the owner actually made. A gate holds two things and they were
+  being flattened into one: the board needs a binary — does this proceed — but the owner usually has
+  more to say than yes. A disposition now records which of the offered options they chose and any
+  conditions they attached, in their own words, through the dialog, the panel composer, or the
+  conversation. A gate that offered real options refuses a bare yes rather than guessing which one
+  was meant. Those conditions then travel with the brief when the work is delegated, so the terms
+  that authorised a task reach the team doing it instead of stopping at the approval record.
 - Stopped sending the owner to a terminal to settle a gate. When a host cannot open a dialog, the
   refusal now points at the control tower panel's composer and the conversation, which is where the
   decision was always meant to happen.
