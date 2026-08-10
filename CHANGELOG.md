@@ -36,6 +36,15 @@ All notable changes to this project will be documented here.
 - Stopped sending the owner to a terminal to settle a gate. When a host cannot open a dialog, the
   refusal now points at the control tower panel's composer and the conversation, which is where the
   decision was always meant to happen.
+- Stopped handing out Windows paths that cannot survive being read. A brief's application path is
+  read by a subagent, pasted into a shell, and interpolated into tool calls, and a backslash is an
+  escape character in almost all of those — `D:\Projects\app` arrives as `D:Projectsapp`. Paths
+  reported to a performer now use forward slashes, which Node, Git and PowerShell all accept.
+- Told the performer that a failed retrieval is not an absence. The first real product run recorded
+  "no performance budget is documented" because one fetch returned a transient error and was never
+  retried; the verifier found the budget by simply asking again. Every document downstream had been
+  reasoning from a gap that was never there. The brief now carries the rule, and the coordinator's
+  standing instructions say to check whether a subagent looked or merely failed to.
 - Brought the crossing itself into the conversation. Exporting an approved delivery contract to the
   engineering repository and importing the result back were command-line only, held out of the
   model-reachable surface pending their own review. The review's answer: the authority line is not

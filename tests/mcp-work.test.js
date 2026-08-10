@@ -333,3 +333,37 @@ test("a brief with nothing decided carries no decisions rather than an empty cla
   const claim = (await call(handlers, "product_ops_next_work")).structuredContent;
   assert.deepEqual(claim.ownerDecisions, []);
 });
+
+/**
+ * A brief is read by a subagent, pasted into a shell, and interpolated into tool calls. A backslash
+ * survives none of that reliably — it is an escape character almost everywhere it lands, and
+ * `D:\Projects\app` arrives as `D:Projectsapp`.
+ */
+test("a path handed to whoever performs the work uses separators that survive being read", async (t) => {
+  const { root, handlers } = await workspace(t);
+  const application = path.join(path.dirname(root), "application");
+  await fs.mkdir(application, { recursive: true });
+  const { initializeDevelopmentOs } = await import("../src/development/init.js");
+  const { linkCommand } = await import("../src/commands/link.js");
+  await initializeDevelopmentOs(application, { dryRun: false });
+  await linkCommand(root, { application, apply: true });
+
+  const claim = (await call(handlers, "product_ops_next_work")).structuredContent;
+  const linked = claim.brief.linkedApplication.root;
+  assert.ok(linked, "the brief names the application it may reach");
+  assert.ok(!linked.includes("\\"), `a brief path must not carry backslashes: ${linked}`);
+  assert.equal(path.resolve(linked), path.resolve(application), "and it still resolves to the same place");
+});
+
+/**
+ * The first real product run recorded "no performance budget is documented" because one retrieval
+ * returned a transient error and was never retried. Every document downstream then reasoned from a
+ * gap that was never there.
+ */
+test("a brief tells the performer that a failed retrieval is not an absence", async (t) => {
+  const { handlers } = await workspace(t);
+  const claim = (await call(handlers, "product_ops_next_work")).structuredContent;
+  assert.equal(claim.brief.policy.retryBeforeRecordingAbsence, true);
+  assert.match(claim.brief.reporting.absenceRule, /retry/i);
+  assert.match(claim.brief.reporting.absenceRule, /record the failure/i);
+});

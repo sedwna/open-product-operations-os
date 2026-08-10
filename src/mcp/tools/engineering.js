@@ -11,6 +11,7 @@ import { INTAKE_STORE_FILE } from "../../constants.js";
 import { readJsonOptional } from "../../runtime/io.js";
 import { loadApprovals } from "../../runtime/approvals.js";
 import { loadTaskboard } from "../../runtime/taskboard.js";
+import { toPosixPath } from "../../paths.js";
 import { withControlPlaneLease } from "../../runtime/control-plane-lease.js";
 import { describeTeam } from "../app/teams.js";
 import { ToolFailure } from "../authority.js";
@@ -80,7 +81,7 @@ export async function nextEngineeringWork(context) {
         owner_role: workstream.ownerRole,
         status: workstream.status ?? "ready"
       }),
-      applicationRoot: application,
+      applicationRoot: reportablePath(application),
       planId,
       workstreamId: workstream.id,
       team: team.name,
@@ -93,7 +94,7 @@ export async function nextEngineeringWork(context) {
       brief: preview.payload
     },
     text: [
-      `Next engineering work: ${workstream.id} — ${team.name}, in ${application}.`,
+      `Next engineering work: ${workstream.id} — ${team.name}, in ${reportablePath(application)}.`,
       `That team's job is ${team.focus}.`,
       "",
       "Delegate this to a subagent working in the application repository. It may write only inside the contract's writeBoundary; the prohibited paths in the policy are refused outright, and the engineering operating model's own files are never application code.",
@@ -172,6 +173,18 @@ async function linkedApplication(root) {
     throw new ToolFailure("NO_LINKED_APPLICATION", "This workspace has no linked application, so there is no engineering side to carry work.");
   }
   return path.resolve(link.applicationRoot);
+}
+
+/**
+ * A path as it should be handed to whoever performs the work.
+ *
+ * Forward slashes even on Windows. This value is read by a subagent, pasted into a shell, or
+ * interpolated into a tool call, and a backslash survives none of those reliably — it is an escape
+ * character almost everywhere it lands, so `D:\Projects\app` arrives as `D:Projectsapp`. Node, Git
+ * and PowerShell all accept the forward-slash form, and nothing eats it silently.
+ */
+function reportablePath(value) {
+  return toPosixPath(value);
 }
 
 /** The most recent plan on disk. One request is in flight at a time by design. */
@@ -253,11 +266,11 @@ export async function openDelivery(context, args = {}) {
         applied: false,
         taskId: task.task_id,
         eventId: task.event_id,
-        applicationRoot: application,
+        applicationRoot: reportablePath(application),
         gate: gate ? { requestId: gate.requestId, status: gate.status } : null
       },
       text: [
-        `Planned: would build the delivery contract for ${task.task_id}, export it to ${application}, and plan it into engineering workstreams.`,
+        `Planned: would build the delivery contract for ${task.task_id}, export it to ${reportablePath(application)}, and plan it into engineering workstreams.`,
         gate?.status === "approved"
           ? "The owner has settled the development-export gate, so applying will cross."
           : "The development-export gate is not settled. Applying opens it and stops there; whether the work crosses is the owner's call.",
@@ -312,7 +325,7 @@ export async function openDelivery(context, args = {}) {
       applied: true,
       taskId: task.task_id,
       eventId: task.event_id,
-      applicationRoot: application,
+      applicationRoot: reportablePath(application),
       requestId: opened.request.requestId,
       planId: opened.plan.planId,
       sourceDigest: opened.plan.sourceDigest,
@@ -323,7 +336,7 @@ export async function openDelivery(context, args = {}) {
     },
     text: [
       `The delivery crossed. ${opened.request.requestId} is planned as ${opened.plan.planId} with ${opened.plan.workstreams.length} workstream(s); ${remaining.length} remain.`,
-      `Engineering works on branch ${opened.branch} in ${application}.`,
+      `Engineering works on branch ${opened.branch} in ${reportablePath(application)}.`,
       "",
       "Now drive the engineering half: product_ops_next_engineering_work hands out one workstream, you delegate it to a subagent working in that repository, and product_ops_submit_engineering_work takes the result back. Repeat until it reports every workstream complete.",
       "Then call product_ops_close_delivery to seal the runs, gather quality-gate evidence, and bring the result back to the product board."
