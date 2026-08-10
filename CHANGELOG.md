@@ -45,6 +45,27 @@ All notable changes to this project will be documented here.
   retried; the verifier found the budget by simply asking again. Every document downstream had been
   reasoning from a gap that was never there. The brief now carries the rule, and the coordinator's
   standing instructions say to check whether a subagent looked or merely failed to.
+- Sent the delivery contract across the boundary instead of the history that produced it. The
+  exported request flat-mapped every product card's acceptance criteria in board order and kept the
+  first thirty, so on a real product the earliest cards — idea triage, discovery — filled every slot
+  with criteria about reviewing documents, and the delivery contract's own criteria were cut off
+  below them. It also declared all thirty impact domains unconditionally: the product's declared
+  impacts were appended to a list that already contained everything, so they changed nothing. Since
+  the planner turns impacts into workstreams, a browser game was dispatched to all fifteen
+  engineering teams, including database and infrastructure, to satisfy acceptance criteria about
+  document review. The contract now comes from the card that authored it.
+- Made bypassing the decision dialog an explicit act rather than an impossible one. A host that
+  declares elicitation and never renders a dialog was a dead end: the declaration sent every call
+  down the dialog path, the dialog failed, and no second route existed — an owner in that host could
+  not settle a gate at all. `dialogUnavailable` now records their relayed words with `model_relayed`
+  attribution. It is deliberately explicit, because a silent fallback on any failed dialog would
+  also fire when the owner pressed decline, and would record an approval against someone who had
+  just refused one.
+- Stopped the panel being announced as though it had appeared. Attaching a resource and rendering
+  one are different events and only one of them happens where the server can see it; an agent
+  reporting "the panel opened" was reporting the attachment. That sent an owner looking for a window
+  that was never on their screen, twice.
+- Made the crossing gate state its own decision rather than quote the history leading to it.
 - Brought the crossing itself into the conversation. Exporting an approved delivery contract to the
   engineering repository and importing the result back were command-line only, held out of the
   model-reachable surface pending their own review. The review's answer: the authority line is not

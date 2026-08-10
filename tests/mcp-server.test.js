@@ -695,6 +695,101 @@ test("a plain approve-or-reject gate still takes a plain answer", async (t) => {
   assert.deepEqual(result.structuredContent.conditions, []);
 });
 
+/**
+ * A host that declares a dialog and never renders one used to be a dead end: the declaration sent
+ * every call down the dialog path, the dialog failed, and there was no second route. An owner in
+ * that host could not settle a gate at all — in a system whose entire claim is that gates are
+ * settled by owners. This is the host the owner's own run was stuck in.
+ */
+test("a declared dialog that never appears does not trap the owner's decision", async (t) => {
+  let asked = 0;
+  const { root, handlers } = await handlersFor(t, {
+    allowWrites: true,
+    elicit: async () => { asked += 1; return { action: "decline" }; }
+  });
+  const gate = await openGate(root, handlers);
+  const owned = {
+    requestId: gate.requestId,
+    decisionToken: gate.decisionToken,
+    apply: true,
+    decision: "approved",
+    actorId: "human-product-owner",
+    rationale: "Bounded work in a separate repository, and nothing ships without me."
+  };
+
+  // Supplying the words is not enough on its own: a dialog is tried, and a refusal is an answer.
+  const refused = await handlers["tools/call"]({ name: "product_ops_decide", arguments: owned });
+  assert.equal(refused.isError, true);
+  assert.equal(asked, 1, "the dialog must actually be attempted before it is written off");
+  assert.match(refused.content[0].text, /that is their answer and it stands/i);
+  assert.match(refused.content[0].text, /dialogUnavailable/);
+  assert.equal((await loadApprovals(root)).requests.find((item) => item.requestId === gate.requestId).status, "pending");
+
+  // Asserting that no dialog reached them is a separate, deliberate act.
+  const recorded = await handlers["tools/call"]({
+    name: "product_ops_decide",
+    arguments: { ...owned, dialogUnavailable: true }
+  });
+  assert.equal(recorded.isError, false, recorded.content[0].text);
+  assert.equal(recorded.structuredContent.decision, "approved");
+  assert.equal(recorded.structuredContent.attribution, "model_relayed", "the record must say how the words arrived");
+  assert.match(recorded.content[0].text, /verbatim/i, "the agent is told to show the owner what was recorded");
+  assert.equal(asked, 1, "and it does not re-open a dialog it was just told does not work");
+
+  const stored = (await loadApprovals(root)).requests.find((item) => item.requestId === gate.requestId);
+  assert.equal(stored.status, "approved");
+  assert.match(stored.rationale, /nothing ships without me/);
+});
+
+test("the dialog bypass carries the owner's words and never supplies them", async (t) => {
+  const { root, handlers } = await handlersFor(t, {
+    allowWrites: true,
+    elicit: async () => ({ action: "decline" })
+  });
+  const gate = await openGate(root, handlers);
+
+  for (const partial of [
+    {},
+    { decision: "approved" },
+    { decision: "approved", actorId: "human-product-owner" },
+    { decision: "approved", actorId: "human-product-owner", rationale: "   " }
+  ]) {
+    const result = await handlers["tools/call"]({
+      name: "product_ops_decide",
+      arguments: { requestId: gate.requestId, decisionToken: gate.decisionToken, apply: true, dialogUnavailable: true, ...partial }
+    });
+    assert.equal(result.isError, true, `must refuse: ${JSON.stringify(partial)}`);
+    const stored = (await loadApprovals(root)).requests.find((item) => item.requestId === gate.requestId);
+    assert.equal(stored.status, "pending");
+  }
+});
+
+test("a working dialog still wins over anything the caller supplied", async (t) => {
+  // The fallback exists for a dialog that cannot run, not for one whose answer is inconvenient.
+  const { root, handlers } = await handlersFor(t, {
+    allowWrites: true,
+    elicit: async () => ({
+      action: "accept",
+      content: { decision: "rejected", actorId: "human-product-owner", rationale: "Not until the migration story is written." }
+    })
+  });
+  const gate = await openGate(root, handlers);
+
+  const result = await handlers["tools/call"]({
+    name: "product_ops_decide",
+    arguments: {
+      requestId: gate.requestId,
+      decisionToken: gate.decisionToken,
+      apply: true,
+      decision: "approved",
+      actorId: "human-product-owner",
+      rationale: "Looks fine to me."
+    }
+  });
+  assert.equal(result.structuredContent.decision, "rejected");
+  assert.equal(result.structuredContent.attribution, "human_entered");
+});
+
 test("declining, cancelling, or answering incompletely records nothing", async (t) => {
   for (const response of [{ action: "decline" }, { action: "cancel" }, { action: "accept", content: { decision: "approved" } }]) {
     await t.test(`response ${JSON.stringify(response)}`, async (inner) => {

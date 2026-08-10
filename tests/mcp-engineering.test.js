@@ -197,11 +197,38 @@ test("a delivery crosses into engineering and comes back, entirely through the s
   assert.equal(waiting.applied, false, opening.content[0].text);
   assert.equal(waiting.reason, "waiting_on_owner", "the crossing is the owner's decision, not the loop's");
 
+  // The gate must state its own decision. It used to open by quoting every prior run joined
+  // together and cut from the front, so on a real product the owner was asked to authorise a
+  // crossing while reading the idea-triage note that led to it.
+  const gate = (await call(handlers, "product_ops_pending_decisions")).structuredContent
+    .items.find((item) => item.requestId === waiting.requestId);
+  assert.ok(gate, "the crossing gate reaches the owner through the ordinary decision list");
+  assert.match(gate.context, /acceptance criterion/i, "it says how much travels");
+  assert.match(gate.context, /does not authorise a production release/i, "and what approving does not buy");
+  assert.match(gate.context, /Rejecting leaves the product side intact/i, "and what rejecting costs");
+
   await settleGate(handlers, product, waiting.requestId);
 
   const crossing = await call(handlers, "product_ops_open_delivery", { apply: true });
   const crossed = crossing.structuredContent;
   assert.equal(crossed.applied, true, crossing.content[0].text);
+
+  // What crosses must be the delivery contract, not the history that produced it. The export used
+  // to flat-map every card's acceptance criteria in board order and keep the first thirty, so the
+  // earliest cards filled every slot and the contract's own criteria were cut off below them — and
+  // it declared all thirty impact domains unconditionally, which dispatched a browser game to every
+  // engineering team including database and infrastructure.
+  const exported = JSON.parse(await fs.readFile(
+    path.join(application, ".development-os", "inbox", `${crossed.requestId}.json`), "utf8"));
+  assert.ok(
+    exported.acceptanceCriteria.every((item) => /catalog|distance|run ends/i.test(item.statement)),
+    `the contract's own criteria must be what travels: ${JSON.stringify(exported.acceptanceCriteria.slice(0, 3))}`
+  );
+  assert.ok(
+    exported.impacts.length < 30,
+    `impacts must be what the product declared, not the whole enum: ${exported.impacts.length}`
+  );
+  assert.deepEqual(exported.impacts, ["frontend"], "and exactly what the delivery contract declared");
   assert.match(crossed.planId, /^ENGPLAN-/);
   assert.match(crossed.sourceDigest, /^[a-f0-9]{64}$/, "what crosses is a hashed contract");
   assert.ok(crossed.workstreams > 0);
@@ -299,10 +326,17 @@ async function deliveryWorkspace(t) {
   return { product, application, handlers };
 }
 
-/** The sealed run a completed product card carries, which is what the delivery contract reads. */
+/**
+ * The sealed run a completed product card carries.
+ *
+ * The earlier cards deliberately carry criteria about reviewing documents, and wider impacts, so
+ * that a contract assembled from all of them instead of from the delivery card is visibly wrong
+ * rather than coincidentally right. This is the shape the owner's own run had.
+ */
 async function writeProductRun(product, config, task) {
   const directory = path.join(product, ".product-ops", "runtime", "autopilot", "product-runs");
   await fs.mkdir(directory, { recursive: true });
+  const isContract = task.owner_role === "RB-06";
   const result = {
     schemaVersion: "1.0.0",
     taskId: task.task_id,
@@ -312,9 +346,11 @@ async function writeProductRun(product, config, task) {
     status: "completed",
     summary: `${task.title} completed for the delivery-crossing regression.`,
     findings: [],
-    recommendations: ["Show the distance reached when a run ends."],
-    acceptanceCriteria: [{ statement: "A finished run shows the distance reached.", verification: "Play one run and read the end screen." }],
-    impacts: ["frontend"],
+    recommendations: isContract ? ["Show the distance reached when a run ends."] : ["Record the options rather than choosing between them."],
+    acceptanceCriteria: isContract
+      ? [{ statement: "A finished run shows the distance reached.", verification: "Play one run and read the end screen." }]
+      : [{ statement: "The record does not select, approve, or rank any option.", verification: "Re-read the record and confirm no disposition appears in it." }],
+    impacts: isContract ? ["frontend"] : ["documentation", "database", "infrastructure"],
     constraints: [],
     nonFunctionalRequirements: [],
     evidence: [],

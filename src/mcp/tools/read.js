@@ -49,7 +49,12 @@ export async function panel(context) {
       state.text,
       "",
       "The control tower panel is attached to this result: both teams, where the work sits, what it is stuck behind, and a composer for each decision waiting on the owner.",
-      "If your host cannot render an MCP app it will not appear — say so plainly and read the figures above instead of describing a panel the owner cannot see."
+      // Attaching a resource and rendering one are different events, and only one of them happens
+      // where this code can see it. An agent that reports "the panel opened" is reporting the
+      // attachment and calling it the rendering — which has now twice sent an owner looking for a
+      // window that was never on their screen.
+      "Attached is not the same as rendered. Whether it appears is decided by the host, on a screen you cannot see, so do not tell the owner the panel opened, is showing anything, or is waiting for them in it.",
+      "If you need them to use it, ask first whether they can see it, and have a route ready for when they cannot: the figures above are the same data, and a gate can still be settled by asking them here in the conversation and passing back their words."
     ].join("\n")
   };
 }

@@ -310,6 +310,7 @@ export const TOOL_DEFINITIONS = Object.freeze([
         apply: { type: "boolean", default: false, description: "Open the dialog and record the answer. Omitted or false describes what would be asked." },
         source: { type: "string", enum: ["panel"], description: "Set only by the control tower panel, where the product owner composed the disposition themselves. Never set this yourself." },
         decision: { type: "string", enum: ["approved", "rejected"], description: "Only from the panel, or from a host that cannot open a dialog. Supply only what the product owner actually said." },
+        dialogUnavailable: { type: "boolean", default: false, description: "Set only after attempting the dialog and confirming with the product owner that no dialog reached them. Records their relayed words instead. Never set this because a dialog was declined — a decline is their answer." },
         selectedOption: { type: "string", maxLength: 200, description: "Which of the gate's offered options the owner chose. Required when the gate offered more than approve or reject." },
         conditions: {
           type: "array",
