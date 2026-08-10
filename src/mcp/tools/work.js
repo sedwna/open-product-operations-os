@@ -10,7 +10,7 @@ import { withControlPlaneLease } from "../../runtime/control-plane-lease.js";
 import { readAutomationLink } from "../../autopilot/state.js";
 import { describeTeam } from "../app/teams.js";
 import { ToolFailure } from "../authority.js";
-import { untrusted } from "../untrusted.js";
+import { untrusted, untrustedList } from "../untrusted.js";
 
 /**
  * The host-delegated execution path.
@@ -45,7 +45,8 @@ export async function nextWork(context) {
         },
         text: [
           `The next card, ${atBoundary[0].task_id}, is the hand-off to engineering, and this surface does not dispatch it.`,
-          "Crossing from product into development is a separate authority, exercised deliberately rather than as the next step in a loop: use `product-ops development` once the owner is ready, or the coordinator if one is configured to run unattended."
+          "Crossing from product into development is a separate authority, exercised deliberately rather than as the next step in a loop.",
+          "Run product_ops_operate. If no application repository is connected, that opens a decision for the owner describing what would be created; it will then appear in product_ops_pending_decisions like any other gate. Do not ask the owner to run commands — put the decision to them and act on their answer."
         ].join("\n")
       };
     }
@@ -70,6 +71,8 @@ export async function nextWork(context) {
   });
 
   const team = describeTeam(role.id, "product");
+  const decisions = ownerDecisions(approvals.requests, task, tasks);
+  const conditions = decisions.flatMap((decision) => decision.conditions);
   return {
     structuredContent: {
       available: true,
@@ -83,6 +86,7 @@ export async function nextWork(context) {
       title: untrusted(task.title, { source: "taskboard", id: task.task_id }),
       may: role.responsibilities ?? [],
       mustNot: role.prohibitedActions ?? [],
+      ownerDecisions: decisions,
       policy: brief.policy,
       brief
     },
@@ -90,10 +94,40 @@ export async function nextWork(context) {
       `Next ready work: ${task.task_id} — ${team.name}.`,
       `That team's job is ${team.focus}.`,
       "",
+      // A gate the owner settled with conditions is the owner setting terms for this work. Handing
+      // the brief over without them delegates the task and drops the decision that authorised it.
+      ...(conditions.length > 0
+        ? [`The product owner has already decided on this event, and their decision carries ${conditions.length} condition(s). They are in ownerDecisions. Pass them to the subagent as part of the work, and say in your result how each was met.`, ""]
+        : []),
       "Delegate this to a subagent scoped to that boundary. It must stay inside `may`, must not do anything in `mustNot`, and must not write repository files or take production actions.",
       "Return its result through product_ops_submit_work with this claimToken. The result is validated against the same contract a provider CLI would have to satisfy, so an answer that does not match the dispatched task is refused rather than recorded."
     ].join("\n")
   };
+}
+
+/**
+ * What the owner has already settled on this event.
+ *
+ * A gate is not only a permission to proceed. It is where the owner states which option they chose
+ * and on what terms, and those terms govern every task the event goes on to produce — not just the
+ * one card that happened to carry the gate.
+ */
+function ownerDecisions(requests, task, tasks) {
+  const sameEvent = new Set(
+    tasks.filter((candidate) => candidate.event_id === task.event_id).map((candidate) => candidate.task_id)
+  );
+  return requests
+    .filter((request) => request.status !== "pending" && request.decidedAt && sameEvent.has(request.taskId))
+    .map((request) => ({
+      requestId: request.requestId,
+      taskId: request.taskId,
+      gate: request.gate,
+      decision: request.status,
+      selectedOption: request.selectedOption ?? null,
+      conditions: untrustedList(request.conditions ?? [], { source: "human-decision", id: request.requestId }),
+      rationale: untrusted(request.rationale, { source: "human-decision", id: request.requestId }),
+      decidedAt: request.decidedAt
+    }));
 }
 
 export async function submitWork(context, args = {}) {

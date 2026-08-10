@@ -1,5 +1,6 @@
 import { INTAKE_STORE_FILE, SCHEMA_VERSION } from "../constants.js";
 import { loadApprovals, requestApproval } from "./approvals.js";
+import { readAutomationLink } from "../autopilot/state.js";
 import { runDevelopmentTask } from "./development-runner.js";
 import { readJsonOptional, utcTimestamp, writeJson } from "./io.js";
 import { withControlPlaneLease } from "./control-plane-lease.js";
@@ -60,9 +61,12 @@ async function controlTowerCycle(
     }
     const existing = tasks.filter((task) => task.event_id === record.eventId);
     if (existing.length === 0) {
-      let dependencyId = "";
-      for (const step of route.steps ?? fallbackSteps(route)) {
+      const steps = route.steps ?? fallbackSteps(route);
+      const idByKey = new Map();
+      const createdIds = [];
+      for (const [index, step] of steps.entries()) {
         const taskId = nextTaskId(config, tasks);
+        const dependencies = stepDependencies(step, index, idByKey, createdIds);
         const verifierRole =
           step.role === config.separation.independentVerifierRole
             ? config.separation.verificationOfVerifierRole ?? "RB-08"
@@ -73,9 +77,9 @@ async function controlTowerCycle(
           title: step.title,
           owner_role: step.role,
           owner_actor_id: actorFor(config, step.role),
-          status: dependencyId ? "backlog" : "ready",
+          status: dependencies.length > 0 ? "backlog" : "ready",
           priority: record.priority,
-          dependency_ids: dependencyId,
+          dependency_ids: dependencies.join("|"),
           blocked_reason: "",
           next_owner_role: "",
           unblock_condition: "",
@@ -89,7 +93,8 @@ async function controlTowerCycle(
           updated_at: timestamp
         };
         tasks.push(task);
-        dependencyId = taskId;
+        createdIds.push(taskId);
+        if (step.key) idByKey.set(step.key, taskId);
         actions.push({ type: "create_task", taskId, eventId: record.eventId, ownerRole: step.role });
       }
       taskboardChanged = true;
@@ -124,6 +129,46 @@ async function controlTowerCycle(
       }
     }
   }
+  // Reaching engineering with nowhere to send the work is a decision, not a dead end. The board
+  // used to stop here and report a boundary, leaving the owner to already know that an application
+  // repository must exist, that `development-os init` writes the engineering boundaries into it,
+  // and that `link` connects the two — and then to ask for all three. A gate states what would be
+  // created and waits, like every other decision that is theirs.
+  //
+  // Creating the repository is not authorising agents to work inside it. That stays a later,
+  // separate decision, and this gate says so rather than quietly bundling them.
+  const bridgeTasks = tasks.filter((task) =>
+    task.status === "ready" && task.owner_role === config.separation.developmentRole && !task.human_gate);
+  if (bridgeTasks.length > 0 && !(await hasLinkedApplication(root))) {
+    for (const task of bridgeTasks) {
+      const gate = "development_boundary_crossing";
+      const already = approvalStore.requests.find(
+        (request) => request.taskId === task.task_id && request.gate === gate
+      );
+      if (already) continue;
+      actions.push({ type: "request_human_approval", taskId: task.task_id, gate });
+      if (!dryRun) {
+        await requestApproval(root, {
+          taskId: task.task_id,
+          gate,
+          question: "The work has reached engineering and no application repository is connected. Create one and connect it?",
+          context: [
+            `Approving creates an application repository beside this workspace and writes the engineering operating model into it:`,
+            "fifteen engineering boundaries, quality gates, and its own Git history, kept entirely separate from this one.",
+            "It does not let any agent write code there. Enabling the engineering executors is a separate decision, asked later.",
+            `Rejecting leaves ${task.task_id} waiting; the product side can continue, but nothing crosses into implementation.`
+          ].join(" "),
+          options: ["approved", "rejected"],
+          recommendedOption: "approved",
+          risks: [
+            "An application repository someone already relies on gains a new namespace; on a fresh repository this is inert.",
+            "No code is written and no agent is authorised by this decision alone."
+          ]
+        }, { dryRun: false, now });
+      }
+    }
+  }
+
   const effectiveApprovals = dryRun ? approvalStore.requests : (await loadApprovals(root)).requests;
   for (const task of selectRunnableTasks(tasks, effectiveApprovals)) {
     const action = {
@@ -181,6 +226,26 @@ async function controlTowerCycle(
   return receipt;
 }
 
+/**
+ * What a routed step waits on.
+ *
+ * A step that declares `after` waits on exactly the steps it names, so work that shares a
+ * predecessor runs together instead of queueing behind whichever one happened to be written first.
+ * A step that declares nothing waits on the step before it, which is how every route behaved before
+ * keys existed and how a route written without them still behaves.
+ *
+ * An unresolved key is treated as the conservative case — wait for the previous step — rather than
+ * as no dependency at all. A typo must never make work start earlier than intended; configuration
+ * validation reports it separately.
+ */
+function stepDependencies(step, index, idByKey, createdIds) {
+  const previous = index === 0 ? [] : [createdIds[index - 1]];
+  if (!Array.isArray(step.after)) return previous;
+  const resolved = step.after.map((key) => idByKey.get(key));
+  if (resolved.some((id) => !id)) return previous;
+  return [...new Set(resolved)];
+}
+
 function fallbackSteps(route) {
   return [route.owner, ...route.reviewers].map((role) => ({
     role,
@@ -191,4 +256,19 @@ function fallbackSteps(route) {
 
 function actorFor(config, role) {
   return config.agents.find((agent) => agent.id === role)?.actorId ?? "";
+}
+
+/**
+ * Whether an application repository is connected and still resolvable.
+ *
+ * `readAutomationLink` throws when the link names a directory that has gone or has no Development
+ * OS configuration, which is the same answer as never having linked one for this purpose: there is
+ * nowhere to send engineering work.
+ */
+async function hasLinkedApplication(root) {
+  try {
+    return Boolean((await readAutomationLink(root)).applicationRoot);
+  } catch {
+    return false;
+  }
 }

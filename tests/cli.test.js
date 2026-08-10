@@ -806,3 +806,53 @@ test("an unreadable or malformed supplied file says which file and why", async (
     /Intake file not found/
   );
 });
+
+/**
+ * Exporting an approved delivery contract stamps it with the product workspace's revision. A
+ * workspace with no repository has none, so the export fails at the moment the owner has just
+ * authorised crossing into engineering — the worst place to find a missing prerequisite.
+ */
+test("init starts a Git history so an export has a revision to stamp", async (t) => {
+  const parent = await makeTempDirectory();
+  t.after(() => fs.rm(parent, { recursive: true, force: true }));
+  const target = path.join(parent, "versioned-product");
+  const output = captureIo();
+
+  assert.equal(await run(["init", target], output.io), 0);
+  const { runGit } = await import("../src/autopilot/shared.js");
+  const revision = (await runGit(target, ["rev-parse", "HEAD"])).stdout.trim();
+  assert.match(revision, /^[0-9a-f]{40}$/);
+  assert.match(output.stdout.join("\n"), /Git history/);
+  // Nothing left uncommitted: the revision must describe the workspace, not part of it.
+  assert.equal((await runGit(target, ["status", "--porcelain"])).stdout.trim(), "");
+  assert.equal(await run(["validate", target], output.io), 0);
+});
+
+test("init leaves an existing repository's history alone", async (t) => {
+  const parent = await makeTempDirectory();
+  t.after(() => fs.rm(parent, { recursive: true, force: true }));
+  const target = path.join(parent, "adopted-product");
+  await fs.mkdir(target, { recursive: true });
+  const { runGit } = await import("../src/autopilot/shared.js");
+  await runGit(target, ["init", "--quiet"]);
+  await fs.writeFile(path.join(target, "README.md"), "Someone else's repository.\n", "utf8");
+  await runGit(target, ["add", "-A"]);
+  await runGit(target, ["-c", "user.name=Owner", "-c", "user.email=owner@example.test", "commit", "--quiet", "-m", "first"]);
+  const before = (await runGit(target, ["rev-parse", "HEAD"])).stdout.trim();
+
+  const output = captureIo();
+  assert.equal(await run(["init", target], output.io), 0);
+  assert.equal((await runGit(target, ["rev-parse", "HEAD"])).stdout.trim(), before, "an existing history is not this command's to commit into");
+  assert.doesNotMatch(output.stdout.join("\n"), /Started a Git history/);
+});
+
+test("init can be told not to start a history, and says what that costs", async (t) => {
+  const parent = await makeTempDirectory();
+  t.after(() => fs.rm(parent, { recursive: true, force: true }));
+  const target = path.join(parent, "unversioned-product");
+  const output = captureIo();
+
+  assert.equal(await run(["init", target, "--no-git"], output.io), 0);
+  await assert.rejects(fs.access(path.join(target, ".git")));
+  assert.equal(await run(["validate", target], output.io), 0);
+});

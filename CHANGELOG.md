@@ -11,6 +11,61 @@ All notable changes to this project will be documented here.
   tower panel in the conversation.
 - Required a performer for every product agent run. Work is done by whoever the host delegates it
   to; the run function owns the contract around the work, never the doing.
+- Stopped routing every event as a queue of one. A route's steps each waited on the step written
+  before them, whatever they actually needed, so the board never offered more than one card and
+  validation design sat behind the implementation it was supposed to specify. A step now names what
+  it waits on by key, and the delivery contract fans out to validation design, risk audit, and
+  implementation at once, rejoining at QA. Risk and logic audit is asked on ordinary deliveries for
+  the first time; it had only ever appeared on workbook and governance routes, so an idea could
+  reach release with nobody having challenged its assumptions. Operating model version 3, with a
+  migration that upgrades routes the owner has not touched and leaves edited ones exactly as
+  written — see `docs/migration/operating-model-v3.md`.
+- Gave a new workspace a Git history at `init`. Exporting an approved delivery contract stamps it
+  with the workspace revision, so a workspace without a repository failed the export at the exact
+  moment the owner had just authorised crossing into engineering — a prerequisite nobody would think
+  to check, discovered at the worst possible point. An existing repository is never touched, a
+  missing `git` never fails initialisation, and a machine with no configured Git identity gets a
+  named workspace identity with the report saying so. `--no-git` opts out and states what it costs.
+- Let a gate carry the decision the owner actually made. A gate holds two things and they were
+  being flattened into one: the board needs a binary — does this proceed — but the owner usually has
+  more to say than yes. A disposition now records which of the offered options they chose and any
+  conditions they attached, in their own words, through the dialog, the panel composer, or the
+  conversation. A gate that offered real options refuses a bare yes rather than guessing which one
+  was meant. Those conditions then travel with the brief when the work is delegated, so the terms
+  that authorised a task reach the team doing it instead of stopping at the approval record.
+- Stopped sending the owner to a terminal to settle a gate. When a host cannot open a dialog, the
+  refusal now points at the control tower panel's composer and the conversation, which is where the
+  decision was always meant to happen.
+- Stopped handing out Windows paths that cannot survive being read. A brief's application path is
+  read by a subagent, pasted into a shell, and interpolated into tool calls, and a backslash is an
+  escape character in almost all of those — `D:\Projects\app` arrives as `D:Projectsapp`. Paths
+  reported to a performer now use forward slashes, which Node, Git and PowerShell all accept.
+- Told the performer that a failed retrieval is not an absence. The first real product run recorded
+  "no performance budget is documented" because one fetch returned a transient error and was never
+  retried; the verifier found the budget by simply asking again. Every document downstream had been
+  reasoning from a gap that was never there. The brief now carries the rule, and the coordinator's
+  standing instructions say to check whether a subagent looked or merely failed to.
+- Brought the crossing itself into the conversation. Exporting an approved delivery contract to the
+  engineering repository and importing the result back were command-line only, held out of the
+  model-reachable surface pending their own review. The review's answer: the authority line is not
+  crossed by whoever runs the command. It is crossed by the owner settling the gate, and what
+  travels is the hashed contract with its `sourceDigest`. Keeping the commands on the command line
+  protected nothing — it only meant the owner had to open a terminal at the exact moment they had
+  just authorised the crossing. `product_ops_open_delivery` and `product_ops_close_delivery` close
+  the last gap between an idea in a chat window and code in a repository.
+- Stopped a heartbeat from surrendering a lease nobody took. Under load a beat can fire after the
+  term it was meant to extend has lapsed; one transient write failure at that moment condemned a
+  lease whose file still named its holder. Displacement is now read from the file rather than
+  inferred from our own clock, and renewal reads twice before concluding, the way the write fence
+  already did.
+- Gave engineering the same host-delegated path the product side already had. The two halves had
+  been running on different execution models: a product could be driven all the way to an approved
+  delivery contract and then stop dead, because the only way to perform engineering work was to
+  spawn a CLI that most owners have not installed. `product_ops_next_engineering_work` and
+  `product_ops_submit_engineering_work` hand out and take back a workstream through exactly the
+  checks a spawned executor faced — schema, dispatch identity, ENG-15's read-only proof, sealing.
+  The boundary between the repositories was never the executor; it is the hashed contract, and it
+  is unchanged.
 - Kept the Windows `claude.cmd` shim resolution and moved it into the development boundary that
   needs it: running a batch file means running the command interpreter, which stays out of a path
   that takes contract text.

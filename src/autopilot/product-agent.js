@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { assertNoLinkTraversal, resolveInside } from "../paths.js";
+import { assertNoLinkTraversal, resolveInside, toPosixPath } from "../paths.js";
 import { validatePublishedSchema } from "../schema-validation.js";
 import { assertNoCredentialMaterial } from "../runtime/security.js";
 
@@ -94,7 +94,11 @@ export function buildProductAgentRequest(
   return {
     schemaVersion: "1.0.0",
     cycleId,
-    linkedApplication: applicationRoot ? { root: path.resolve(applicationRoot) } : null,
+    // Forward slashes even on Windows. This path is read by whoever performs the work — a subagent,
+    // a shell, a tool call — and a backslash survives none of that reliably: it is an escape
+    // character almost everywhere it lands, so `D:\Projects\app` arrives as `D:Projectsapp`. Node,
+    // Git and PowerShell all accept the forward-slash form, and it cannot be silently eaten.
+    linkedApplication: applicationRoot ? { root: toPosixPath(path.resolve(applicationRoot)) } : null,
     operationalArtifacts,
     project: config.project,
     task,
@@ -114,7 +118,15 @@ export function buildProductAgentRequest(
       noDirectRepositoryWrites: true,
       noProductionActions: true,
       noCredentialMaterial: true,
-      evidenceBeforeClaims: true
+      evidenceBeforeClaims: true,
+      // A retrieval that failed is a fact about the attempt, not about the world. Recording "no
+      // performance budget is documented" because one fetch returned an error puts a false absence
+      // into the record, and every document downstream then reasons from a gap that was never
+      // there — which is exactly what happened the first time a real product ran through this.
+      retryBeforeRecordingAbsence: true
+    },
+    reporting: {
+      absenceRule: "A source you could not reach is not a source that says nothing. Retry a failed retrieval at least once before recording anything as absent, and if it still fails, record the failure — what you tried and what it returned — rather than the absence."
     }
   };
 }

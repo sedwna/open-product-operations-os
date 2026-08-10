@@ -26,7 +26,7 @@ import {
 const HELP = `Product Operations OS CLI
 
 Usage:
-  product-ops init <target> [--dry-run] [--force]
+  product-ops init <target> [--dry-run] [--force] [--no-git]
   product-ops validate <target>
   product-ops link <target> --application <path> [--provider <codex|claude>] [--apply]
   product-ops generate-workbook <target> [--dry-run] [--force]
@@ -67,6 +67,7 @@ Options:
   --dry-run  Report planned writes without changing files.
   --force    Refresh replaceable scaffold; preserve operational CSV rows.
   --apply    Apply a runtime action; runtime commands default to dry-run.
+  --no-git   Do not start a Git history. Exporting to engineering then has no revision to stamp.
   -h, --help Show this help.
 `;
 
@@ -139,7 +140,7 @@ function parseArguments(argv) {
   const options = {};
   const providedOptions = new Set();
   const positional = [];
-  const flags = new Set(["--dry-run", "--force", "--apply", "--execute-development"]);
+  const flags = new Set(["--dry-run", "--force", "--apply", "--execute-development", "--no-git"]);
   const values = new Set(["--task", "--file", "--request", "--decision", "--actor", "--rationale", "--provider", "--output", "--answers", "--application"]);
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
@@ -185,7 +186,7 @@ function toOptionName(argument) {
 function validateCommandOptions(command, provided) {
   const runtime = ["dryRun", "apply"];
   const allowed = {
-    init: ["dryRun", "force"],
+    init: ["dryRun", "force", "noGit"],
     validate: [],
     link: ["apply", "application", "provider"],
     "generate-workbook": ["dryRun", "force"],

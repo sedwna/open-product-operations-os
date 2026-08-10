@@ -108,21 +108,44 @@ function startHeartbeat(entry, { ttlMs = DEFAULT_TTL_MS, now = () => new Date() 
   const beat = async () => {
     if (entry.lost || entry.released) return;
     const outcome = await renewControlPlaneLease(entry.lease, { ttlMs, now }).catch(() => "retry");
+    // A transient failure is worth another attempt. What it is not worth is inferring displacement
+    // from our own clock: under load a beat can fire after the term it was meant to extend has
+    // already lapsed, and one unlucky replace at that moment used to condemn a lease nobody had
+    // touched. The file is the only thing that knows who holds it, so ask it. A term past its
+    // expiry with our own identity still written in it has not been reclaimed — it is a term we are
+    // late renewing, and we renew it.
+    //
+    // Both questions are asked before the entry is read, so the state this decides on is the state
+    // as it stands now rather than as it stood before the awaits.
+    const keepBeating = outcome === "retry" ? await stillOurs(entry.lease) : false;
     if (entry.lost || entry.released) return;
     if (outcome === "renewed") {
       entry.heartbeat = schedule(beat, interval);
       return;
     }
-    // A transient failure is worth another attempt, but only while the current term still has time
-    // left in it. Once it lapses another surface may legitimately reclaim, and continuing to write
-    // on the assumption that nobody did is the thing this lease exists to prevent.
-    if (outcome === "retry" && Date.parse(entry.lease.expiresAt) > now().getTime()) {
+    if (keepBeating) {
       entry.heartbeat = schedule(beat, Math.max(POLL_INTERVAL_MS, Math.floor(interval / 2)));
       return;
     }
     entry.lost = true;
   };
   return schedule(beat, interval);
+}
+
+/**
+ * Does the lease file still name us?
+ *
+ * An unreadable file is not an answer, so it counts as still ours and the beat tries again. That is
+ * the safe direction: keeping a lease we may not hold costs one refused write at the fence, which
+ * reads from disk before every canonical write. Dropping one we do hold costs the work.
+ */
+async function stillOurs(lease) {
+  try {
+    const current = await readLease(lease.file);
+    return current === null || current.holderId === lease.holderId;
+  } catch {
+    return true;
+  }
 }
 
 function schedule(beat, interval) {
@@ -144,7 +167,12 @@ function schedule(beat, interval) {
  */
 export async function renewControlPlaneLease(lease, { ttlMs = DEFAULT_TTL_MS, now = () => new Date() } = {}) {
   if (!lease?.file || !lease.holderId) return "displaced";
-  const existing = await readLease(lease.file);
+  // Read again before concluding, the way the write fence does. A lease being replaced — by another
+  // surface's acquisition or by our own previous beat — is briefly absent or half-visible on some
+  // filesystems, and treating that instant as displacement condemns a lease nobody took. A genuine
+  // displacement is still there on the second look.
+  let existing = await readLease(lease.file);
+  if (existing?.holderId !== lease.holderId) existing = await readLease(lease.file);
   if (!existing || existing.holderId !== lease.holderId) return "displaced";
 
   const renewed = { ...existing, expiresAt: new Date(now().getTime() + ttlMs).toISOString() };

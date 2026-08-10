@@ -146,6 +146,10 @@ workstream summary, and is still bounded.
 | `product_ops_autopilot` | `start \| pause \| resume \| retry` on the local coordinator | guarded |
 | `product_ops_next_work` | Hand out one team's bounded brief for the host to delegate | reads only |
 | `product_ops_submit_work` | Record what the host's subagent produced | `apply: false` |
+| `product_ops_open_delivery` | Export an approved delivery contract to the application and plan it | `apply: false` |
+| `product_ops_next_engineering_work` | Hand out one engineering workstream from the linked application | reads only |
+| `product_ops_submit_engineering_work` | Record what the host's engineering subagent produced | `apply: false` |
+| `product_ops_close_delivery` | Seal the completed workstreams and import the result | `apply: false` |
 
 ## Who performs the work
 
@@ -166,9 +170,25 @@ The provider readiness probes in `src/codex/` and `src/claude/` belong to the sp
 Nothing on the host-delegated path detects, installs, or authenticates a CLI — the host already
 knows who it is.
 
-`product_ops_next_work` never hands out the development boundary. Dispatching engineering work
-crosses the Product/Development authority line and stays out of this surface, exactly as
-`product_ops_operate` fixes `executeDevelopment` to false.
+`product_ops_next_work` never hands out the development boundary. A product task owned by the
+development role is not delegable through it, exactly as `product_ops_operate` fixes
+`executeDevelopment` to false — crossing that line is the owner's decision, and the control plane
+raises a `development_boundary_crossing` gate rather than stepping over it.
+
+### The engineering half
+
+Once the owner has approved the crossing and an application is linked, engineering work is delegated
+the same way product work is. `product_ops_next_engineering_work` reads the plan in the *linked
+application repository*, finds a workstream whose dependencies are satisfied, and returns its brief:
+the team, the contract's `writeBoundary`, and the prohibited paths. `product_ops_submit_engineering_work`
+returns the result through `runEngineeringWorkstream` — the same schema validation, the same
+dispatch-identity check, the same read-only proof for ENG-15, the same sealing that a spawned CLI
+would have faced.
+
+This is not a second boundary. It is the same one: what crosses between the repositories is the
+hashed contract with its `sourceDigest`, and that is unchanged by who performs the work. Only the
+performer moved — from a CLI this process starts to a subagent the host already has. Independent
+verification is handed out last, because ENG-15 reproduces claims the others have not yet made.
 
 ### The claim
 
@@ -186,9 +206,19 @@ matching the current dashboard contract where the flag is set only on the writab
 | --- | --- |
 | `product_ops_decide` | Record an attributed approval or rejection against a pending gate |
 
-`development_export` and `development_import` are deliberately excluded from v1. They cross the
-Product/Development authority boundary and deserve their own review before becoming
-model-reachable.
+`development_export` and `development_import` were deliberately excluded from v1, pending their own
+review, and that review has happened. They are now reachable as `product_ops_open_delivery` and
+`product_ops_close_delivery`.
+
+The reasoning: the authority line is not crossed by whoever runs the command. It is crossed by the
+owner settling the `development-export` gate, and what travels is the hashed contract with its
+`sourceDigest`, which the engineering side verifies against. Neither of those changes with the
+caller. Keeping the commands off this surface did not protect the boundary — it only meant the owner
+had to open a terminal at the exact moment they had just authorised the crossing.
+
+Both tools plan by default. `open_delivery` refuses to cross an unsettled gate and says so;
+`close_delivery` refuses to close over a workstream with no sealed result, and refuses a delivery
+that changed nothing.
 
 ## Resources
 

@@ -342,7 +342,7 @@ async function refreshCycleRouting(root, now) {
   return { headers: loaded.headers, tasks, approvals };
 }
 
-async function loadProductRuns(root, tasks, beforeTaskId) {
+export async function loadProductRuns(root, tasks, beforeTaskId) {
   const results = [];
   for (const task of tasks) {
     if (task.task_id === beforeTaskId) break;
@@ -377,7 +377,7 @@ async function loadRecentCycleReports(root, limit) {
   return reports;
 }
 
-async function recordEngineeringProductRun(root, config, task, delivery, now) {
+export async function recordEngineeringProductRun(root, config, task, delivery, now) {
   const role = config.agents.find((candidate) => candidate.id === task.owner_role);
   const result = {
     schemaVersion: "1.0.0",
@@ -553,6 +553,17 @@ export function classifyAutopilotError(error) {
 export function transientRetryDelay(attempt) {
   return Math.min(60_000, 1_000 * (2 ** Math.max(0, attempt - 1)));
 }
+/**
+ * Paths the cycle itself writes. Anything else in the tree belongs to someone the coordinator did
+ * not consult, and it stops rather than sweeping the change into its own commit.
+ *
+ * `events/` joined the list when intake began recording the event it opens: the file is part of the
+ * very intake being processed, and treating it as a stranger's edit halted the cycle it belonged to.
+ */
 function isManagedProductPath(file) {
-  return file.startsWith(".product-ops/") || file === "taskboard/tasks.csv" || file.startsWith("product-intake/") || file.startsWith("workbook/");
+  return file.startsWith(".product-ops/")
+    || file === "taskboard/tasks.csv"
+    || file.startsWith("product-intake/")
+    || file.startsWith("events/")
+    || file.startsWith("workbook/");
 }

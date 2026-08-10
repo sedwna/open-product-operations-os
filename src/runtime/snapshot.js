@@ -133,8 +133,10 @@ export async function loadEngineeringProgress(applicationRoot) {
         updatedAt: value("updated_at")
       };
     }).filter((workstream) => workstream.id);
-    if (workstreams.length === 0) return null;
 
+    // An empty board is still a board. Returning null here made "the application has no planned
+    // work" indistinguishable from "there is no application", and every reader downstream inherited
+    // the ambiguity. Absence is null; emptiness is zero.
     const withStatus = (statuses) => workstreams.filter((workstream) => statuses.includes(workstream.status));
     return {
       total: workstreams.length,

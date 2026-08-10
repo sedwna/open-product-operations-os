@@ -2,6 +2,7 @@ import { TIERS } from "./authority.js";
 import * as read from "./tools/read.js";
 import * as write from "./tools/write.js";
 import * as work from "./tools/work.js";
+import * as engineering from "./tools/engineering.js";
 import { adopt } from "./tools/adopt.js";
 import { decide } from "./tools/decide.js";
 import { PANEL_URI } from "./app/panel.js";
@@ -231,6 +232,68 @@ export const TOOL_DEFINITIONS = Object.freeze([
     handler: work.submitWork
   },
   {
+    name: "product_ops_open_delivery",
+    title: "Cross an approved delivery into engineering",
+    description: "Build the delivery contract for the card waiting at the engineering boundary, export it to the linked application, and plan it into workstreams. Plans by default; crossing needs the owner's settled gate.",
+    tier: TIERS.PLAN,
+    annotations: PLAN_ANNOTATIONS,
+    inputSchema: {
+      type: "object",
+      properties: {
+        apply: { type: "boolean", default: false, description: "Cross the boundary. Omitted or false returns the plan only." }
+      },
+      additionalProperties: false
+    },
+    handler: engineering.openDelivery
+  },
+  {
+    name: "product_ops_close_delivery",
+    title: "Return finished engineering work to the product board",
+    description: "Seal the completed workstreams, prove something was built inside the contract's boundary, gather quality-gate evidence, and import the result. Plans by default.",
+    tier: TIERS.PLAN,
+    annotations: PLAN_ANNOTATIONS,
+    inputSchema: {
+      type: "object",
+      properties: {
+        apply: { type: "boolean", default: false, description: "Close the delivery. Omitted or false returns the plan only." }
+      },
+      additionalProperties: false
+    },
+    handler: engineering.closeDelivery
+  },
+  {
+    name: "product_ops_next_engineering_work",
+    title: "Take the next ready engineering workstream",
+    description: "Hand out one bounded engineering brief from the linked application for you to delegate. Reads only.",
+    tier: TIERS.PLAN,
+    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    handler: engineering.nextEngineeringWork
+  },
+  {
+    name: "product_ops_submit_engineering_work",
+    title: "Return a completed engineering workstream",
+    description: "Record what your subagent produced for a claimed workstream. Plans by default; set apply true to record it.",
+    tier: TIERS.PLAN,
+    annotations: PLAN_ANNOTATIONS,
+    inputSchema: {
+      type: "object",
+      properties: {
+        workstreamId: { type: "string", minLength: 1, maxLength: 80 },
+        claimToken: { type: "string", minLength: 32, maxLength: 32, description: "Issued by product_ops_next_engineering_work; it cannot be constructed." },
+        result: {
+          type: "object",
+          description: "The subagent's output. Validated against engineering-workstream-run.schema.json and against the dispatched workstream; a mismatch is refused, not recorded.",
+          additionalProperties: true
+        },
+        apply: { type: "boolean", default: false, description: "Record the result. Omitted or false returns the plan only." }
+      },
+      required: ["workstreamId", "claimToken", "result"],
+      additionalProperties: false
+    },
+    handler: engineering.submitEngineeringWork
+  },
+  {
     name: "product_ops_decide",
     title: "Record a human decision",
     description: "Put a pending human gate to the product owner and record their disposition. The decision and rationale are collected from the person, not from you.",
@@ -247,6 +310,13 @@ export const TOOL_DEFINITIONS = Object.freeze([
         apply: { type: "boolean", default: false, description: "Open the dialog and record the answer. Omitted or false describes what would be asked." },
         source: { type: "string", enum: ["panel"], description: "Set only by the control tower panel, where the product owner composed the disposition themselves. Never set this yourself." },
         decision: { type: "string", enum: ["approved", "rejected"], description: "Only from the panel, or from a host that cannot open a dialog. Supply only what the product owner actually said." },
+        selectedOption: { type: "string", maxLength: 200, description: "Which of the gate's offered options the owner chose. Required when the gate offered more than approve or reject." },
+        conditions: {
+          type: "array",
+          maxItems: 20,
+          items: { type: "string", minLength: 1, maxLength: 400 },
+          description: "What the owner attached to the disposition, in their words. An approval with conditions is not a bare approval."
+        },
         actorId: { type: "string", maxLength: 80, description: "Must be the configured human authority actor." },
         rationale: { type: "string", maxLength: 2000, description: "The owner's own reasoning, not your summary of it." }
       },

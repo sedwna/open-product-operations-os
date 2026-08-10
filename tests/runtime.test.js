@@ -66,9 +66,9 @@ test("control tower selects ready tasks and routes normalized intake", async (t)
     dryRun: false,
     now: new Date("2026-08-01T10:02:00Z")
   });
-  assert.equal(applied.actions.filter((action) => action.type === "create_task").length, 12);
+  assert.equal(applied.actions.filter((action) => action.type === "create_task").length, 13);
   const taskRows = parseCsv(await fs.readFile(path.join(target, TASKBOARD_FILE), "utf8"));
-  assert.equal(taskRows.length, 14);
+  assert.equal(taskRows.length, 15);
   const verifierTask = taskRows.find((row) => row[3] === "RB-12");
   assert.equal(verifierTask[14], "RB-08");
   const eventRows = taskRows.filter((row, index) => index > 0 && row[1] === "EVT-20260801-001");
@@ -80,6 +80,90 @@ test("control tower selects ready tasks and routes normalized intake", async (t)
   });
   assert.ok(progressed.actions.some((action) => action.type === "promote_task" && action.taskId === eventRows[1][0]));
   assert.equal(await run(["validate", target], output.io), 0);
+});
+
+/**
+ * Routing used to be a queue of one: every step waited on whichever step was written before it,
+ * so validation design sat behind implementation and the board could only ever offer one card.
+ * These hold the shape that replaced it — what waits on what, and what no longer does.
+ */
+test("work that shares a predecessor is routed to run together", async (t) => {
+  const { target } = await initializedProject(t, "parallel-routing");
+  const config = await loadConfig(target);
+  await ingestRecord(target, {
+    type: "new_idea",
+    title: "Parallel routing fixture",
+    description: "An idea routed through the full product chain.",
+    source: "local synthetic fixture",
+    priority: "P2"
+  }, { dryRun: false, now: new Date("2026-08-01T10:00:00Z") });
+  await runControlTower(target, config, { dryRun: false, now: new Date("2026-08-01T10:02:00Z") });
+
+  const rows = parseCsv(await fs.readFile(path.join(target, TASKBOARD_FILE), "utf8"));
+  const header = rows[0];
+  const tasks = rows.slice(1)
+    .filter((row) => row[header.indexOf("event_id")] === "EVT-20260801-001")
+    .map((row) => Object.fromEntries(header.map((name, index) => [name, row[index]])));
+  const byTitle = (fragment) => tasks.find((task) => task.title.includes(fragment));
+  const dependenciesOf = (fragment) => byTitle(fragment).dependency_ids.split("|").filter(Boolean);
+
+  const contract = byTitle("delivery contract");
+  // Three teams read the same delivery contract. None of them is a step in the others' way.
+  for (const fragment of ["Design validation", "Audit assumptions", "Implement approved delivery"]) {
+    assert.deepEqual(dependenciesOf(fragment), [contract.task_id], `${fragment} waits on the contract alone`);
+  }
+  assert.ok(
+    !dependenciesOf("Design validation").includes(byTitle("Implement approved delivery").task_id),
+    "designing the validation must not wait for the thing it is meant to validate"
+  );
+  // QA is where the two rejoin, and it needs both.
+  assert.deepEqual(
+    dependenciesOf("Execute QA").sort(),
+    [byTitle("Design validation").task_id, byTitle("Implement approved delivery").task_id].sort()
+  );
+  // Exactly one card opens the event; everything else is held until what it named is done.
+  assert.equal(tasks.filter((task) => task.status === "ready").length, 1);
+  assert.equal(tasks.filter((task) => task.status === "ready")[0].title, "Triage idea");
+  assert.ok(tasks.some((task) => task.owner_role === "RB-08"), "risk and logic audit is asked on a normal delivery");
+});
+
+test("a step that waits on more than one predecessor opens only when all of them are done", async (t) => {
+  const { target } = await initializedProject(t, "join-routing");
+  const config = await loadConfig(target);
+  const complete = async (fragment) => {
+    const rows = parseCsv(await fs.readFile(path.join(target, TASKBOARD_FILE), "utf8"));
+    const titleColumn = rows[0].indexOf("title");
+    const statusColumn = rows[0].indexOf("status");
+    rows.find((row, index) => index > 0 && row[titleColumn].includes(fragment))[statusColumn] = "done";
+    await fs.writeFile(path.join(target, TASKBOARD_FILE), stringifyCsv(rows), "utf8");
+    return runControlTower(target, config, { dryRun: false, now: new Date("2026-08-01T10:03:00Z") });
+  };
+  const statusOf = async (fragment) => {
+    const rows = parseCsv(await fs.readFile(path.join(target, TASKBOARD_FILE), "utf8"));
+    const titleColumn = rows[0].indexOf("title");
+    return rows.find((row, index) => index > 0 && row[titleColumn].includes(fragment))[rows[0].indexOf("status")];
+  };
+
+  await ingestRecord(target, {
+    type: "user_finding",
+    title: "Join routing fixture",
+    description: "A finding whose delivery fans out and rejoins.",
+    source: "local synthetic fixture",
+    priority: "P2"
+  }, { dryRun: false, now: new Date("2026-08-01T10:00:00Z") });
+  await runControlTower(target, config, { dryRun: false, now: new Date("2026-08-01T10:02:00Z") });
+
+  await complete("Triage finding");
+  await complete("Author delivery contract");
+  assert.equal(await statusOf("Design validation"), "ready");
+  assert.equal(await statusOf("Implement approved delivery"), "ready");
+  assert.equal(await statusOf("Execute QA"), "backlog");
+
+  await complete("Design validation");
+  assert.equal(await statusOf("Execute QA"), "backlog", "half a join is not a join");
+
+  await complete("Implement approved delivery");
+  assert.equal(await statusOf("Execute QA"), "ready");
 });
 
 test("control tower creates durable human gates and dispatches only after attributed approval", async (t) => {
@@ -264,11 +348,47 @@ test("migration upgrades a legacy generated project with a recoverable configura
   legacy.adapters.git.type = "placeholder";
   await writeJson(configPath, legacy);
   const result = await migrateProject(target, legacy, { dryRun: false, now: new Date("2026-08-01T15:00:00Z") });
-  assert.equal(result.toVersion, 2);
-  assert.equal((await readJson(configPath)).operations.modelVersion, 2);
+  assert.equal(result.toVersion, 3);
+  assert.equal((await readJson(configPath)).operations.modelVersion, 3);
   assert.equal((await readJson(configPath)).separation.verificationOfVerifierRole, "RB-08");
   assert.ok((await readJson(configPath)).routing.every((route) => route.steps.length > 0));
+  // A route restored from the version-1 gap arrives at the current shape, keys and all.
+  const migratedIdea = (await readJson(configPath)).routing.find((route) => route.event === "new_idea");
+  assert.ok(migratedIdea.steps.every((step) => step.key), "every step is named so later steps can wait on it");
+  assert.deepEqual(migratedIdea.steps.find((step) => step.key === "implement").after, ["contract"]);
   await fs.access(path.join(target, ".product-ops/migrations", result.runId, CONFIG_FILE));
+  assert.equal(await run(["validate", target], output.io), 0);
+});
+
+test("migration parallelises untouched routes and leaves an edited one exactly as written", async (t) => {
+  const { target, output } = await initializedProject(t, "custom-routing-product");
+  const configPath = path.join(target, CONFIG_FILE);
+  const legacy = await readJson(configPath);
+  legacy.operations.modelVersion = 2;
+  // The version-2 shape: a serial chain with no keys, and no risk audit on a delivery route.
+  for (const route of legacy.routing) {
+    route.steps = route.steps
+      .filter((step) => step.key !== "risk")
+      .map(({ role, title, humanGate }) => ({ role, title, humanGate }));
+  }
+  // One route its owner has deliberately changed. A routing table says how this product works;
+  // an upgrade may improve what the owner did not decide, never overwrite what they did.
+  const edited = legacy.routing.find((route) => route.event === "user_finding");
+  edited.steps = [{ role: "RB-05", title: "Triage finding our way", humanGate: "" }];
+  await writeJson(configPath, legacy);
+
+  const result = await migrateProject(target, legacy, { dryRun: false, now: new Date("2026-08-01T15:00:00Z") });
+  const migrated = await readJson(configPath);
+  assert.ok(result.changes.some((change) => change.startsWith("routing_steps_parallelised:")));
+  assert.ok(result.changes.some((change) => change.startsWith("routing_steps_left_as_customised:")));
+  assert.deepEqual(
+    migrated.routing.find((route) => route.event === "user_finding").steps,
+    [{ role: "RB-05", title: "Triage finding our way", humanGate: "" }]
+  );
+  assert.deepEqual(
+    migrated.routing.find((route) => route.event === "new_idea").steps.find((step) => step.key === "validation-design").after,
+    ["contract"]
+  );
   assert.equal(await run(["validate", target], output.io), 0);
 });
 

@@ -20,12 +20,69 @@ const ALL_IMPACTS = [
   "performance", "resilience", "cost", "seo", "documentation"
 ];
 
+/**
+ * A delivery crossing into engineering, in three phases.
+ *
+ * It used to be one function that opened the crossing, ran every workstream itself, and closed it
+ * again. That only works when the performer is a CLI this process starts. When the performer is a
+ * subagent the host already has, the middle cannot be a loop in here — the host has to be able to
+ * take one workstream, do it, and come back. So the crossing is now `openDelivery`, whatever
+ * performs the work, and `closeDelivery`.
+ *
+ * The phases are the same code the single function ran, in the same order, with the same checks.
+ * What changed is that the middle is no longer required to be ours.
+ */
 export async function runEngineeringDelivery(
   productRoot,
   applicationRoot,
   productConfig,
   task,
   { intake, productRuns, cycleId, autoApprove, now = new Date(), executeWorkstream = runEngineeringWorkstream } = {}
+) {
+  const opened = await openEngineeringDelivery(productRoot, applicationRoot, productConfig, task, {
+    intake, productRuns, cycleId, autoApprove, now
+  });
+  if (opened.status !== "open") return opened;
+
+  const { plan, developmentConfig, runs } = opened;
+  for (const workstream of dependencyOrderedWorkstreams(plan.workstreams)) {
+    if (runs.has(workstream.id)) continue;
+    await writeEngineeringTaskboard(applicationRoot, plan, runs, { active: workstream.id });
+    const execution = await executeWorkstream(applicationRoot, plan.planId, workstream.id, { dryRun: false });
+    if (execution.result?.status !== "completed") {
+      await writeEngineeringTaskboard(applicationRoot, plan, runs, { failed: workstream.id });
+      throw new Error(`Engineering workstream ${workstream.id} stopped with ${execution.result?.status ?? "no result"}.`);
+    }
+    runs.set(workstream.id, execution.result);
+    await writeEngineeringTaskboard(applicationRoot, plan, runs);
+  }
+
+  return closeEngineeringDelivery(productRoot, applicationRoot, {
+    request: opened.request,
+    plan,
+    requestDigest: opened.requestDigest,
+    developmentConfig,
+    runs,
+    branch: opened.branch,
+    cycleId,
+    now
+  });
+}
+
+/**
+ * Open the crossing: settle the approval, build the contract, export it, plan it.
+ *
+ * Returns `waiting_for_human` when the gate is not settled — the crossing is the owner's decision
+ * and this never makes it on their behalf. Returns `implementation_complete` when a completed
+ * result is already sitting in the outbox, which is how an interrupted delivery resumes instead of
+ * repeating itself.
+ */
+export async function openEngineeringDelivery(
+  productRoot,
+  applicationRoot,
+  productConfig,
+  task,
+  { intake, productRuns, cycleId, autoApprove = false, now = new Date() } = {}
 ) {
   const branch = await prepareCycleBranch(applicationRoot, cycleId);
   const approval = await ensureDevelopmentApproval(productRoot, productConfig, task, {
@@ -57,38 +114,51 @@ export async function runEngineeringDelivery(
   const planned = await planDevelopmentRequest(applicationRoot, exportedFile, { dryRun: false });
   await writeEngineeringTaskboard(applicationRoot, planned.plan, new Map());
 
+  // A run already on disk is work that was done and sealed. Repeating it would discard evidence and
+  // produce a second claim about the same thing.
   const runs = new Map();
   for (const workstream of planned.plan.workstreams) {
     const previous = await loadExistingWorkstreamRun(applicationRoot, planned.plan, workstream, developmentConfig);
-    if (previous) {
-      runs.set(workstream.id, previous);
-    }
+    if (previous) runs.set(workstream.id, previous);
   }
   await writeEngineeringTaskboard(applicationRoot, planned.plan, runs);
-  for (const workstream of dependencyOrderedWorkstreams(planned.plan.workstreams)) {
-    if (runs.has(workstream.id)) continue;
-    await writeEngineeringTaskboard(applicationRoot, planned.plan, runs, { active: workstream.id });
-    const execution = await executeWorkstream(applicationRoot, planned.plan.planId, workstream.id, { dryRun: false });
-    if (execution.result?.status !== "completed") {
-      await writeEngineeringTaskboard(applicationRoot, planned.plan, runs, { failed: workstream.id });
-      throw new Error(`Engineering workstream ${workstream.id} stopped with ${execution.result?.status ?? "no result"}.`);
-    }
-    runs.set(workstream.id, execution.result);
-    await writeEngineeringTaskboard(applicationRoot, planned.plan, runs);
-  }
 
+  return {
+    status: "open",
+    approval,
+    request,
+    requestDigest: planned.digest,
+    plan: planned.plan,
+    developmentConfig,
+    runs,
+    branch
+  };
+}
+
+/**
+ * Close the crossing: prove something was built, seal the runs, gather gate evidence, and bring the
+ * result back across as a product record.
+ *
+ * The proof is not optional and does not depend on who performed the work. A delivery that reports
+ * every workstream complete and changed nothing is not a delivery.
+ */
+export async function closeEngineeringDelivery(
+  productRoot,
+  applicationRoot,
+  { request, plan, requestDigest, developmentConfig, runs, branch, cycleId, now = new Date() }
+) {
   const changedComponents = await changedImplementationComponents(applicationRoot);
   if (changedComponents.length === 0) {
-    throw new Error("Engineering executors completed without producing implementation changes.");
+    throw new Error("Engineering completed every workstream without producing implementation changes.");
   }
   await assertImplementationBoundary(applicationRoot, changedComponents, developmentConfig.policies);
   const implementationRevision = await implementationDigest(applicationRoot, changedComponents);
-  const sealedRuns = await sealWorkstreamRuns(applicationRoot, planned.plan, runs, implementationRevision);
-  const evidence = await createGateEvidence(applicationRoot, planned.plan, sealedRuns, implementationRevision, now);
+  const sealedRuns = await sealWorkstreamRuns(applicationRoot, plan, runs, implementationRevision);
+  const evidence = await createGateEvidence(applicationRoot, plan, sealedRuns, implementationRevision, now);
   const result = buildEngineeringResult({
     request,
-    plan: planned.plan,
-    requestDigest: planned.digest,
+    plan,
+    requestDigest,
     config: developmentConfig,
     sealedRuns,
     evidence,
@@ -107,7 +177,7 @@ export async function runEngineeringDelivery(
   return {
     status: "implementation_complete",
     request,
-    plan: planned.plan,
+    plan,
     result: imported.result,
     productReceipt: imported.receipt,
     branch,
@@ -383,8 +453,17 @@ async function implementationDigest(root, files) {
   return hash.digest("hex");
 }
 
+/**
+ * The branch a cycle's work lives on, derivable without touching the repository. Closing a delivery
+ * needs the name after the work is done, when the tree is no longer clean and switching would be
+ * both unnecessary and unsafe.
+ */
+export function cycleBranch(cycleId) {
+  return `codex/${safeId(cycleId).toLowerCase()}`;
+}
+
 async function prepareCycleBranch(root, cycleId) {
-  const branch = `codex/${safeId(cycleId).toLowerCase()}`;
+  const branch = cycleBranch(cycleId);
   const current = (await runGit(root, ["branch", "--show-current"])).stdout.trim();
   if (current === branch) return branch;
   await assertCleanGit(root);

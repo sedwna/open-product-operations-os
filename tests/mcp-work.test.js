@@ -249,3 +249,121 @@ test("reaching the engineering hand-off is reported as a boundary, not as an emp
   assert.match(result.content[0].text, /hand-off to engineering/);
   assert.doesNotMatch(result.content[0].text, /Nothing is ready/);
 });
+
+test("reaching engineering with nowhere to send it opens a decision, not a dead end", async (t) => {
+  // The board used to stop and report a boundary, leaving the owner to already know that an
+  // application repository must exist, that development-os init writes the engineering model into
+  // it, and that link connects the two — and then to ask for all three themselves.
+  const { root, handlers } = await workspace(t);
+  const config = await loadConfig(root);
+  const { headers, records } = await loadTaskboard(root);
+  const { replaceTaskboard } = await import("../src/runtime/taskboard.js");
+  await replaceTaskboard(root, headers, records.map((task) => ({
+    ...task,
+    owner_role: config.separation.developmentRole,
+    status: "ready",
+    human_gate: ""
+  })), { dryRun: false });
+
+  await call(handlers, "product_ops_operate", { apply: true });
+
+  const gates = (await call(handlers, "product_ops_pending_decisions")).structuredContent;
+  const crossing = gates.items.find((item) => item.gate === "development_boundary_crossing");
+  assert.ok(crossing, "the owner must be asked, not left to work it out");
+  assert.match(String(crossing.question), /application repository/i);
+  // Creating a repository is not authorising agents to write code in it.
+  assert.match(String(crossing.context), /separate decision/i);
+});
+
+test("the crossing decision is asked once, not on every cycle", async (t) => {
+  const { root, handlers } = await workspace(t);
+  const config = await loadConfig(root);
+  const { headers, records } = await loadTaskboard(root);
+  const { replaceTaskboard } = await import("../src/runtime/taskboard.js");
+  await replaceTaskboard(root, headers, records.map((task) => ({
+    ...task,
+    owner_role: config.separation.developmentRole,
+    status: "ready",
+    human_gate: ""
+  })), { dryRun: false });
+
+  await call(handlers, "product_ops_operate", { apply: true });
+  await call(handlers, "product_ops_operate", { apply: true });
+
+  const gates = (await call(handlers, "product_ops_pending_decisions")).structuredContent;
+  const crossings = gates.items.filter((item) => item.gate === "development_boundary_crossing");
+  assert.equal(crossings.length, 1, "a pending decision must not be reopened underneath the owner");
+});
+
+/**
+ * A gate settled with conditions is the owner setting terms for the work, not merely letting it
+ * through. Recording the terms and then delegating the task without them drops the decision that
+ * authorised it.
+ */
+test("conditions the owner attached to a gate travel with the delegated brief", async (t) => {
+  const { root, handlers } = await workspace(t);
+  const config = await loadConfig(root);
+  const { records } = await loadTaskboard(root);
+  const task = records[0];
+
+  const { requestApproval, decideApproval } = await import("../src/runtime/approvals.js");
+  const { request } = await requestApproval(root, {
+    taskId: task.task_id,
+    gate: "product_direction_or_priority",
+    question: "Ship it?"
+  }, { dryRun: false });
+  await decideApproval(root, config, {
+    requestId: request.requestId,
+    decision: "approved",
+    actorId: config.project.humanAuthorityActorId,
+    rationale: "Worth doing, but not at any cost.",
+    conditions: ["Keep the existing default working", "No data migration in this cycle"]
+  }, { dryRun: false });
+
+  const claim = (await call(handlers, "product_ops_next_work")).structuredContent;
+  assert.equal(claim.available, true);
+  const decision = claim.ownerDecisions.find((entry) => entry.gate === "product_direction_or_priority");
+  assert.ok(decision, "the owner's decision on this event reaches the team that works it");
+  assert.equal(decision.decision, "approved");
+  assert.equal(decision.conditions.length, 2);
+});
+
+test("a brief with nothing decided carries no decisions rather than an empty claim", async (t) => {
+  const { handlers } = await workspace(t);
+  const claim = (await call(handlers, "product_ops_next_work")).structuredContent;
+  assert.deepEqual(claim.ownerDecisions, []);
+});
+
+/**
+ * A brief is read by a subagent, pasted into a shell, and interpolated into tool calls. A backslash
+ * survives none of that reliably — it is an escape character almost everywhere it lands, and
+ * `D:\Projects\app` arrives as `D:Projectsapp`.
+ */
+test("a path handed to whoever performs the work uses separators that survive being read", async (t) => {
+  const { root, handlers } = await workspace(t);
+  const application = path.join(path.dirname(root), "application");
+  await fs.mkdir(application, { recursive: true });
+  const { initializeDevelopmentOs } = await import("../src/development/init.js");
+  const { linkCommand } = await import("../src/commands/link.js");
+  await initializeDevelopmentOs(application, { dryRun: false });
+  await linkCommand(root, { application, apply: true });
+
+  const claim = (await call(handlers, "product_ops_next_work")).structuredContent;
+  const linked = claim.brief.linkedApplication.root;
+  assert.ok(linked, "the brief names the application it may reach");
+  assert.ok(!linked.includes("\\"), `a brief path must not carry backslashes: ${linked}`);
+  assert.equal(path.resolve(linked), path.resolve(application), "and it still resolves to the same place");
+});
+
+/**
+ * The first real product run recorded "no performance budget is documented" because one retrieval
+ * returned a transient error and was never retried. Every document downstream then reasoned from a
+ * gap that was never there.
+ */
+test("a brief tells the performer that a failed retrieval is not an absence", async (t) => {
+  const { handlers } = await workspace(t);
+  const claim = (await call(handlers, "product_ops_next_work")).structuredContent;
+  assert.equal(claim.brief.policy.retryBeforeRecordingAbsence, true);
+  assert.match(claim.brief.reporting.absenceRule, /retry/i);
+  assert.match(claim.brief.reporting.absenceRule, /record the failure/i);
+});

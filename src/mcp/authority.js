@@ -21,8 +21,21 @@ export function selectRegisteredTools(definitions, { allowWrites }) {
   return definitions.filter((definition) => allowWrites || definition.tier === TIERS.READ);
 }
 
-export function toolResult({ structuredContent, text }) {
-  return { content: [{ type: "text", text }], structuredContent, isError: false };
+/**
+ * A tool may return `resources` alongside its text: entries the host renders rather than reads.
+ *
+ * The panel needed this and did not have it. It returned its data and a sentence saying the control
+ * tower was open, and nothing was ever handed to the host — so the owner got the coordinator's prose
+ * summary of a panel that had not been drawn. A surface claiming an outcome it did not produce is
+ * the one failure this project exists to prevent, so the attachment is the mechanism and the honest
+ * sentence is the caller's job.
+ */
+export function toolResult({ structuredContent, text, resources = [] }) {
+  const content = [{ type: "text", text }];
+  for (const resource of resources) {
+    content.push({ type: "resource", resource });
+  }
+  return { content, structuredContent, isError: false };
 }
 
 /**
@@ -43,7 +56,9 @@ export const TOOL_ERROR_CODES = Object.freeze([
   "CLAIM_INVALID",
   "RESULT_REJECTED",
   "NO_LINKED_APPLICATION",
-  "SURVEY_FAILED"
+  "SURVEY_FAILED",
+  "WORK_INCOMPLETE",
+  "DELIVERY_NOT_CLOSEABLE"
 ]);
 
 export function toolFailure(error) {

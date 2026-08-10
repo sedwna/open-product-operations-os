@@ -19,7 +19,7 @@ export async function runEngineeringWorkstream(
   root,
   planId,
   workstreamId,
-  { dryRun = true, spawnProcess = spawn } = {}
+  { dryRun = true, spawnProcess = spawn, execute } = {}
 ) {
   safeContractId(planId, "Plan ID");
   safeContractId(workstreamId, "Workstream ID");
@@ -40,13 +40,22 @@ export async function runEngineeringWorkstream(
     "development-request.schema.json",
     "Stored development request"
   );
-  const executor = config.executors.find((candidate) => candidate.roleId === workstream.ownerRole);
-  if (!executor?.enabled || executor.implementation !== "command-runner") {
-    throw new Error(`Executor for ${workstream.ownerRole} is disabled or not configured as a command runner.`);
+  // A performer supplied by the caller is the host-delegated path: the coordinator's subagent did
+  // the work and is returning it. There is no CLI to configure, so none of the executor block
+  // applies — but everything after it does, which is the point. The same schema, the same
+  // dispatch-identity check, the same read-only proof for ENG-15, the same sealing.
+  const delegated = typeof execute === "function";
+  const executor = delegated ? null : config.executors.find((candidate) => candidate.roleId === workstream.ownerRole);
+  if (!delegated) {
+    if (!executor?.enabled || executor.implementation !== "command-runner") {
+      throw new Error(`Executor for ${workstream.ownerRole} is disabled or not configured as a command runner.`);
+    }
+    if (executor.isolation !== "external-required") throw new Error("Engineering executors must retain the external-isolation requirement.");
   }
-  if (executor.isolation !== "external-required") throw new Error("Engineering executors must retain the external-isolation requirement.");
-  const workingDirectory = resolveInside(root, executor.workingDirectory, "Engineering executor working directory");
-  await assertNoLinkTraversal(root, workingDirectory, "Engineering executor working directory");
+  const workingDirectory = delegated
+    ? path.resolve(root)
+    : resolveInside(root, executor.workingDirectory, "Engineering executor working directory");
+  if (!delegated) await assertNoLinkTraversal(root, workingDirectory, "Engineering executor working directory");
   const runId = `${planId}-${workstreamId}`;
   const inputFile = `.development-os/runs/${runId}-input.json`;
   const resultFile = `.development-os/runs/${runId}-result.json`;
@@ -63,11 +72,32 @@ export async function runEngineeringWorkstream(
       prohibitedPaths: config.policies.prohibitedPaths,
       productionRequiresHumanApproval: config.policies.requireHumanProductionApproval,
       independentVerificationRequired: config.policies.requireIndependentVerification,
-      isolation: executor.isolation
+      // A spawned executor must be externally isolated because this process starts it. A delegated
+      // performer was already started by the host, inside whatever the host confines it to, so the
+      // brief states that plainly rather than claiming a guarantee this code did not make.
+      isolation: delegated ? "host-delegated" : executor.isolation
     },
     returnContract: { schema: "engineering-workstream-run.schema.json", transport: "stdout-json" }
   };
   assertNoCredentialMaterial("Engineering workstream payload", payload);
+
+  // The delegated path stops here and hands the brief back. Everything between this point and the
+  // result validation exists to shape a command line — provider schema files, preset prompts,
+  // argument templating, sandbox flags — and none of it means anything when the performer is a
+  // subagent the host already started.
+  if (delegated) {
+    if (dryRun) return { dryRun, runId, inputFile, resultFile, payload, delegated: true, workingDirectory };
+    await writeExclusiveOrEqual(root, inputFile, json(payload));
+    const verifierBefore = workstream.ownerRole === "ENG-15" ? await verifierWorkspaceDigest(root) : null;
+    const delegatedResult = await execute({ root: path.resolve(root), planId, workstreamId, workstream, payload });
+    if (verifierBefore && await verifierWorkspaceDigest(root) !== verifierBefore) {
+      throw new Error("Independent engineering verifier modified repository content; verification must remain read-only.");
+    }
+    return recordWorkstreamResult(root, {
+      result: delegatedResult, config, plan, planId, workstream, workstreamId, runId, attemptId, inputFile, resultFile, payload
+    });
+  }
+
   const canonicalSchemaReference = "{projectRoot}/engineering/schemas/engineering-workstream-run.schema.json";
   const usesCodexPreset = looksLikeCodexExecutor(executor);
   const usesClaudePreset = looksLikeClaudeExecutor(executor);
@@ -118,7 +148,7 @@ export async function runEngineeringWorkstream(
     const executable = spawnProcess === spawn
       ? await resolveExecutable(executor.executable, { cwd: workingDirectory })
       : executor.executable;
-    execution = await execute(executable, argumentsList, {
+    execution = await runCommand(executable, argumentsList, {
       cwd: workingDirectory,
       timeoutMs: executor.timeoutMs,
       environmentAllowlist: executor.environmentAllowlist,
@@ -134,6 +164,21 @@ export async function runEngineeringWorkstream(
   let result;
   try { result = usesClaudePreset ? extractClaudeStructuredOutput(resultText) : JSON.parse(resultText.trim()); }
   catch (error) { throw new Error(`Engineering executor did not return valid JSON: ${error.message}`); }
+  const recorded = await recordWorkstreamResult(root, {
+    result, config, plan, planId, workstream, workstreamId, runId, attemptId, inputFile, resultFile, payload
+  });
+  return { ...recorded, stderr: execution.stderr };
+}
+
+/**
+ * What a workstream result has to satisfy before it is allowed to exist, whoever produced it.
+ *
+ * Both performers pass through here: the spawned command runner and the host's subagent. A
+ * delegated result gains a performer, not an exemption — the schema, the check that it answers the
+ * workstream actually dispatched, the rule that only ENG-15 may issue a verification disposition,
+ * and the sealing of a completed run are identical either way.
+ */
+async function recordWorkstreamResult(root, { result, config, planId, workstream, workstreamId, runId, attemptId, inputFile, resultFile, payload }) {
   assertContract(result, "engineering-workstream-run.schema.json", "Engineering workstream result");
   const actor = config.roles.find((role) => role.id === workstream.ownerRole)?.actorId;
   const mismatches = [];
@@ -152,7 +197,12 @@ export async function runEngineeringWorkstream(
     ? resultFile
     : `.development-os/runs/${runId}-attempt-${attemptId}-result.json`;
   await writeExclusiveOrEqual(root, storedResultFile, json(result));
-  return { dryRun: false, runId, inputFile, resultFile: storedResultFile, payload, result, stderr: execution.stderr };
+  return { dryRun: false, runId, inputFile, resultFile: storedResultFile, payload, result };
+}
+
+/** Perform a workstream with a result the caller already has. Mirrors the product-side performer. */
+export function submittedWorkstreamResult(result) {
+  return async () => result;
 }
 
 export function extractClaudeStructuredOutput(value) {
@@ -215,7 +265,7 @@ async function writeExclusiveOrEqual(root, relative, content) {
   await applyWrites(path.resolve(root), operations);
 }
 
-async function execute(executable, args, { cwd, timeoutMs, environmentAllowlist, spawnProcess }) {
+async function runCommand(executable, args, { cwd, timeoutMs, environmentAllowlist, spawnProcess }) {
   const environment = {};
   for (const name of ["PATH", "Path", "PATHEXT", "SystemRoot", "TEMP", "TMP", ...environmentAllowlist]) {
     if (process.env[name] !== undefined) environment[name] = process.env[name];

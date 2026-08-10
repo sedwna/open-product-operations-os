@@ -78,6 +78,13 @@ node ./src/cli.js validate <workspace>
 Run the dry run yourself and read it; do not make them read 73 lines. Say how many files were
 created once it is done. `validate` must print `Validation passed` before you go on.
 
+`init` also starts a Git history for the workspace and commits it. That is not housekeeping:
+exporting an approved delivery contract to the engineering side stamps it with the workspace
+revision, and without one the export refuses at the moment the owner has just authorised crossing
+into engineering. If it reports that it could not — no `git` on the machine, or a refused commit —
+say so at the end of setup rather than letting them find out then. An existing repository is left
+untouched.
+
 ## Step 5 — Ask the two product questions
 
 Ask these separately, in their own words:
@@ -136,7 +143,12 @@ holds the first one, and where the first decision of theirs is waiting.
 
 ## Step 7 — Connect the workspace to this host
 
-Write `.mcp.json` **in the workspace**, with the absolute path to this repository's server:
+Which host they are in decides how. Getting this wrong is the single most common reason a setup
+looks finished and then nothing works. [`docs/setup/connecting-a-host.md`](docs/setup/connecting-a-host.md)
+has the full detail; this is what you do.
+
+**Claude Code.** Write `.mcp.json` **in the workspace**, with the absolute path to this repository's
+server:
 
 ```json
 {
@@ -152,17 +164,33 @@ Write `.mcp.json` **in the workspace**, with the absolute path to this repositor
 Forward slashes, even on Windows. Use the real absolute path — resolve it, do not leave a
 placeholder.
 
+**Codex.** Do not write a config file. Run `codex mcp add`:
+
+```bash
+codex mcp add product-ops -- node <absolute path to this repo>/src/mcp/server.js --project . --allow-writes
+```
+
+Hand-editing `~/.codex/config.toml` does not survive: the desktop app rewrites it at startup and
+deletes user-defined entries. The entry vanishes silently, which reads exactly like a broken server.
+
 Do not suggest the `npx --package=open-product-operations-os` form. The package is not published
 yet and that form fails with a 404.
 
 Tell them what `--allow-writes` opens: without it the server registers 8 read-only tools and no
-write path exists at all; with it, 15, adding intake, cycles, taking and returning work, and
-recording their decisions.
+write path exists at all; with it, 19, adding intake, cycles, taking and returning work on both
+sides, crossing into engineering and back, and recording their decisions.
 
 ## Step 8 — Hand over
 
-Tell them to reopen their agent in the workspace folder so the server loads, and that their first
-move there is `/product-ops:take-command`, which puts you in the coordinator seat.
+Tell them to reopen their agent **with the workspace folder as the session root**, not as a second
+folder inside another project — `.mcp.json` is read from the root only, and this is the usual reason
+a correct configuration still does not connect. Claude Code will also ask them once whether to trust
+the project's MCP servers; until they answer, it is configured and not connected.
+
+Then tell them their first move: type `/` and pick `take-command` from the list. Do not hand them a
+literal slash string — the CLI and the desktop app spell it differently. If nothing appears under
+`/`, the server has not connected, and they can say "take the coordinator seat, start with
+product_ops_status" in plain words instead.
 
 Then stop. Do not start doing product work in the setup conversation.
 

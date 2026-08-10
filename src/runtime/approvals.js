@@ -61,10 +61,22 @@ export async function requestApproval(
   });
 }
 
+/**
+ * Record the product owner's disposition on a pending gate.
+ *
+ * A gate carries two separate things and they were being flattened into one. The board needs a
+ * binary: does this task proceed or not. The owner often has more to say than that — which of the
+ * offered options they chose, and on what conditions they are letting it through. Recording only
+ * the binary threw the answer away and left the record claiming they had simply agreed.
+ *
+ * `status` stays approved/rejected because that is what the board reads. `selectedOption` and
+ * `conditions` carry what they actually decided, and a gate that offered real options refuses a
+ * bare yes rather than inventing which one they meant.
+ */
 export async function decideApproval(
   root,
   config,
-  { requestId, decision, actorId, rationale = "" },
+  { requestId, decision, actorId, rationale = "", selectedOption = null, conditions = [] },
   { dryRun = true, now = new Date() } = {}
 ) {
   if (!['approved', 'rejected'].includes(decision)) {
@@ -84,9 +96,20 @@ export async function decideApproval(
     if (store.requests[index].status !== "pending") {
       throw new Error(`Approval request "${requestId}" already has a disposition.`);
     }
+    const pending = store.requests[index];
+    const offered = pending.options ?? ["approved", "rejected"];
+    const choiceRequired = !isBinaryChoice(offered);
+    if (selectedOption !== null && !offered.includes(selectedOption)) {
+      throw new Error(`Gate "${pending.gate}" did not offer "${selectedOption}". It offered: ${offered.join(", ")}.`);
+    }
+    if (choiceRequired && selectedOption === null) {
+      throw new Error(`Gate "${pending.gate}" asked the product owner to choose between ${offered.join(", ")}. A bare ${decision} does not say which one they chose.`);
+    }
     const request = {
-      ...store.requests[index],
+      ...pending,
       status: decision,
+      selectedOption,
+      conditions: normalizeConditions(conditions),
       decidedAt: utcTimestamp(now),
       decidedByActorId: actorId,
       rationale
@@ -96,6 +119,16 @@ export async function decideApproval(
     await writeJson(root, APPROVAL_STORE_FILE, { ...store, requests }, { dryRun });
     return { request, dryRun };
   });
+}
+
+/** Approve-or-reject in any order. Anything else is a question with a real answer in it. */
+function isBinaryChoice(options) {
+  return options.length === 2 && options.includes("approved") && options.includes("rejected");
+}
+
+function normalizeConditions(conditions) {
+  if (!Array.isArray(conditions)) return [];
+  return [...new Set(conditions.map((entry) => String(entry).trim()).filter(Boolean))].slice(0, 20);
 }
 
 function guarded(root, dryRun, run) {

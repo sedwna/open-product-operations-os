@@ -1,5 +1,7 @@
 import crypto from "node:crypto";
+import path from "node:path";
 import { INTAKE_STORE_FILE, SCHEMA_VERSION } from "../constants.js";
+import { applyWrites, planWrites } from "../file-writer.js";
 import { validatePublishedSchema } from "../schema-validation.js";
 import { compactDate, readJsonOptional, utcTimestamp, writeJson } from "./io.js";
 import { assertNoCredentialMaterial } from "./security.js";
@@ -47,7 +49,55 @@ async function ingest(root, input, { dryRun, now }) {
     throw new Error(`Invalid intake record:\n- ${errors.join("\n- ")}`);
   }
   await writeJson(root, INTAKE_STORE_FILE, { ...store, records: [...store.records, record] }, { dryRun });
-  return { record, duplicate: Boolean(duplicate), dryRun };
+
+  // An event that only exists in the intake store is a link missing from the chain. The board hangs
+  // its cards off this identifier and every artifact downstream cites it, so canonical state has to
+  // recognise it — otherwise a whole product can be built under an event the record does not know
+  // about, which is exactly what happened in a real run while validation stayed green.
+  //
+  // A duplicate joins an event that already has its record; only a new one opens a file.
+  const eventFile = duplicate ? null : await writeEventRecord(root, record, { dryRun });
+  return { record, duplicate: Boolean(duplicate), eventFile, dryRun };
+}
+
+/** The event's own canonical home. The workbook row follows later through a controlled write. */
+async function writeEventRecord(root, record, { dryRun }) {
+  const relative = `events/${record.eventId}-${slug(record.title)}.md`;
+  const document = [
+    `# ${record.eventId} — ${record.title}`,
+    "",
+    `- Status: \`proposed\``,
+    `- Type: \`${record.type}\``,
+    `- Priority: \`${record.priority}\``,
+    `- Opened: \`${record.createdAt}\``,
+    `- Intake: \`${record.intakeId}\``,
+    "",
+    "## What was reported",
+    "",
+    record.description,
+    "",
+    "## Where it came from",
+    "",
+    record.source,
+    "",
+    "## Standing",
+    "",
+    "Recording an event is not accepting it. Nothing here is a product decision, a finding, or an",
+    "approval; those arrive as their own attributed records and cite this identifier.",
+    ""
+  ].join("\n");
+
+  const operations = await planWrites(path.resolve(root), new Map([[relative, document]]), { force: true });
+  if (!dryRun) await applyWrites(path.resolve(root), operations);
+  return relative;
+}
+
+function slug(title) {
+  return title
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60) || "event";
 }
 
 function validateInput(input) {

@@ -117,15 +117,19 @@ flowchart TD
     J --> C
 ```
 
-Ask for these when you need them:
+Ask for these when you need them. Type `/` and pick from the list — the exact spelling differs
+between the CLI and the desktop app, so picking beats typing. Asking in plain words works too.
 
 | Ask for | What you get |
 | --- | --- |
-| `/product-ops:take-command` | Puts the agent in the coordinator seat with the full operating brief |
-| `/product-ops:brief` | Where the cycle stands, what moved, what is stuck |
-| `/product-ops:what-needs-me` | Every gate waiting on you, with its risks and evidence |
-| `/product-ops:explain-blocked` | The dependency chain from a stuck task to its root cause |
+| `take-command` | Puts the agent in the coordinator seat with the full operating brief |
+| `brief` | Where the cycle stands, what moved, what is stuck |
+| `what-needs-me` | Every gate waiting on you, with its risks and evidence |
+| `explain-blocked` | The dependency chain from a stuck task to its root cause |
 | **the panel** | `product_ops_panel` renders the control tower inline: both organisations, the hand-off chain, and a box to write your decision in |
+
+Nothing under `/`? The server has not connected — see
+[connecting a host](docs/setup/connecting-a-host.md).
 
 The panel shows teams, not contract identifiers. You see *the discovery team* and *the database
 team*, not `RB-03` and `ENG-06`. Deciding stays yours: the surface collects your reasoning and
