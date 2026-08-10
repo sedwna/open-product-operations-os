@@ -272,6 +272,58 @@ test("a delivery crosses into engineering and comes back, entirely through the s
   assert.equal(handoff.status, "done", "the board moved because the work came back, not because it was asked to");
 });
 
+/**
+ * A contract already in the outbox used to win over a corrected one. The reuse check compared
+ * identity — task, title, problem, approval — and none of those change when acceptance criteria are
+ * fixed, which is precisely the case where replacing it matters. The owner's run hit this: the
+ * export defect was found before anyone built against it, and the broken contract would have been
+ * handed back unchanged.
+ */
+test("a contract nobody has built against yet can be corrected", async (t) => {
+  const { product, handlers } = await deliveryWorkspace(t);
+  const waiting = (await call(handlers, "product_ops_open_delivery", { apply: true })).structuredContent;
+  await settleGate(handlers, product, waiting.requestId);
+  const first = (await call(handlers, "product_ops_open_delivery", { apply: true })).structuredContent;
+
+  // Damage the exported contract the way the export defect did, then cross again.
+  const outbox = path.join(product, ".product-ops", "runtime", "development", "contracts", "outbox", `${first.requestId}.json`);
+  const broken = JSON.parse(await fs.readFile(outbox, "utf8"));
+  broken.acceptanceCriteria = [{ id: "AC-01", statement: "The record does not select, approve, or rank any option.", verification: "Re-read the record." }];
+  broken.impacts = ["documentation", "database", "infrastructure"];
+  await fs.writeFile(outbox, `${JSON.stringify(broken, null, 2)}\n`, "utf8");
+
+  const corrected = await call(handlers, "product_ops_open_delivery", { apply: true });
+  assert.equal(corrected.isError, false, corrected.content[0].text);
+  assert.equal(corrected.structuredContent.superseded, true, "the stored contract must not win over the corrected one");
+  assert.match(corrected.content[0].text, /replaced/i);
+  const stored = JSON.parse(await fs.readFile(outbox, "utf8"));
+  assert.deepEqual(stored.impacts, ["frontend"], "and what is on disk is the corrected contract");
+});
+
+test("a contract that work has been sealed against is not replaceable underneath it", async (t) => {
+  const { product, application, handlers } = await deliveryWorkspace(t);
+  const waiting = (await call(handlers, "product_ops_open_delivery", { apply: true })).structuredContent;
+  await settleGate(handlers, product, waiting.requestId);
+  const first = (await call(handlers, "product_ops_open_delivery", { apply: true })).structuredContent;
+
+  // One workstream answered and sealed. Its evidence certifies this contract's digest.
+  const claim = (await call(handlers, "product_ops_next_engineering_work")).structuredContent;
+  await fs.writeFile(path.join(application, "src", "answered.js"), "export const answered = true;\n", "utf8");
+  await call(handlers, "product_ops_submit_engineering_work", {
+    workstreamId: claim.workstreamId, claimToken: claim.claimToken, apply: true, result: workstreamResult(claim)
+  });
+
+  const outbox = path.join(product, ".product-ops", "runtime", "development", "contracts", "outbox", `${first.requestId}.json`);
+  const changed = JSON.parse(await fs.readFile(outbox, "utf8"));
+  changed.acceptanceCriteria = [{ id: "AC-01", statement: "Something else entirely.", verification: "Look at it." }];
+  await fs.writeFile(outbox, `${JSON.stringify(changed, null, 2)}\n`, "utf8");
+
+  const refused = await call(handlers, "product_ops_open_delivery", { apply: true });
+  assert.equal(refused.isError, true, "sealed work must not be left certifying a document that no longer exists");
+  assert.match(JSON.stringify(refused), /sealed against it/i);
+  assert.match(JSON.stringify(refused), new RegExp(claim.workstreamId));
+});
+
 async function deliveryWorkspace(t) {
   const parent = await makeTempDirectory("product-ops-delivery-");
   t.after(() => fs.rm(parent, { recursive: true, force: true }));

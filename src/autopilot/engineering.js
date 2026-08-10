@@ -105,11 +105,15 @@ export async function openEngineeringDelivery(
   const requestDirectory = path.join(productRoot, ".product-ops", "runtime", "autopilot", "requests");
   await fs.mkdir(requestDirectory, { recursive: true });
   const requestFile = path.join(requestDirectory, `${request.requestId}.json`);
-  request = await reuseExportedDevelopmentRequest(productRoot, request);
+  const reuse = await reuseExportedDevelopmentRequest(productRoot, applicationRoot, request);
+  request = reuse.request;
   await writeJson(requestFile, request);
   const resumed = await resumeCompletedDelivery(productRoot, applicationRoot, developmentConfig, request, branch);
   if (resumed) return resumed;
-  const exported = await exportDevelopmentRequest(productRoot, productConfig, task.task_id, requestFile, { dryRun: false });
+  const exported = await exportDevelopmentRequest(productRoot, productConfig, task.task_id, requestFile, {
+    dryRun: false,
+    supersede: reuse.superseded
+  });
   const exportedFile = path.join(productRoot, exported.receipt.storedAt);
   const planned = await planDevelopmentRequest(applicationRoot, exportedFile, { dryRun: false });
   await writeEngineeringTaskboard(applicationRoot, planned.plan, new Map());
@@ -127,6 +131,7 @@ export async function openEngineeringDelivery(
     status: "open",
     approval,
     request,
+    superseded: reuse.superseded,
     requestDigest: planned.digest,
     plan: planned.plan,
     developmentConfig,
@@ -206,29 +211,71 @@ export function dependencyOrderedWorkstreams(workstreams) {
   return ordered;
 }
 
-async function reuseExportedDevelopmentRequest(productRoot, candidate) {
+/**
+ * Whether a contract already in the outbox still stands.
+ *
+ * This compared identity — task, title, problem, approval — and on a match returned the stored
+ * contract, so a contract whose *contents* were wrong could never be corrected. The identity of a
+ * delivery does not change when its acceptance criteria are fixed, which is exactly the case where
+ * replacing it matters: an export defect was found before anyone built against it, and the stored
+ * copy silently won over the corrected one.
+ *
+ * The rule that actually matters is not whether the contract changed but whether anything has been
+ * built against it. A contract nobody has answered yet is a draft in flight. Once a workstream has
+ * been sealed, its evidence is tied to that contract's digest, and replacing it would leave sealed
+ * work certifying a document that no longer exists.
+ */
+async function reuseExportedDevelopmentRequest(productRoot, applicationRoot, candidate) {
   const exportedFile = path.join(
     productRoot,
     ".product-ops", "runtime", "development", "contracts", "outbox",
     `${candidate.requestId}.json`
   );
   const exported = await readJsonOptional(exportedFile);
-  if (!exported) return candidate;
+  if (!exported) return { request: candidate, superseded: false };
   const errors = validatePublishedSchema("development-request.schema.json", exported);
   if (errors.length) {
     throw new Error(`Previously exported development request is invalid:\n- ${errors.join("\n- ")}`);
   }
   const identityMatches = exported.requestId === candidate.requestId
     && exported.productTaskId === candidate.productTaskId
-    && exported.title === candidate.title
-    && exported.problem === candidate.problem
     && exported.approval?.reference === candidate.approval?.reference
     && exported.approval?.actorId === candidate.approval?.actorId
     && JSON.stringify(exported.writeBoundary?.repositories) === JSON.stringify(candidate.writeBoundary?.repositories);
   if (!identityMatches) {
     throw new Error(`Development request ${candidate.requestId} was already exported for a different task, product, or approval.`);
   }
-  return exported;
+  if (contractDigest(exported) === contractDigest(candidate)) {
+    return { request: exported, superseded: false };
+  }
+  const sealed = await sealedWorkstreamIds(applicationRoot, candidate.requestId);
+  if (sealed.length > 0) {
+    throw new Error(
+      `Development request ${candidate.requestId} was already exported with different contents, and ${sealed.length} workstream(s) have been sealed against it (${sealed.join(", ")}). `
+      + "Their evidence certifies the exported contract, so it cannot be replaced underneath them. Raise a new delivery for the corrected contract."
+    );
+  }
+  return { request: candidate, superseded: true };
+}
+
+/** Workstreams whose sealed result already answers this contract. */
+async function sealedWorkstreamIds(applicationRoot, requestId) {
+  const planId = `ENGPLAN-${requestId.replace(/^DEVREQ-/, "")}`;
+  const directory = path.join(applicationRoot, ".development-os", "runs");
+  let entries;
+  try {
+    entries = await fs.readdir(directory);
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+  const sealed = [];
+  for (const name of entries) {
+    if (!name.startsWith(`${planId}-`) || !name.endsWith("-result.json") || name.includes("-attempt-")) continue;
+    const result = await readJsonOptional(path.join(directory, name));
+    if (result?.status === "completed" && result.workstreamId) sealed.push(result.workstreamId);
+  }
+  return sealed;
 }
 
 async function ensureDevelopmentApproval(root, config, task, { autoApprove, now, context }) {

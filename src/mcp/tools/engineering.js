@@ -332,9 +332,13 @@ export async function openDelivery(context, args = {}) {
       branch: opened.branch,
       workstreams: opened.plan.workstreams.length,
       alreadyComplete: opened.runs.size,
-      remaining: remaining.length
+      remaining: remaining.length,
+      superseded: opened.superseded === true
     },
     text: [
+      opened.superseded
+        ? `A contract for ${opened.request.requestId} was already in the outbox with different contents and nothing had been built against it, so it was replaced. Any plan or brief taken from the previous one is void.`
+        : "",
       `The delivery crossed. ${opened.request.requestId} is planned as ${opened.plan.planId} with ${opened.plan.workstreams.length} workstream(s); ${remaining.length} remain.`,
       `Engineering works on branch ${opened.branch} in ${reportablePath(application)}.`,
       "",

@@ -8,7 +8,13 @@ import { buildPlan } from "./planner.js";
 
 const PRODUCT_CONTRACT_ROOT = ".product-ops/runtime/development/contracts";
 
-export async function exportDevelopmentRequest(root, config, taskId, requestFile, { dryRun = true } = {}) {
+/**
+ * `supersede` replaces a contract already in the outbox with a corrected one. It exists because a
+ * contract that turns out to be wrong must be replaceable before anyone builds against it — and
+ * must not be replaceable afterwards, which is the caller's judgement to make and state, not this
+ * function's to guess.
+ */
+export async function exportDevelopmentRequest(root, config, taskId, requestFile, { dryRun = true, supersede = false } = {}) {
   const [{ byId }, approvals, request] = await Promise.all([
     loadTaskboard(root),
     loadApprovals(root),
@@ -49,7 +55,7 @@ export async function exportDevelopmentRequest(root, config, taskId, requestFile
   const operations = await planWrites(path.resolve(root), new Map([
     [storedAt, json(request)],
     [`${PRODUCT_CONTRACT_ROOT}/receipts/${receipt.receiptId}.json`, json(receipt)]
-  ]), {});
+  ]), { force: supersede });
   if (!dryRun) await applyWrites(path.resolve(root), operations);
   return { dryRun, task, request, digest, receipt, operations };
 }
