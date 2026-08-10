@@ -255,14 +255,50 @@ async function ensureDevelopmentApproval(root, config, task, { autoApprove, now,
   return approval;
 }
 
+/**
+ * The run that authored the delivery contract.
+ *
+ * Everything the engineering side is asked to build comes from this one card. The others are how
+ * the product got here — an idea screened, research done, issues raised — and they are context, not
+ * contract.
+ */
+function deliveryContractRun(productRuns) {
+  return productRuns.find((run) => run.roleId === "RB-06") ?? null;
+}
+
+/**
+ * What this delivery actually touches.
+ *
+ * The delivery contract's declaration governs; the other cards contribute only when it declared
+ * nothing. A delivery that names no domain at all still needs somewhere to start, so it gets the
+ * two every change has — the work itself and the record of it — and the planner widens from there
+ * by reading the contract's own words.
+ */
+const MINIMUM_IMPACTS = ["architecture", "documentation"];
+
+function scopedImpacts(contract, productRuns) {
+  const declared = contract?.impacts?.length
+    ? contract.impacts
+    : productRuns.flatMap((run) => run.impacts ?? []);
+  const scoped = unique(declared).filter((impact) => ALL_IMPACTS.includes(impact));
+  return scoped.length > 0 ? scoped : [...MINIMUM_IMPACTS];
+}
+
 async function buildDevelopmentRequest(productRoot, developmentConfig, productConfig, task, { applicationRoot, intake, productRuns, approval, cycleId, now }) {
-  const acceptance = uniqueObjects(productRuns.flatMap((run) => run.acceptanceCriteria ?? []), (item) => `${item.statement}\0${item.verification}`)
+  const contract = deliveryContractRun(productRuns);
+  // The contract's own criteria are the contract. This used to flat-map every run in board order and
+  // keep the first thirty, so on any real product the earliest cards — idea triage, discovery —
+  // filled every slot with criteria about reviewing documents, and the delivery contract's actual
+  // criteria were cut off below them. Fifteen engineering teams were then asked to satisfy
+  // acceptance criteria that had nothing to do with what was being built.
+  const source = contract?.acceptanceCriteria?.length ? [contract] : productRuns;
+  const acceptance = uniqueObjects(source.flatMap((run) => run.acceptanceCriteria ?? []), (item) => `${item.statement}\0${item.verification}`)
     .slice(0, 30)
     .map((item, index) => ({ id: `AC-${String(index + 1).padStart(2, "0")}`, ...item }));
   if (acceptance.length === 0) {
     acceptance.push({ id: "AC-01", statement: "The approved product outcome is implemented and demonstrable.", verification: "Run the repository validation and an end-to-end product scenario." });
   }
-  const recommendations = productRuns.flatMap((run) => run.recommendations ?? []);
+  const recommendations = [...(contract?.recommendations ?? []), ...productRuns.flatMap((run) => run.recommendations ?? [])];
   const constraints = unique([
     ...productRuns.flatMap((run) => run.constraints ?? []).filter(isProductConstraint),
     "No production credentials or production-derived customer data",
@@ -286,9 +322,15 @@ async function buildDevelopmentRequest(productRoot, developmentConfig, productCo
     deliveryTicketReference: `.product-ops/runtime/autopilot/product-runs/${findRoleTask(productRuns, "RB-06") ?? task.task_id}-result.json`,
     title: intake.title,
     problem: intake.description,
-    desiredOutcome: recommendations[0] ?? productRuns.at(-1)?.summary ?? `Deliver the approved outcome for ${intake.title}.`,
+    desiredOutcome: recommendations[0] ?? contract?.summary ?? productRuns.at(-1)?.summary ?? `Deliver the approved outcome for ${intake.title}.`,
     acceptanceCriteria: acceptance,
-    impacts: unique([...ALL_IMPACTS, ...productRuns.flatMap((run) => run.impacts ?? [])]),
+    // Every request used to declare all thirty impact domains, unconditionally — the product's own
+    // declared impacts were appended to a list that already contained everything, so they changed
+    // nothing. The planner turns impacts into workstreams, so a browser game was dispatched to all
+    // fifteen engineering teams including database, infrastructure and messaging. What a delivery
+    // touches is a claim the product side makes; if it made none, a minimum is assumed and the
+    // planner still widens it from the contract's own text.
+    impacts: scopedImpacts(contract, productRuns),
     constraints,
     nonFunctionalRequirements,
     writeBoundary: {

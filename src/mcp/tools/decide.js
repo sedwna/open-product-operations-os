@@ -42,7 +42,7 @@ export async function decide(context, args = {}) {
 
   const collected = args.source === "panel"
     ? composed(args, config, request)
-    : (context.supportsElicitation ? await elicit(context, config, request) : relayed(args, request));
+    : await collectDisposition(context, config, request, args);
 
   // The disposition is settled before any lock is taken. Holding a write lease across a dialog that
   // waits on a person would block every other local surface for as long as they take to answer.
@@ -76,7 +76,12 @@ export async function decide(context, args = {}) {
     lines.push(`It carries ${result.request.conditions.length} condition(s). An approval with conditions is not a bare approval — carry them into the work, and say so when you report it done.`);
   }
   if (collected.attribution === "model_relayed") {
-    lines.push("This host cannot open a dialog, so the rationale was relayed by a model rather than typed by the product owner. The record says the owner decided; treat that attribution with the caution it deserves.");
+    lines.push(
+      collected.dialogFailed
+        ? "This host declares a dialog and did not produce one, so the disposition was taken from what you supplied rather than typed by the product owner. Show them exactly what was recorded — the decision and the rationale, verbatim — and correct the record with them if any of it is not what they said."
+        : "This host cannot open a dialog, so the rationale was relayed by a model rather than typed by the product owner."
+    );
+    lines.push("The record carries model_relayed attribution and will be read that way later. It is a weaker claim than a decision the owner entered themselves, and the record says so rather than hiding it.");
   }
   if (collected.attribution === "panel_entered") {
     lines.push("The product owner composed this in the control tower panel.");
@@ -96,6 +101,43 @@ async function pendingRequest(context, args) {
     throw new ToolFailure("APPROVAL_NOT_PENDING", `Gate "${request.gate}" already carries a ${request.status} disposition recorded at ${request.decidedAt}.`);
   }
   return request;
+}
+
+/**
+ * Get the owner's disposition, by whichever route this host can actually manage.
+ *
+ * A host that declares elicitation and then never renders a dialog used to be a dead end. The
+ * declaration sent every call down the dialog path, the dialog failed, and there was no second
+ * route — not the panel, not the conversation. An owner in that host could not settle a gate at
+ * all, in a system whose entire claim is that gates are settled by owners.
+ *
+ * So a declared capability is now treated as what it is: a claim, tested by using it. When the
+ * dialog does not produce an answer, the question becomes whether the caller was already carrying
+ * one. If it was not, nothing is recorded and the refusal stands — that is the owner declining, or
+ * a model with nothing to relay. If it was, those words go in with `model_relayed` attribution,
+ * which is exactly the strength of the path a host without elicitation has always used. No new hole
+ * is opened: a model could always reach `relayed` by connecting from a host that declares nothing.
+ */
+async function collectDisposition(context, config, request, args) {
+  if (!context.supportsElicitation) return relayed(args, request);
+  // Declared elicitation that the owner never actually sees is the host lying about a capability,
+  // and the only party who can know is the owner looking at their own screen. So this is not
+  // inferred — it is asserted, deliberately, by an agent that has asked them. Making it explicit is
+  // the safeguard: a silent fallback on any failed dialog would also fire when the owner pressed
+  // decline, and would record an approval against someone who had just refused one.
+  if (args.dialogUnavailable === true) {
+    return { ...relayed(args, request), dialogFailed: true };
+  }
+  try {
+    return await elicit(context, config, request);
+  } catch (error) {
+    throw new ToolFailure(error.code ?? "ELICITATION_DECLINED", [
+      error.message,
+      "",
+      "If the owner pressed decline or cancel, that is their answer and it stands. Do not re-send it.",
+      "If they saw no dialog at all, this host declares a capability it does not deliver. Ask them for the decision here in the conversation, then call again with dialogUnavailable true and their decision, actorId and rationale exactly as they said them. The record will carry model_relayed attribution, which is weaker than a decision they entered themselves and says so."
+    ].join("\n"));
+  }
 }
 
 /** A gate that offered real options asks which one, not just whether. */
