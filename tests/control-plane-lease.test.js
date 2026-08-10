@@ -269,16 +269,19 @@ test("a holder whose work outlives the term keeps the lease", async (t) => {
   const root = await makeProject(t);
   let contender = null;
 
-  // The property is that renewal happens at all, not that it happens inside a few hundred
-  // milliseconds. A term short enough to be sensitive to scheduling noise on a loaded machine tests
-  // the machine, not the lease, so the term is compressed only as far as it stays meaningful:
-  // three full terms elapse before the contender arrives.
+  // This one needs real time, which makes it the only lease test that can be pushed around by the
+  // machine. Expiry is wall-clock but the beat is a timer, so under load the two drift apart: with
+  // the rest of the suite running, a six-second sleep here has been measured taking fifteen, and a
+  // term that a stall can outrun measures the scheduler rather than the lease. The term is
+  // therefore long in absolute terms, and the hold is still more than two of them. The mechanism
+  // underneath — a late beat that cannot write — is pinned deterministically by the test below,
+  // with no waiting at all.
   await withControlPlaneLease(root, async () => {
-    await new Promise((resolve) => { setTimeout(resolve, 3_000); });
+    await new Promise((resolve) => { setTimeout(resolve, 12_000); });
     contender = await acquireControlPlaneLease(root, { waitMs: 0 })
       .then((lease) => releaseControlPlaneLease(lease).then(() => "acquired"))
       .catch((error) => error.code);
-  }, { ttlMs: 1_000 });
+  }, { ttlMs: 5_000 });
 
   assert.equal(contender, "WRITE_LEASE_HELD", "a beating holder must not be displaced mid-write");
   assert.equal(await readControlPlaneLease(root), null, "the holder must still release its own lease");
