@@ -36,6 +36,19 @@ All notable changes to this project will be documented here.
 - Stopped sending the owner to a terminal to settle a gate. When a host cannot open a dialog, the
   refusal now points at the control tower panel's composer and the conversation, which is where the
   decision was always meant to happen.
+- Brought the crossing itself into the conversation. Exporting an approved delivery contract to the
+  engineering repository and importing the result back were command-line only, held out of the
+  model-reachable surface pending their own review. The review's answer: the authority line is not
+  crossed by whoever runs the command. It is crossed by the owner settling the gate, and what
+  travels is the hashed contract with its `sourceDigest`. Keeping the commands on the command line
+  protected nothing — it only meant the owner had to open a terminal at the exact moment they had
+  just authorised the crossing. `product_ops_open_delivery` and `product_ops_close_delivery` close
+  the last gap between an idea in a chat window and code in a repository.
+- Stopped a heartbeat from surrendering a lease nobody took. Under load a beat can fire after the
+  term it was meant to extend has lapsed; one transient write failure at that moment condemned a
+  lease whose file still named its holder. Displacement is now read from the file rather than
+  inferred from our own clock, and renewal reads twice before concluding, the way the write fence
+  already did.
 - Gave engineering the same host-delegated path the product side already had. The two halves had
   been running on different execution models: a product could be driven all the way to an approved
   delivery contract and then stop dead, because the only way to perform engineering work was to

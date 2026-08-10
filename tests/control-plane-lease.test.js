@@ -284,6 +284,47 @@ test("a holder whose work outlives the term keeps the lease", async (t) => {
   assert.equal(await readControlPlaneLease(root), null, "the holder must still release its own lease");
 });
 
+/**
+ * The heartbeat used to infer displacement from its own clock: a beat that fired after the term it
+ * was meant to extend had lapsed, and hit one transient write failure, condemned a lease nobody had
+ * touched. Under load a beat firing late and a replace failing are both ordinary — this makes both
+ * happen at once and requires the holder to survive, because only the file says who holds a lease.
+ */
+test("a late beat that cannot write does not surrender a lease nobody took", async (t) => {
+  const root = await makeProject(t);
+  const leaseFile = path.join(root, CONTROL_PLANE_LEASE_FILE);
+  let held = null;
+
+  await withControlPlaneLease(root, async (lease) => {
+    // Renewal stages the new lease under an exclusive name before renaming it into place. Occupying
+    // that name makes every replace inside the term fail the way disk contention does, while the
+    // lease file itself stays intact and keeps naming this holder.
+    const staging = `${leaseFile}.${lease.holderId}.renew.tmp`;
+    await fs.writeFile(staging, "occupied", "utf8");
+    await new Promise((resolve) => { setTimeout(resolve, 1_200); }); // four terms of failed beats
+    await fs.rm(staging, { force: true });
+    await new Promise((resolve) => { setTimeout(resolve, 300); });
+    held = (await readControlPlaneLease(root))?.holderId === lease.holderId;
+  }, { ttlMs: 300 });
+
+  assert.equal(held, true, "the lease file still named this holder throughout");
+});
+
+test("a beat that finds another holder in the file does surrender the lease", async (t) => {
+  const root = await makeProject(t);
+  const leaseFile = path.join(root, CONTROL_PLANE_LEASE_FILE);
+
+  await assert.rejects(
+    withControlPlaneLease(root, async () => {
+      const stolen = JSON.parse(await fs.readFile(leaseFile, "utf8"));
+      stolen.holderId = "00000000-0000-4000-8000-000000000000";
+      await fs.writeFile(leaseFile, `${JSON.stringify(stolen, null, 2)}\n`, "utf8");
+      await new Promise((resolve) => { setTimeout(resolve, 500); });
+    }, { ttlMs: 300 }),
+    (error) => error instanceof ControlPlaneLeaseLostError
+  );
+});
+
 test("a displaced holder fails its write instead of racing the surface that replaced it", async (t) => {
   const root = await makeProject(t);
   const { headers, records } = await loadTaskboard(root);

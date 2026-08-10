@@ -56,7 +56,9 @@ export const TOOL_ERROR_CODES = Object.freeze([
   "CLAIM_INVALID",
   "RESULT_REJECTED",
   "NO_LINKED_APPLICATION",
-  "SURVEY_FAILED"
+  "SURVEY_FAILED",
+  "WORK_INCOMPLETE",
+  "DELIVERY_NOT_CLOSEABLE"
 ]);
 
 export function toolFailure(error) {

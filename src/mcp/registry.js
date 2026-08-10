@@ -232,6 +232,36 @@ export const TOOL_DEFINITIONS = Object.freeze([
     handler: work.submitWork
   },
   {
+    name: "product_ops_open_delivery",
+    title: "Cross an approved delivery into engineering",
+    description: "Build the delivery contract for the card waiting at the engineering boundary, export it to the linked application, and plan it into workstreams. Plans by default; crossing needs the owner's settled gate.",
+    tier: TIERS.PLAN,
+    annotations: PLAN_ANNOTATIONS,
+    inputSchema: {
+      type: "object",
+      properties: {
+        apply: { type: "boolean", default: false, description: "Cross the boundary. Omitted or false returns the plan only." }
+      },
+      additionalProperties: false
+    },
+    handler: engineering.openDelivery
+  },
+  {
+    name: "product_ops_close_delivery",
+    title: "Return finished engineering work to the product board",
+    description: "Seal the completed workstreams, prove something was built inside the contract's boundary, gather quality-gate evidence, and import the result. Plans by default.",
+    tier: TIERS.PLAN,
+    annotations: PLAN_ANNOTATIONS,
+    inputSchema: {
+      type: "object",
+      properties: {
+        apply: { type: "boolean", default: false, description: "Close the delivery. Omitted or false returns the plan only." }
+      },
+      additionalProperties: false
+    },
+    handler: engineering.closeDelivery
+  },
+  {
     name: "product_ops_next_engineering_work",
     title: "Take the next ready engineering workstream",
     description: "Hand out one bounded engineering brief from the linked application for you to delegate. Reads only.",

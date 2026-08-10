@@ -146,8 +146,10 @@ workstream summary, and is still bounded.
 | `product_ops_autopilot` | `start \| pause \| resume \| retry` on the local coordinator | guarded |
 | `product_ops_next_work` | Hand out one team's bounded brief for the host to delegate | reads only |
 | `product_ops_submit_work` | Record what the host's subagent produced | `apply: false` |
+| `product_ops_open_delivery` | Export an approved delivery contract to the application and plan it | `apply: false` |
 | `product_ops_next_engineering_work` | Hand out one engineering workstream from the linked application | reads only |
 | `product_ops_submit_engineering_work` | Record what the host's engineering subagent produced | `apply: false` |
+| `product_ops_close_delivery` | Seal the completed workstreams and import the result | `apply: false` |
 
 ## Who performs the work
 
@@ -204,9 +206,19 @@ matching the current dashboard contract where the flag is set only on the writab
 | --- | --- |
 | `product_ops_decide` | Record an attributed approval or rejection against a pending gate |
 
-`development_export` and `development_import` are deliberately excluded from v1. They cross the
-Product/Development authority boundary and deserve their own review before becoming
-model-reachable.
+`development_export` and `development_import` were deliberately excluded from v1, pending their own
+review, and that review has happened. They are now reachable as `product_ops_open_delivery` and
+`product_ops_close_delivery`.
+
+The reasoning: the authority line is not crossed by whoever runs the command. It is crossed by the
+owner settling the `development-export` gate, and what travels is the hashed contract with its
+`sourceDigest`, which the engineering side verifies against. Neither of those changes with the
+caller. Keeping the commands off this surface did not protect the boundary — it only meant the owner
+had to open a terminal at the exact moment they had just authorised the crossing.
+
+Both tools plan by default. `open_delivery` refuses to cross an unsettled gate and says so;
+`close_delivery` refuses to close over a workstream with no sealed result, and refuses a delivery
+that changed nothing.
 
 ## Resources
 

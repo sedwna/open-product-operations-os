@@ -342,7 +342,7 @@ async function refreshCycleRouting(root, now) {
   return { headers: loaded.headers, tasks, approvals };
 }
 
-async function loadProductRuns(root, tasks, beforeTaskId) {
+export async function loadProductRuns(root, tasks, beforeTaskId) {
   const results = [];
   for (const task of tasks) {
     if (task.task_id === beforeTaskId) break;
@@ -377,7 +377,7 @@ async function loadRecentCycleReports(root, limit) {
   return reports;
 }
 
-async function recordEngineeringProductRun(root, config, task, delivery, now) {
+export async function recordEngineeringProductRun(root, config, task, delivery, now) {
   const role = config.agents.find((candidate) => candidate.id === task.owner_role);
   const result = {
     schemaVersion: "1.0.0",
