@@ -197,6 +197,16 @@ test("a delivery crosses into engineering and comes back, entirely through the s
   assert.equal(waiting.applied, false, opening.content[0].text);
   assert.equal(waiting.reason, "waiting_on_owner", "the crossing is the owner's decision, not the loop's");
 
+  // The gate must state its own decision. It used to open by quoting every prior run joined
+  // together and cut from the front, so on a real product the owner was asked to authorise a
+  // crossing while reading the idea-triage note that led to it.
+  const gate = (await call(handlers, "product_ops_pending_decisions")).structuredContent
+    .items.find((item) => item.requestId === waiting.requestId);
+  assert.ok(gate, "the crossing gate reaches the owner through the ordinary decision list");
+  assert.match(gate.context, /acceptance criterion/i, "it says how much travels");
+  assert.match(gate.context, /does not authorise a production release/i, "and what approving does not buy");
+  assert.match(gate.context, /Rejecting leaves the product side intact/i, "and what rejecting costs");
+
   await settleGate(handlers, product, waiting.requestId);
 
   const crossing = await call(handlers, "product_ops_open_delivery", { apply: true });

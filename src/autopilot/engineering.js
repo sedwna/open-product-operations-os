@@ -88,7 +88,7 @@ export async function openEngineeringDelivery(
   const approval = await ensureDevelopmentApproval(productRoot, productConfig, task, {
     autoApprove,
     now,
-    context: summarizeRuns(productRuns)
+    context: describeCrossing(intake, productRuns)
   });
   if (approval.status !== "approved") {
     return { status: "waiting_for_human", approval };
@@ -572,8 +572,40 @@ async function validationCommands(applicationRoot) {
   } catch { return ["git diff --check"]; }
 }
 
-function summarizeRuns(runs) {
-  return runs.map((run) => `${run.roleId}: ${run.summary}`).join("\n").slice(0, 8000);
+/**
+ * What the owner is being asked to authorise.
+ *
+ * This used to be every prior run's summary joined together and cut at eight thousand characters
+ * from the front. On a real product that meant the gate opened by quoting whichever card happened to
+ * run first — idea triage — and the delivery contract, the only thing this decision is actually
+ * about, was somewhere below the cut. The owner was asked to approve a crossing while reading the
+ * history that led to it.
+ *
+ * A gate should state its own decision. This names what would travel, how much of it there is, and
+ * what approving does and does not authorise, in that order.
+ */
+function describeCrossing(intake, runs) {
+  const contract = runs.find((run) => run.roleId === "RB-06");
+  const validation = runs.find((run) => run.roleId === "RB-07");
+  const criteria = uniqueObjects(
+    runs.flatMap((run) => run.acceptanceCriteria ?? []),
+    (item) => `${item.statement}\0${item.verification}`
+  ).length;
+
+  const lines = [];
+  if (intake?.title) lines.push(`What this delivers: ${intake.title}.`);
+  if (contract?.summary) lines.push(`The delivery contract says: ${clip(contract.summary, 1200)}`);
+  else lines.push("No delivery contract has been authored for this event yet, so what crosses would be assembled from whatever the product side has produced so far.");
+  lines.push(`${Math.min(criteria, 30)} acceptance criterion(s) travel with it${criteria > 30 ? ` (${criteria} exist; the contract carries the first 30)` : ""}.`);
+  if (validation?.summary) lines.push(`Validation design: ${clip(validation.summary, 600)}`);
+  lines.push("Approving sends this contract to the engineering repository and lets implementation begin there. It does not authorise a production release, a destructive operation, or any write outside the contract's boundary — each of those is gated separately.");
+  lines.push("Rejecting leaves the product side intact and stops only the crossing.");
+  return clip(lines.join("\n"), 8000);
+}
+
+function clip(value, limit) {
+  const text = String(value ?? "").trim();
+  return text.length > limit ? `${text.slice(0, limit - 1)}…` : text;
 }
 
 function findRoleTask(runs, roleId) {
