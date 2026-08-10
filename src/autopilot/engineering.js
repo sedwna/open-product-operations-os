@@ -1,7 +1,7 @@
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { stringifyCsv } from "../csv.js";
+import { parseCsv, stringifyCsv } from "../csv.js";
 import { planDevelopmentRequest } from "../development/planner.js";
 import { exportDevelopmentRequest, importEngineeringResult } from "../development/product-sync.js";
 import { completeDevelopmentResult } from "../development/result.js";
@@ -314,6 +314,50 @@ function deliveryContractRun(productRuns) {
 }
 
 /**
+ * Owner decisions recorded after the delivery contract was sealed.
+ *
+ * A sealed run is immutable, which is right — it is what a role claimed at a moment, and rewriting
+ * it would destroy the record. But it means a correction the owner makes afterwards never reaches
+ * the contract that crosses. On the first real product this left an acceptance criterion requiring
+ * two browsers after the owner had narrowed it to one: the implementers were told the correction in
+ * their briefs, and independent verification, which reads the contract, would have failed the work
+ * against a requirement that had been withdrawn.
+ *
+ * So the decisions travel with the contract as constraints. They are stated as corrections, with
+ * their decision identifier, so the engineering side can see both what the contract says and what
+ * the owner said after it — and so a verifier reading only the contract is not the last to know.
+ */
+async function decisionsAfterContract(productRoot, productConfig, contract, eventId) {
+  const sheet = productConfig.workbook.sheets.find((candidate) => candidate.key === "decision_log");
+  if (!sheet || !contract?.completedAt) return [];
+  let rows;
+  try {
+    rows = parseCsv(await fs.readFile(path.join(productRoot, sheet.file), "utf8"));
+  } catch (error) {
+    if (error.code === "ENOENT") return [];
+    throw error;
+  }
+  const [header, ...records] = rows;
+  if (!header) return [];
+  const column = (name) => header.indexOf(name);
+  const sealedAt = Date.parse(contract.completedAt);
+  const corrections = [];
+  for (const row of records) {
+    if (row[column("event_id")] !== eventId) continue;
+    const decidedAt = Date.parse(row[column("decided_at")] ?? "");
+    if (!Number.isFinite(decidedAt) || decidedAt <= sealedAt) continue;
+    const parts = [
+      `Owner decision ${row[column("decision_id")]}, recorded after this contract was sealed`,
+      row[column("title")],
+      row[column("selected_option")] ? `Chosen: ${row[column("selected_option")]}` : "",
+      row[column("conditions")] ? `Conditions: ${row[column("conditions")]}` : ""
+    ].filter(Boolean);
+    corrections.push(clip(parts.join(" — "), 400));
+  }
+  return corrections;
+}
+
+/**
  * What this delivery actually touches.
  *
  * The delivery contract's declaration governs; the other cards contribute only when it declared
@@ -346,7 +390,9 @@ async function buildDevelopmentRequest(productRoot, developmentConfig, productCo
     acceptance.push({ id: "AC-01", statement: "The approved product outcome is implemented and demonstrable.", verification: "Run the repository validation and an end-to-end product scenario." });
   }
   const recommendations = [...(contract?.recommendations ?? []), ...productRuns.flatMap((run) => run.recommendations ?? [])];
+  const corrections = await decisionsAfterContract(productRoot, productConfig, contract, task.event_id);
   const constraints = unique([
+    ...corrections,
     ...productRuns.flatMap((run) => run.constraints ?? []).filter(isProductConstraint),
     "No production credentials or production-derived customer data",
     "Production deployment requires a separate attributed human approval",

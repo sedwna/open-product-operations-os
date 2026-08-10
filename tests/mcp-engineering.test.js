@@ -10,6 +10,7 @@ import { loadDevelopmentConfig } from "../src/development/config.js";
 import { loadConfig } from "../src/config.js";
 import { loadApprovals } from "../src/runtime/approvals.js";
 import { loadTaskboard, replaceTaskboard } from "../src/runtime/taskboard.js";
+import { parseCsv, stringifyCsv } from "../src/csv.js";
 import { ingestRecord } from "../src/runtime/intake.js";
 import { runControlTower } from "../src/runtime/control-tower.js";
 import { runGit } from "../src/autopilot/shared.js";
@@ -279,6 +280,44 @@ test("a delivery crosses into engineering and comes back, entirely through the s
  * export defect was found before anyone built against it, and the broken contract would have been
  * handed back unchanged.
  */
+/**
+ * A sealed run is immutable, so a correction the owner makes after the delivery contract was sealed
+ * never reaches the contract that crosses. On the owner's first real product this left an
+ * acceptance criterion demanding two browsers after they had narrowed it to one — the implementers
+ * were told in their briefs, and independent verification, which reads the contract, would have
+ * failed the work against a requirement that had been withdrawn.
+ */
+test("an owner decision recorded after the contract was sealed crosses with it", async (t) => {
+  const { product, application, handlers } = await deliveryWorkspace(t);
+  const waiting = (await call(handlers, "product_ops_open_delivery", { apply: true })).structuredContent;
+  await settleGate(handlers, product, waiting.requestId);
+
+  // The correction lands after the delivery contract card completed, which is the whole difficulty.
+  const log = path.join(product, "workbook", "09-decision-log.csv");
+  const rows = parseCsv(await fs.readFile(log, "utf8"));
+  const header = rows[0];
+  const row = header.map(() => "");
+  const put = (name, value) => { row[header.indexOf(name)] = value; };
+  put("decision_id", "DEC-20260809-001");
+  put("event_id", "EVT-20260809-001");
+  put("title", "AC-01 applies to Chromium only");
+  put("status", "approved");
+  put("selected_option", "chromium_only");
+  put("decision_maker_actor_id", "human-product-owner");
+  put("decided_at", "2026-08-09T23:00:00.000Z");
+  put("conditions", "Gecko stays an open issue");
+  await fs.writeFile(log, stringifyCsv([...rows, row]), "utf8");
+
+  const crossed = (await call(handlers, "product_ops_open_delivery", { apply: true })).structuredContent;
+  const exported = JSON.parse(await fs.readFile(
+    path.join(application, ".development-os", "inbox", `${crossed.requestId}.json`), "utf8"));
+  const carried = exported.constraints.find((item) => item.includes("DEC-20260809-001"));
+  assert.ok(carried, `the correction must travel with the contract: ${JSON.stringify(exported.constraints)}`);
+  assert.match(carried, /Chromium only/);
+  assert.match(carried, /after this contract was sealed/);
+  assert.match(carried, /Gecko stays an open issue/, "its conditions travel too");
+});
+
 test("a contract nobody has built against yet can be corrected", async (t) => {
   const { product, handlers } = await deliveryWorkspace(t);
   const waiting = (await call(handlers, "product_ops_open_delivery", { apply: true })).structuredContent;
