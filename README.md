@@ -119,8 +119,8 @@ Everything the runbook does is an ordinary command; see the
 The control surface speaks the Model Context Protocol, so the same configuration serves Claude Code,
 Claude Desktop, the ChatGPT desktop app, Codex CLI, and any compliant IDE.
 
-Not published to npm yet, so clone it and point your host at the clone. `.mcp.json` for Claude
-Code, or `.codex/config.toml` for Codex:
+Not published to npm yet, so clone it and point your host at the clone. For Claude Code, write
+`.mcp.json` **in the workspace folder you will open as the session root**:
 
 ```json
 {
@@ -133,17 +133,28 @@ Code, or `.codex/config.toml` for Codex:
 }
 ```
 
+For Codex, do not write this file — run `codex mcp add` instead. The desktop app rewrites
+`config.toml` at startup and deletes hand-written entries. Full per-host instructions, including
+what to do when nothing connects, are in
+[connecting a host](docs/setup/connecting-a-host.md).
+
 Read-only is the default. Add `--allow-writes` when you want the owner to be able to record intake,
 run a cycle, and settle human gates from the conversation.
 
-Then, in the session:
+Then, in the session, type `/` and pick from the list. The exact spelling differs by surface — the
+Claude Code CLI writes them `/mcp__product-ops__start`, the desktop app's picker shows
+`product-ops:start` — so pick rather than type, or just ask in words.
 
 | Ask for | What happens |
 | --- | --- |
-| `/product-ops:start` | Walks you from an empty workspace to a running one, with or without an existing application |
-| `/product-ops:take-command` | Puts the agent in the coordinator seat with the full operating brief |
-| `/product-ops:what-needs-me` | Every gate waiting on you, with its risks and evidence |
+| `start` | Walks you from an empty workspace to a running one, with or without an existing application |
+| `take-command` | Puts the agent in the coordinator seat with the full operating brief |
+| `what-needs-me` | Every gate waiting on you, with its risks and evidence |
 | **the panel** | `product_ops_panel` renders the control tower inline: both teams, the hand-off chain, and a box to write your decision in |
+
+If nothing appears under `/`, the server has not connected yet — see
+[connecting a host](docs/setup/connecting-a-host.md). You can always say "take the coordinator seat,
+start with product_ops_status" in plain words instead.
 
 The panel shows the organisation, not the schema — named teams on both sides, where each piece of
 work currently sits, and what is waiting on you. Deciding is yours: the surface collects your
