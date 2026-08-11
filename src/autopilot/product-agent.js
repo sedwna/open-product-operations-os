@@ -4,6 +4,7 @@ import path from "node:path";
 import { assertNoLinkTraversal, resolveInside, toPosixPath } from "../paths.js";
 import { validatePublishedSchema } from "../schema-validation.js";
 import { assertNoCredentialMaterial } from "../runtime/security.js";
+import { canonicalRecordKeys } from "../workbook-contract.js";
 
 const PRODUCT_RUN_ROOT = ".product-ops/runtime/autopilot/product-runs";
 
@@ -91,6 +92,7 @@ export function buildProductAgentRequest(
   role,
   { intake, priorRuns = [], cycleHistory = [], cycleId, applicationRoot = null, operationalArtifacts = null } = {}
 ) {
+  const ownedSheets = config.workbook.sheets.filter((sheet) => sheet.owner === role.id);
   return {
     schemaVersion: "1.0.0",
     cycleId,
@@ -132,6 +134,14 @@ export function buildProductAgentRequest(
       // directories for work that needed five.
       ...(role.id === "RB-06"
         ? { writeBoundaryRule: "Set writeBoundary.allowedPaths to the directories this delivery actually needs. It may only narrow what the application already allows, never widen it, and naming a path outside that policy is refused rather than ignored. Leaving it unset hands the whole policy to engineering." }
+        : {}),
+      // Analysis that never reaches the record is analysis nobody can find later. A role that owns
+      // a tab is the only role that can put rows in it, and its card is the moment to do so.
+      ...(ownedSheets.length > 0
+        ? {
+            canonicalRecordRule: `This role owns ${ownedSheets.map((sheet) => sheet.key).join(", ")}. Put what you produced into canonicalRecords as rows on those tabs — one entry per row, with the tab's own key field in "key" and the rest in "fields". Writing a tab you do not own, a column that does not exist, or a protected field is refused, and the card does not complete.`,
+            ownedRecords: ownedSheets.map((sheet) => ({ sheet: sheet.key, keyFields: canonicalRecordKeys(sheet.key), columns: sheet.columns }))
+          }
         : {})
     }
   };

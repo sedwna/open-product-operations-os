@@ -9,6 +9,7 @@ import { applyRunOutcome, cycleProgress } from "../../autopilot/cycle.js";
 import { loadProductRuns, persistCycleReport, writeCycleReport } from "../../autopilot/orchestrator.js";
 import { materializeCycleWorkbook } from "../../autopilot/workbook.js";
 import { withControlPlaneLease } from "../../runtime/control-plane-lease.js";
+import { commitRoleRecords } from "../../runtime/coordination-record.js";
 import { readAutomationLink } from "../../autopilot/state.js";
 import { describeTeam } from "../app/teams.js";
 import { ToolFailure } from "../authority.js";
@@ -108,13 +109,6 @@ export async function nextWork(context) {
 }
 
 /**
- * What the owner has already settled on this event.
- *
- * A gate is not only a permission to proceed. It is where the owner states which option they chose
- * and on what terms, and those terms govern every task the event goes on to produce — not just the
- * one card that happened to carry the gate.
- */
-/**
  * Close a finished event: write its report, then commit its record to the canonical workbook.
  *
  * These are the same two steps the coordinator loop takes when its last card lands, called here
@@ -143,6 +137,13 @@ async function closeCycle(root, config, task, tasks) {
   };
 }
 
+/**
+ * What the owner has already settled on this event.
+ *
+ * A gate is not only a permission to proceed. It is where the owner states which option they chose
+ * and on what terms, and those terms govern every task the event goes on to produce — not just the
+ * one card that happened to carry the gate.
+ */
 function ownerDecisions(requests, task, tasks) {
   const sameEvent = new Set(
     tasks.filter((candidate) => candidate.event_id === task.event_id).map((candidate) => candidate.task_id)
@@ -206,12 +207,22 @@ export async function submitWork(context, args = {}) {
       // because the coordinator can fix a malformed result and cannot fix a broken server.
       throw new ToolFailure("RESULT_REJECTED", `The submitted result was refused: ${error.message}`);
     }
+    // Committed before the card moves, so a row that will not go in stops the card rather than
+    // leaving it done with a record that never arrived.
+    let committed = { written: 0, sheets: [] };
+    if (recorded.result.status === "completed") {
+      try {
+        committed = await commitRoleRecords(context.root, config, recorded.result);
+      } catch (error) {
+        throw new ToolFailure("RECORD_REJECTED", `${error.message} Fix the rows and submit again; the card has not moved.`);
+      }
+    }
     const board = await loadTaskboard(context.root);
     const advanced = await applyRunOutcome(context.root, board.headers, board.records, task, recorded.result);
-    return { recorded, advanced, progress: cycleProgress(advanced.tasks, task.event_id) };
+    return { recorded, advanced, committed, progress: cycleProgress(advanced.tasks, task.event_id) };
   });
 
-  const { recorded, advanced, progress } = outcome;
+  const { recorded, advanced, committed, progress } = outcome;
   // The card that finishes an event closes it. When product work was inverted to host-delegated
   // execution, this step stayed behind in the coordinator loop: the delegated path completed every
   // card and then told the coordinator to run a scheduling pass to "close the cycle", which cannot
@@ -228,6 +239,11 @@ export async function submitWork(context, args = {}) {
       ? `Recorded ${task.task_id} for ${team.name} and moved it to done. A completed result is sealed; submitting again returns the sealed record rather than replacing it.`
       : `Recorded a ${recorded.result.status} result for ${task.task_id} (${team.name}) and stopped the card with the producer's own reason. It is not sealed, so the work can be attempted again.`
   ];
+  if (committed.written > 0) {
+    lines.push(`${committed.written} row(s) went into the canonical record: ${committed.sheets.join(", ")}.`);
+  } else if (recorded.result.status === "completed") {
+    lines.push("This card recorded no canonical rows. That is right for a card whose output is analysis, and wrong for one that produced issues, a ticket, scenarios or evidence — those belong in the record, not only in the run file.");
+  }
   if (!progress.complete) {
     lines.push(`${progress.remaining} of ${progress.total} card(s) for ${task.event_id} remain. Call product_ops_next_work for the next one.`);
   } else if (closure?.error) {

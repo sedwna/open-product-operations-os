@@ -53,6 +53,14 @@ All notable changes to this project will be documented here.
   nothing enforced it and the closing check would have accepted all thirteen. A contract may now
   state its own `writeBoundary.allowedPaths`; it can only narrow the application's policy, and
   naming a path outside it is refused rather than quietly dropped.
+- Let each role commit its own rows to the record as its card completes, instead of the whole
+  product record waiting for one role at the end of the cycle. A product that had raised
+  twenty-nine issues and written a contract with thirty acceptance criteria still showed an empty
+  workbook until the very last card landed — and looked, correctly, like a system that was not
+  recording anything. Three rules keep it safe: a role writes only the tabs it owns, may set only
+  real columns, and may never set a field whose authority belongs to the development side or to a
+  human. The rows are read back after writing, and a row that will not go in stops the card rather
+  than leaving it done with a record that never arrived.
 - Connected the canonical record to the path owners actually use. When product work was inverted to
   host-delegated execution, closing a cycle stayed behind in the coordinator loop: the delegated
   path completed every card and then told the coordinator to run a scheduling pass to "close the

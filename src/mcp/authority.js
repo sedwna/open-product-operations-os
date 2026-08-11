@@ -58,7 +58,8 @@ export const TOOL_ERROR_CODES = Object.freeze([
   "NO_LINKED_APPLICATION",
   "SURVEY_FAILED",
   "WORK_INCOMPLETE",
-  "DELIVERY_NOT_CLOSEABLE"
+  "DELIVERY_NOT_CLOSEABLE",
+  "RECORD_REJECTED"
 ]);
 
 export function toolFailure(error) {

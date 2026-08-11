@@ -459,3 +459,99 @@ test("the last card of an event writes the canonical record", async (t) => {
   }
   await fs.access(path.join(root, ".product-ops", "runtime", "autopilot", "reports"));
 });
+
+/**
+ * The canonical record used to be written once, by one role, at the very end of a cycle. A product
+ * that had raised twenty-nine issues and written a contract with thirty acceptance criteria still
+ * showed an empty workbook, and looked — correctly — like a system that was not recording anything.
+ * A role can now commit its own rows as its card completes, under three rules.
+ */
+async function cardFor(handlers, roleId, root) {
+  const { loadTaskboard: load, replaceTaskboard } = await import("../src/runtime/taskboard.js");
+  const { headers, records } = await load(root);
+  const target = records.find((task) => task.owner_role === roleId);
+  // Everything before it is done, so the card is genuinely runnable rather than merely marked
+  // ready — an unsatisfied dependency would leave nothing to hand out.
+  const index = records.indexOf(target);
+  await replaceTaskboard(root, headers, records.map((task, position) => ({
+    ...task,
+    status: position < index ? "done" : (task.task_id === target.task_id ? "ready" : "backlog"),
+    human_gate: ""
+  })), { dryRun: false });
+  const claim = (await call(handlers, "product_ops_next_work")).structuredContent;
+  assert.equal(claim.roleId, roleId, `expected the ${roleId} card: ${JSON.stringify(claim)}`);
+  return claim;
+}
+
+test("a role commits its own rows to the tab it owns as its card completes", async (t) => {
+  const { root, handlers } = await workspace(t);
+  const { ingestRecord } = await import("../src/runtime/intake.js");
+  const { parseCsv } = await import("../src/csv.js");
+  await ingestRecord(root, {
+    type: "new_idea", title: "Players cannot see how far they got",
+    description: "A run ends with no record of the distance.", source: "the owner"
+  }, { dryRun: false });
+  await call(handlers, "product_ops_operate", { apply: true });
+
+  // The issues team owns the issues register, and this is the card that produces issues.
+  const claim = await cardFor(handlers, "RB-05", root);
+  assert.ok(claim.brief.reporting.canonicalRecordRule, "the brief tells the role which record is its to write");
+  assert.deepEqual(claim.brief.reporting.ownedRecords.map((item) => item.sheet), ["issues"]);
+
+  const submitted = await call(handlers, "product_ops_submit_work", {
+    taskId: claim.taskId, claimToken: claim.claimToken, apply: true,
+    result: resultFor(claim, {
+      canonicalRecords: [{
+        sheet: "issues",
+        key: { issue_id: "ISS-0001" },
+        fields: { title: "No distance is shown when a run ends", status: "open", priority: "P1", owner_role: "RB-05" }
+      }]
+    })
+  });
+  assert.equal(submitted.isError, false, submitted.content[0].text);
+  assert.match(submitted.content[0].text, /1 row\(s\) went into the canonical record: issues/);
+
+  const rows = parseCsv(await fs.readFile(path.join(root, "workbook", "10-issues.csv"), "utf8"))
+    .filter((row) => row.some((cell) => cell !== ""));
+  const header = rows[0];
+  const written = rows.slice(1).find((row) => row[header.indexOf("issue_id")] === "ISS-0001");
+  assert.ok(written, "the row is in the record, not only in the run file");
+  assert.equal(written[header.indexOf("event_id")], claim.eventId, "and it is tied to the event that produced it");
+});
+
+test("a role cannot write a record that belongs to another role", async (t) => {
+  for (const [label, role, rows, expected] of [
+    ["another role's tab", "RB-05", [{ sheet: "releases", key: { release_id: "REL-1" }, fields: { status: "released" } }], /belongs to RB-11/],
+    ["a column that does not exist", "RB-05", [{ sheet: "issues", key: { issue_id: "ISS-1" }, fields: { not_a_column: "x" } }], /no such column/],
+    // The contract role owns delivery tickets, and those carry fields the development side owns.
+    // Writing one here would route around the boundary that exists to keep them apart.
+    ["a field the development side owns", "RB-06", [{ sheet: "delivery_tickets", key: { ticket_id: "TKT-1" }, fields: { development_status: "done" } }], /protected field/],
+    ["a tab that does not exist", "RB-05", [{ sheet: "not_a_tab", key: { id: "x" }, fields: {} }], /not a workbook tab/]
+  ]) {
+    await t.test(label, async (inner) => {
+      // A fresh workspace per case: a submitted attempt is retained, so reusing one card would test
+      // the retention rather than the rule.
+      const { root, handlers } = await workspace(inner);
+      const { ingestRecord } = await import("../src/runtime/intake.js");
+      await ingestRecord(root, {
+        type: "new_idea", title: "Players cannot see how far they got",
+        description: "A run ends with no record of the distance.", source: "the owner"
+      }, { dryRun: false });
+      await call(handlers, "product_ops_operate", { apply: true });
+      const claim = await cardFor(handlers, role, root);
+
+      const refused = await call(handlers, "product_ops_submit_work", {
+        taskId: claim.taskId, claimToken: claim.claimToken, apply: true,
+        result: resultFor(claim, { canonicalRecords: rows })
+      });
+      assert.equal(refused.isError, true, `must refuse ${label}`);
+      assert.equal(refused.structuredContent.code, "RECORD_REJECTED", "and say so in a code a caller can act on");
+      assert.match(JSON.stringify(refused), expected);
+
+      // A row that will not go in stops the card rather than leaving it done with a record that
+      // never arrived.
+      const { records: board } = await loadTaskboard(root);
+      assert.equal(board.find((task) => task.task_id === claim.taskId).status, "ready");
+    });
+  }
+});

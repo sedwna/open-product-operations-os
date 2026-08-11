@@ -51,6 +51,28 @@
     },
     "evidence": { "$ref": "#/$defs/strings" },
     "knownRisks": { "$ref": "#/$defs/strings" },
+    "canonicalRecords": {
+      "type": "array",
+      "maxItems": 200,
+      "description": "Rows this role is committing to the canonical workbook as part of finishing its card. A role may only write the tabs it owns, may only set real columns, and may never set a protected field.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sheet", "key", "fields"],
+        "properties": {
+          "sheet": { "type": "string", "minLength": 1, "maxLength": 60 },
+          "key": {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": { "type": "string", "minLength": 1, "maxLength": 200 }
+          },
+          "fields": {
+            "type": "object",
+            "additionalProperties": { "type": "string", "maxLength": 4000 }
+          }
+        }
+      }
+    },
     "writeBoundary": {
       "type": "object",
       "additionalProperties": false,
