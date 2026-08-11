@@ -365,6 +365,34 @@ async function decisionsAfterContract(productRoot, productConfig, contract, even
  * two every change has — the work itself and the record of it — and the planner widens from there
  * by reading the contract's own words.
  */
+/**
+ * Where this delivery may write.
+ *
+ * The application's policy is the outer bound and a delivery can only ever narrow it. Until now it
+ * could not even do that: the exported contract took the application's whole allowed list, so a
+ * browser game that needed five directories was handed thirteen — including `database`,
+ * `migrations` and `infrastructure`. The coordinator's answer was to tell each subagent to stay
+ * inside five anyway, which is a request, not a boundary: nothing enforced it and the closing check
+ * would have accepted writes to all thirteen.
+ *
+ * A path the delivery names that the application does not allow is refused rather than quietly
+ * dropped. Asking for somewhere you may not write is a disagreement worth surfacing, not a typo to
+ * absorb.
+ */
+function narrowedAllowedPaths(contract, developmentConfig) {
+  const policy = developmentConfig.policies.allowedPaths;
+  const declared = contract?.writeBoundary?.allowedPaths ?? [];
+  if (declared.length === 0) return policy;
+  const outside = declared.filter((candidate) => !policy.includes(candidate));
+  if (outside.length > 0) {
+    throw new Error(
+      `The delivery contract asks to write in ${outside.join(", ")}, which the application's own write policy does not allow. `
+      + "A delivery may narrow that policy and never widen it; change the application policy deliberately, or drop the paths."
+    );
+  }
+  return policy.filter((candidate) => declared.includes(candidate));
+}
+
 const MINIMUM_IMPACTS = ["architecture", "documentation"];
 
 function scopedImpacts(contract, productRuns) {
@@ -428,7 +456,7 @@ async function buildDevelopmentRequest(productRoot, developmentConfig, productCo
     nonFunctionalRequirements,
     writeBoundary: {
       repositories: [developmentConfig.project.id],
-      allowedPaths: developmentConfig.policies.allowedPaths,
+      allowedPaths: narrowedAllowedPaths(contract, developmentConfig),
       prohibitedPaths: developmentConfig.policies.prohibitedPaths
     },
     validation: {

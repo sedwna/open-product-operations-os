@@ -126,7 +126,13 @@ export function buildProductAgentRequest(
       retryBeforeRecordingAbsence: true
     },
     reporting: {
-      absenceRule: "A source you could not reach is not a source that says nothing. Retry a failed retrieval at least once before recording anything as absent, and if it still fails, record the failure — what you tried and what it returned — rather than the absence."
+      absenceRule: "A source you could not reach is not a source that says nothing. Retry a failed retrieval at least once before recording anything as absent, and if it still fails, record the failure — what you tried and what it returned — rather than the absence.",
+      // This role's charter has always said it defines write boundaries. Until now there was no
+      // field to put one in, so the delivery inherited the whole application policy — thirteen
+      // directories for work that needed five.
+      ...(role.id === "RB-06"
+        ? { writeBoundaryRule: "Set writeBoundary.allowedPaths to the directories this delivery actually needs. It may only narrow what the application already allows, never widen it, and naming a path outside that policy is refused rather than ignored. Leaving it unset hands the whole policy to engineering." }
+        : {})
     }
   };
 }

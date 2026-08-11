@@ -230,6 +230,12 @@ test("a delivery crosses into engineering and comes back, entirely through the s
     `impacts must be what the product declared, not the whole enum: ${exported.impacts.length}`
   );
   assert.deepEqual(exported.impacts, ["frontend"], "and exactly what the delivery contract declared");
+  // The application's policy is the outer bound; the delivery narrows within it. Handing over the
+  // whole policy meant a browser game could write to database and infrastructure, and the closing
+  // check would have accepted it.
+  assert.deepEqual(exported.writeBoundary.allowedPaths, ["src", "tests"],
+    `the delivery must narrow the boundary it was given: ${JSON.stringify(exported.writeBoundary.allowedPaths)}`);
+  assert.ok(exported.writeBoundary.prohibitedPaths.length > 0, "and what is never writable stays");
   assert.match(crossed.planId, /^ENGPLAN-/);
   assert.match(crossed.sourceDigest, /^[a-f0-9]{64}$/, "what crosses is a hashed contract");
   assert.ok(crossed.workstreams > 0);
@@ -316,6 +322,31 @@ test("an owner decision recorded after the contract was sealed crosses with it",
   assert.match(carried, /Chromium only/);
   assert.match(carried, /after this contract was sealed/);
   assert.match(carried, /Gecko stays an open issue/, "its conditions travel too");
+});
+
+test("a delivery cannot write itself a wider boundary than the application allows", async (t) => {
+  const { product, handlers } = await deliveryWorkspace(t);
+  const waiting = (await call(handlers, "product_ops_open_delivery", { apply: true })).structuredContent;
+  await settleGate(handlers, product, waiting.requestId);
+
+  // The contract asks for somewhere the application's own policy does not permit. Silently dropping
+  // it would leave the delivery believing it had a boundary it never got.
+  const runs = path.join(product, ".product-ops", "runtime", "autopilot", "product-runs");
+  let widened = 0;
+  for (const name of await fs.readdir(runs)) {
+    if (!name.endsWith("-result.json")) continue;
+    const record = JSON.parse(await fs.readFile(path.join(runs, name), "utf8"));
+    if (record.roleId !== "RB-06") continue;
+    record.writeBoundary = { allowedPaths: ["src", "production-secrets"] };
+    await fs.writeFile(path.join(runs, name), `${JSON.stringify(record, null, 2)}\n`, "utf8");
+    widened += 1;
+  }
+  assert.equal(widened, 1, "the delivery contract's own run is the one that states the boundary");
+
+  const refused = await call(handlers, "product_ops_open_delivery", { apply: true });
+  assert.equal(refused.isError, true, "asking for a path outside the policy must be refused, not absorbed");
+  assert.match(JSON.stringify(refused), /production-secrets/);
+  assert.match(JSON.stringify(refused), /narrow that policy and never widen/i);
 });
 
 test("a contract nobody has built against yet can be corrected", async (t) => {
@@ -429,6 +460,7 @@ async function writeProductRun(product, config, task) {
   await fs.mkdir(directory, { recursive: true });
   const isContract = task.owner_role === "RB-06";
   const result = {
+    ...(isContract ? { writeBoundary: { allowedPaths: ["src", "tests"], rationale: "Unit 1 is a browser game and needs nothing else." } } : {}),
     schemaVersion: "1.0.0",
     taskId: task.task_id,
     eventId: task.event_id,

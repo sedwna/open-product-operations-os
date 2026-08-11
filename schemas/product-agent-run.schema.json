@@ -51,6 +51,21 @@
     },
     "evidence": { "$ref": "#/$defs/strings" },
     "knownRisks": { "$ref": "#/$defs/strings" },
+    "writeBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["allowedPaths"],
+      "description": "Where this delivery needs to be able to write. Optional, and only meaningful from the role that authors the delivery contract. It may narrow the application's own policy and can never widen it.",
+      "properties": {
+        "allowedPaths": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+        },
+        "rationale": { "type": "string", "maxLength": 500 }
+      }
+    },
     "completedAt": { "type": "string", "format": "date-time" }
   },
   "$defs": {

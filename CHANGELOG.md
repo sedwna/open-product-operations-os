@@ -45,6 +45,14 @@ All notable changes to this project will be documented here.
   retried; the verifier found the budget by simply asking again. Every document downstream had been
   reasoning from a gap that was never there. The brief now carries the rule, and the coordinator's
   standing instructions say to check whether a subagent looked or merely failed to.
+- Let a delivery narrow the boundary it may write in. The role that authors delivery contracts has
+  always been chartered to `define_write_boundaries`, and there was no field to put one in, so every
+  delivery inherited the application's whole policy: a browser game needing five directories was
+  handed thirteen, including `database`, `migrations` and `infrastructure`. The coordinator's answer
+  was to ask each subagent to stay inside five anyway, which is a request rather than a boundary —
+  nothing enforced it and the closing check would have accepted all thirteen. A contract may now
+  state its own `writeBoundary.allowedPaths`; it can only narrow the application's policy, and
+  naming a path outside it is refused rather than quietly dropped.
 - Connected the canonical record to the path owners actually use. When product work was inverted to
   host-delegated execution, closing a cycle stayed behind in the coordinator loop: the delegated
   path completed every card and then told the coordinator to run a scheduling pass to "close the
