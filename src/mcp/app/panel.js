@@ -245,15 +245,19 @@ function teamsSection(s){
       :'<div class="note" style="margin-top:6px">تیم مهندسی هنوز به این فضای کاری متصل نشده است.</div>')+"</div>";
 }
 function sideBlock(title,teams,subtitle){
-  var busy=teams.filter(function(x){return x.total>0;}).length;
+  var busy=teams.filter(function(x){return x.total>0||x.cardless;}).length;
   return '<div class="side"><b>'+esc(title)+'</b><span class="tag">'+busy+" از "+teams.length+" درگیر</span>"
     +'<span class="note">'+esc(subtitle)+"</span></div>"
     +'<div class="teams" style="margin-bottom:10px">'+teams.map(function(x){
-      return '<div class="team'+(x.total?"":" idle")+'"><b>'+esc(x.name)+"</b><small>"+esc(x.focus)+"</small>"
+      // A team that is never dispatched a card is not an idle team. Coordination is the control
+      // plane itself, and showing it as "no work" beside twelve working teams read as a fault.
+      var quiet=!x.total&&!x.cardless;
+      return '<div class="team'+(quiet?" idle":"")+'"><b>'+esc(x.name)+"</b><small>"+esc(x.focus)+"</small>"
         +'<div class="tally">'+(x.active?"<span>"+x.active+" فعال</span>":"")
         +(x.blocked?"<span>"+x.blocked+" متوقف</span>":"")
         +(x.done?"<span>"+x.done+" انجام‌شده</span>":"")
-        +(x.total?"":"<span>بدون کار</span>")+"</div></div>";
+        +(quiet?"<span>بدون کار</span>":"")
+        +(x.cardless&&!x.total?"<span>مسیریابی و ثبت — کارت نمی‌گیرد</span>":"")+"</div></div>";
     }).join("")+"</div>";
 }
 function cell(n,label){return '<div class="count"><b>'+n+"</b><span>"+label+"</span></div>";}

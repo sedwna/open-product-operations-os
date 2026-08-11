@@ -102,6 +102,11 @@ function buildTeams(snapshot) {
     const owned = tasks.filter((task) => task.owner_role === roleId);
     return {
       ...describeTeam(roleId, "product"),
+      // Coordination is never dispatched a card because the control plane is that boundary: it
+      // routes the event, lays the hand-off chain and records it. Counting only cards showed it
+      // permanently at zero next to twelve teams that were working, which reads as a team that is
+      // broken rather than one whose work is not card-shaped.
+      cardless: roleId === "RB-01",
       total: owned.length,
       active: owned.filter((task) => ["ready", "in_progress", "in_review"].includes(task.status)).length,
       blocked: owned.filter((task) => task.status === "blocked").length,

@@ -37,7 +37,7 @@ Usage:
   product-ops development-import <target> --file <result-json> [--apply]
   product-ops intake <target> --file <json-file> [--apply]
   product-ops approvals <target>
-  product-ops decide <target> --request <id> --decision <approved|rejected> --actor <id> [--apply]
+  product-ops decide <target> --request <id> --decision <approved|rejected> --actor <id> [--rationale <text> | --rationale-file <utf8-file>] [--apply]
   product-ops provider-queue <target> --file <json-file> [--apply]
   product-ops provider-sync <target> --provider <name> [--apply]
   product-ops metrics <target> [--output <file>] [--apply]
@@ -68,6 +68,9 @@ Options:
   --force    Refresh replaceable scaffold; preserve operational CSV rows.
   --apply    Apply a runtime action; runtime commands default to dry-run.
   --no-git   Do not start a Git history. Exporting to engineering then has no revision to stamp.
+  --rationale-file  Read the owner's reasoning from a UTF-8 file instead of an argument. Use this
+                    for any non-ASCII text: a console whose code page is not UTF-8 mangles it on
+                    the way in, and the record then keeps a corrupted version of what they said.
   -h, --help Show this help.
 `;
 
@@ -141,7 +144,7 @@ function parseArguments(argv) {
   const providedOptions = new Set();
   const positional = [];
   const flags = new Set(["--dry-run", "--force", "--apply", "--execute-development", "--no-git"]);
-  const values = new Set(["--task", "--file", "--request", "--decision", "--actor", "--rationale", "--provider", "--output", "--answers", "--application"]);
+  const values = new Set(["--task", "--file", "--request", "--decision", "--actor", "--rationale", "--provider", "--output", "--answers", "--application", "--rationale-file"]);
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
     if (flags.has(argument)) {
@@ -197,7 +200,7 @@ function validateCommandOptions(command, provided) {
     "development-import": [...runtime, "file"],
     intake: [...runtime, "file"],
     approvals: [],
-    decide: [...runtime, "request", "decision", "actor", "rationale"],
+    decide: [...runtime, "request", "decision", "actor", "rationale", "rationaleFile"],
     "provider-queue": [...runtime, "file"],
     "provider-sync": [...runtime, "provider"],
     metrics: [...runtime, "output"],

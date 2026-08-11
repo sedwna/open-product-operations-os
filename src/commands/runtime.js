@@ -1,3 +1,5 @@
+import fs from "node:fs/promises";
+import path from "node:path";
 import { queueProviderItem, syncProvider } from "../adapters/provider-sync.js";
 import { loadConfig, validateConfig, validateConfigRelationships } from "../config.js";
 import { decideApproval, loadApprovals } from "../runtime/approvals.js";
@@ -97,12 +99,22 @@ export async function decideCommand(target, options) {
   for (const key of ["request", "decision", "actor"]) {
     if (!options[key]) throw new Error(`decide requires --${key} <value>.`);
   }
+  if (options.rationale && options.rationaleFile) {
+    throw new Error("decide takes --rationale or --rationale-file, not both.");
+  }
+  // A rationale is the owner's own words and is stored as such. Passing it as a console argument
+  // put it through the terminal's code page first, and on a Windows console that is not UTF-8 the
+  // owner's Persian came back reversed and garbled — so the record kept a mangled version of what
+  // they said. Reading it from a file skips the console entirely.
+  const rationale = options.rationaleFile
+    ? (await fs.readFile(path.resolve(options.rationaleFile), "utf8")).trim()
+    : (options.rationale ?? "");
   const config = await validatedConfig(target);
   const result = await decideApproval(target, config, {
     requestId: options.request,
     decision: options.decision,
     actorId: options.actor,
-    rationale: options.rationale ?? ""
+    rationale
   }, { dryRun: runtimeDryRun(options) });
   return [`${result.dryRun ? "Planned" : "Recorded"} ${result.request.status} disposition for ${result.request.requestId}.`];
 }

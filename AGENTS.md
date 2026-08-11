@@ -25,6 +25,16 @@ Ask in chat, one thing at a time, and wait. Do not batch four questions into a w
 When something fails, say what broke and what you are doing about it. Do not paste raw stack traces
 at them.
 
+**Never leave them watching a spinner.** Setup has eight steps; say so at the start, and name the
+step you are on as you reach it. Before anything that takes more than a few seconds, say roughly how
+long and that it will print nothing while it works. Afterwards, say what it produced in a number
+they can check — files created, roles configured, cards routed.
+
+This is not politeness. This system's entire claim is that an operator should never have to guess
+what it is doing, and the first person to follow this runbook reported that its own first step felt
+like nothing was happening at all. A tool that leaves you guessing during setup has already broken
+the promise it is being installed to keep.
+
 ## Step 1 — Check the ground
 
 ```bash
