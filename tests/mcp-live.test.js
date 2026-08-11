@@ -76,16 +76,22 @@ test("lease heartbeats and temporary files are not changes anyone subscribed to"
 test("one write produces one report, however many events the platform emits", async (t) => {
   // A single controlled write is a plan, a temporary file, a rename, and a mode change. The
   // filesystem reports several events for it; a subscriber should hear about it once.
+  //
+  // The window is deliberately generous. Coalescing resets on each event, so what this proves is
+  // that a burst becomes one report — not that a loaded machine delivers the burst quickly. At a
+  // quarter-second it failed on a busy Windows runner, where two events of the same write arrived
+  // far enough apart to open a second window: that measures the runner's scheduling, not the
+  // mechanism under test.
   const root = await project(t);
   const loaded = await loadTaskboard(root);
   let reports = 0;
-  const watcher = watchCanonicalRecords(root, () => { reports += 1; }, { debounceMs: 250 });
+  const watcher = watchCanonicalRecords(root, () => { reports += 1; }, { debounceMs: 750 });
   t.after(() => watcher.close());
 
   await replaceTaskboard(root, loaded.headers, loaded.records.map((record) => ({
     ...record, blocked_reason: "single write"
   })), { dryRun: false });
-  await new Promise((resolve) => { setTimeout(resolve, 900); });
+  await new Promise((resolve) => { setTimeout(resolve, 2_500); });
   assert.equal(reports, 1, `one write should report once, got ${reports}`);
 });
 
