@@ -9,284 +9,287 @@
   <img alt="Dry run first" src="https://img.shields.io/badge/writes-dry--run%20first-f26b4f?style=flat-square">
   <img alt="In-conversation control tower" src="https://img.shields.io/badge/control%20tower-in%20conversation-e1a64a?style=flat-square">
 
-  <h3>A vendor-neutral operating system for evidence-backed product work.</h3>
+  <h3>You describe the product. A whole organisation builds it.</h3>
 
   <p>
-    Turn an unstructured signal into an owned decision, governed delivery,<br>
-    reproducible evidence, independent verification, and a release you can explain.
+    Not an app you install. An operating model your coding agent adopts —<br>
+    so one person with an idea gets a product team, not an autocomplete.
   </p>
 
   <p>
-    <a href="START-HERE.md"><strong>Start here</strong></a>
+    <a href="#start-here"><strong>Start in two minutes</strong></a>
     ·
-    <a href="docs/architecture/mcp-control-surface.md">Control surface</a>
+    <a href="#what-actually-happens">See what happens</a>
     ·
-    <a href="docs/runtime/README.md">Runtime guide</a>
+    <a href="#what-you-decide-and-what-it-decides">Who decides what</a>
     ·
-    <a href="docs/architecture/overview.md">Explore the architecture</a>
-    ·
-    <a href="examples/fictional-saas/README.md">See the PineDesk example</a>
+    <a href="docs/architecture/overview.md">Architecture</a>
   </p>
 </div>
 
 ---
 
-## Product work should leave a trail
+## The problem this solves
 
-Most product systems hold fragments: an idea in chat, a decision in a meeting, a ticket in a
-tracker, test evidence in a folder, and release status somewhere else. Open Product Operations OS
-connects those fragments into one reconstructable chain.
+You can already ask an AI to write code. What you cannot ask it for is **everything around the
+code** — someone to work out who this is for, someone to turn that into testable requirements,
+someone to check the work independently, and a written trail explaining why every decision was made.
 
-<p align="center">
-  <img src="docs/assets/flow-loop.svg" alt="Animated product workflow from signal to release" width="100%">
-</p>
+So you get code, quickly, and no idea whether it is the right code. Six weeks later nobody
+remembers why a thing works the way it does, and the only record is a chat log.
 
-```text
-source event
-→ owned task
-→ canonical artifact
-→ operational state
-→ read-back proof
-→ independent verification
-→ human disposition when required
+**This gives your agent that missing organisation.** Twenty-eight defined roles across two sides —
+product and engineering — each with authority over exactly one thing, each unable to certify its own
+work, all writing to one record you can read.
+
+<br>
+
+## What actually happens
+
+You clone this, hand it to Claude Code or Codex, and say **"start a product"**. Then you answer
+three or four questions about *your product* — never about folders, flags, or configuration.
+
+Here is a real shape of what follows.
+
+```mermaid
+flowchart TD
+    A["🗣️ You, one sentence<br/><i>“a dinosaur running game, in the browser”</i>"] --> B
+
+    subgraph P ["🧭 The product side works it out"]
+      direction TB
+      B["Idea triaged<br/>is this one thing, or five?"] --> C["Research done<br/>real sources, gaps named"]
+      C --> D["Decision brief<br/>the choices only you can make"]
+      D --> E{"🙋 Your decision"}
+      E --> F["Issues raised · contract written<br/>30 testable acceptance criteria"]
+      F --> G["Validation designed · risks audited"]
+    end
+
+    G --> H{"🙋 Cross into<br/>engineering?"}
+
+    subgraph E2 ["⚙️ The engineering side builds it"]
+      direction TB
+      I["Architecture · frontend · data · security<br/>tests · performance · docs"] --> J["🔍 Independent verification<br/>reproduces every claim, changes nothing"]
+    end
+
+    H -->|you approve| I
+    J --> K["✅ Working software<br/>+ evidence + a record of why"]
+    K --> A
+
+    style A fill:#e8f0fe,stroke:#4c82c3,color:#1b1f26
+    style E fill:#fdf1e3,stroke:#c08a2e,color:#1b1f26
+    style H fill:#fdf1e3,stroke:#c08a2e,color:#1b1f26
+    style K fill:#e9f5ee,stroke:#245536,color:#1b1f26
 ```
 
-If a link is missing, the system does not silently call the work complete.
+Every box is a real team with a real boundary. The orange diamonds are the only places it stops for
+you — and it stops *properly*, with the choice laid out and what each option costs.
 
-## What you get
+<br>
 
-| Surface | What it gives you |
-| --- | --- |
-| **In-conversation control tower** | The panel your host renders inline: both organisations as named teams, the hand-off chain, blockages with whose they are to clear, and a composer for each decision waiting on you |
-| **13 role boundaries** | Explicit authority for discovery, decisions, delivery, QA, writes, verification, release, and development |
-| **23-tab product workbook** | Portable CSV records spanning idea, discovery, issues, tickets, evidence, QA, lineage, and readiness |
-| **Autonomous product factory** | A resumable idea → product analysis → engineering → product verification → report loop with live role and task visibility |
-| **Development adapter** | A bounded handoff to an engineering agent or team through the dedicated development role |
-| **Independent Development OS** | A 15-boundary engineering package for architecture, frontend, backend, database, data, infrastructure, network, security, QA, SRE, delivery, SEO, documentation, and verification |
-| **Controlled writers** | Precondition checks, authorization, complete read-back, replay protection, and guarded rollback |
-| **Provider boundary** | Disabled-by-default adapters for GitHub, GitLab, Jira, Linear, Azure DevOps, Sheets, Graph, and Airtable |
-| **Portable proof** | Cross-host package checks, clean-clone/archive tests, SBOM generation, license checks, and secret scans |
+## What you decide, and what it decides
 
-## Watching and deciding
+This is the whole idea, so it is worth being exact.
 
-The control tower panel renders inside your conversation, from the same durable records every other
-surface reads. Ask for `product_ops_panel` and you get both organisations as named teams, the
-hand-off chain for the cycle in flight, where the work is stuck and whose it is to clear, and a
-composer for each gate waiting on you. Deciding stays yours: the panel collects your reasoning and
-attributes the record to you, and a model cannot supply a disposition on your behalf.
+| | **Yours, always** | **Its job, never yours** |
+| --- | --- | --- |
+| **Direction** | What to build, for whom, what matters more | Working out what that implies |
+| **Trade-offs** | Which option, on what conditions | Laying the options out with their costs |
+| **Crossing into code** | Whether implementation starts | Preparing everything it needs to |
+| **Release** | Whether it ships | Proving whether it is ready |
+| **Mechanics** | *nothing* | Folders, schemas, dependencies, hand-offs, evidence |
 
-There is no second interface. One control plane, one window, in the conversation where the work
-already happens.
+A decision you make is recorded **in your own words**, attributed to you, and travels with the work.
+A model cannot record a disposition on your behalf — not as a policy, but because the surface that
+writes decisions will not accept one that did not come from a person.
 
-Read the [runtime guide](docs/runtime/README.md) for the complete operating and safety contract.
+> [!NOTE]
+> If it ever tells you to open a terminal to make a decision, that is a bug. Report it.
 
-## Getting started
+<br>
 
-Do not read a setup guide. Hand the repository to your coding agent and ask it to do the work.
+## Start here
 
 ```bash
 git clone https://github.com/sedwna/open-product-operations-os.git
 cd open-product-operations-os
 ```
 
-Open Claude Code, Codex, or another capable agent in that folder and say:
+Open Claude Code, Codex, or another capable agent **in that folder** and say:
 
 > Set me up with a new product.
 
-The agent reads [`AGENTS.md`](AGENTS.md), which is a runbook rather than an explanation, and works
-through it: checks your Node version, installs, creates and validates the workspace, writes the MCP
-configuration with the right absolute path, records your first idea, and routes it to the teams.
+That is the whole instruction. The agent reads [`AGENTS.md`](AGENTS.md) — a runbook written for it,
+not for you — and does the rest: checks your Node version, installs, creates and validates the
+workspace, wires the connection, records your first idea, and routes it to the teams.
 
-It will ask you three or four questions — what you are building, who it is for, what it must do,
-and the first thing you want to change. Nothing about folders, flags, or configuration fields. Those
-are its problem.
+You end up with a working product workspace, a routed board, and the first decision waiting on you.
 
-You finish with a validated workspace, a routed board, and the first decision waiting on you.
+**Requirement:** Node.js 20 or newer. That is all.
 
 <details>
-<summary><strong>If you would rather do it by hand</strong></summary>
+<summary>Prefer to drive it yourself?</summary>
 
 <br>
 
-Everything the runbook does is an ordinary command; see the
-[five-minute manual start](#five-minute-manual-start) below and the
-[runtime guide](docs/runtime/README.md).
-
-</details>
-
-## Run it from Claude or Codex
-
-The control surface speaks the Model Context Protocol, so the same configuration serves Claude Code,
-Claude Desktop, the ChatGPT desktop app, Codex CLI, and any compliant IDE.
-
-Not published to npm yet, so clone it and point your host at the clone. For Claude Code, write
-`.mcp.json` **in the workspace folder you will open as the session root**:
-
-```json
-{
-  "mcpServers": {
-    "product-ops": {
-      "command": "node",
-      "args": ["/absolute/path/to/open-product-operations-os/src/mcp/server.js", "--project", "."]
-    }
-  }
-}
-```
-
-For Codex, do not write this file — run `codex mcp add` instead. The desktop app rewrites
-`config.toml` at startup and deletes hand-written entries. Full per-host instructions, including
-what to do when nothing connects, are in
-[connecting a host](docs/setup/connecting-a-host.md).
-
-Read-only is the default. Add `--allow-writes` when you want the owner to be able to record intake,
-run a cycle, and settle human gates from the conversation.
-
-Then, in the session, type `/` and pick from the list. The exact spelling differs by surface — the
-Claude Code CLI writes them `/mcp__product-ops__start`, the desktop app's picker shows
-`product-ops:start` — so pick rather than type, or just ask in words.
-
-| Ask for | What happens |
-| --- | --- |
-| `start` | Walks you from an empty workspace to a running one, with or without an existing application |
-| `take-command` | Puts the agent in the coordinator seat with the full operating brief |
-| `what-needs-me` | Every gate waiting on you, with its risks and evidence |
-| **the panel** | `product_ops_panel` renders the control tower inline: both teams, the hand-off chain, and a box to write your decision in |
-
-If nothing appears under `/`, the server has not connected yet — see
-[connecting a host](docs/setup/connecting-a-host.md). You can always say "take the coordinator seat,
-start with product_ops_status" in plain words instead.
-
-The panel shows the organisation, not the schema — named teams on both sides, where each piece of
-work currently sits, and what is waiting on you. Deciding is yours: the surface collects your
-reasoning and attributes the record to you.
-
-Read the [MCP control surface](docs/architecture/mcp-control-surface.md) for the authority model.
-
-## Setting a workspace up
-
-Ask your agent for `/product-ops:start`. It works through the setup with you rather than running
-ahead, and takes one of two paths.
-
-| You have | What happens |
-| --- | --- |
-| **An existing project** | The repository is read, what the product already is gets derived from it — domains, journeys, open issues, technical debt — and the boards are seeded. Every derived row records its source and stays an observation until you accept it. |
-| **Only an idea** | The idea is recorded as intake and the product teams begin analysing it. |
-
-Adding the Development Operations OS namespace to an application repository someone already relies
-on is the owner's call: the agent shows what it will create and waits.
-
-The [Autonomous Product Factory architecture](docs/automation/README.md) documents the implemented
-continuous loop: read-only product agents, dependency-ordered engineering workstreams, durable
-leases and retries, content-addressed evidence return, controlled workbook insertion, product
-verification, reports, and separate Git branches. Production release and destructive actions remain
-separately gated.
-
-## Five-minute manual start
-
-**Requirement:** Node.js 20 or newer.
-
-```text
-# Preview every generated file
-node ./src/cli.js init ./my-product --dry-run
-
-# Create and validate the project
+```bash
+node ./src/cli.js init ./my-product --dry-run   # see every file first
 node ./src/cli.js init ./my-product
 node ./src/cli.js validate ./my-product
 ```
 
-Then add a safe local intake and inspect the next workflow cycle:
+Runtime commands plan by default; `--apply` is always explicit. The
+[runtime guide](docs/runtime/README.md) is the complete operating contract.
 
-```text
-node ./src/cli.js intake ./my-product --file ./idea.json --apply
-node ./src/cli.js operate ./my-product
+</details>
+
+<br>
+
+## The window you watch it through
+
+Ask your agent for the panel and it renders **inside the conversation** — no second app, no
+dashboard to keep open.
+
+```
+┌────────────────────────────────────────────────────────────┐
+│  Phase: engineering              ● running                 │
+│  ─────────────────────────────────────────────────────     │
+│  ready 1   ·   in progress 2   ·   blocked 0   ·  done 7   │
+│                                                            │
+│  ⌾  WAITING ON YOU                                         │
+│     “Per-workspace summary day, or one global default?”    │
+│     Delivery Contract · TASK-0009                          │
+│     ┌──────────────────────────────────────────────┐       │
+│     │ why you decided it this way…                 │       │
+│     └──────────────────────────────────────────────┘       │
+│     [ approve ]  [ reject ]   conditions optional          │
+│                                                            │
+│  ✓ Discovery → ✓ Decision → ● Contract → ○ Build → ○ QA    │
+└────────────────────────────────────────────────────────────┘
 ```
 
-> [!TIP]
-> Runtime commands plan by default. Add the explicit apply flag only after reviewing the planned
-> action and confirming the correct project boundary.
+Teams have names, not codes. You see *the discovery team* and *the database team*, never `RB-03`
+and `ENG-06`. Where work sits, what it is stuck behind, and whose it is to clear.
 
-## Architecture at a glance
+<br>
+
+## Two organisations, one boundary
+
+The product side and the engineering side live in **separate repositories with separate Git
+histories**. They never read each other's working state. What crosses between them is a hashed
+contract, and the receiving side verifies the hash before doing anything.
 
 ```mermaid
 flowchart LR
-    A["Owner idea or feedback"] --> B["Read-only product agents"]
-    B --> C["Approved, hashed development request"]
-    C --> D["Dependency-ordered engineering agents"]
-    D --> E["Read-only independent verifier"]
-    E --> F["Content-addressed evidence return"]
-    F --> G["Product QA and readiness"]
-    G --> H["Controlled workbook + cycle report"]
-    H --> A
+    subgraph PROD ["📋 Product workspace"]
+      direction TB
+      P1["13 boundaries<br/>discovery · decisions · contracts<br/>QA · verification · release"]
+      P2["23-tab canonical record<br/>every decision, issue, ticket,<br/>scenario and piece of evidence"]
+    end
+
+    subgraph APP ["⚙️ Application repository"]
+      direction TB
+      E1["15 boundaries<br/>architecture · frontend · backend · data<br/>security · QA · SRE · docs"]
+      E2["Your actual code<br/>its own history, its own life"]
+    end
+
+    PROD -- "approved contract<br/>+ sourceDigest" --> APP
+    APP -- "result + evidence<br/>+ independent verdict" --> PROD
+
+    style PROD fill:#e8f0fe,stroke:#4c82c3,color:#1b1f26
+    style APP fill:#f3f0e8,stroke:#8a7a4e,color:#1b1f26
 ```
 
-The repository is intentionally layered:
-
-```text
-src/          executable initializer, validator, runtime, adapters, and control surface
-templates/    canonical governance, role, workbook, workflow, and release contracts
-schemas/      published validation contracts
-examples/     fictional end-to-end evidence
-docs/         architecture, security, migration, runtime, and verification guidance
-```
-
-## Development integration
-
-For full engineering operation, initialize the independent
-[Open Development Operations OS](docs/development/README.md) inside the application repository.
-It uses versioned request/result contracts and content-addressed receipts to synchronize with this
-Product Operations repository without merging their authority or canonical state.
-
-```text
-# Give the application its engineering boundaries
-development-os init ./my-application --dry-run
-development-os init ./my-application
-development-os validate ./my-application
-
-# Then tell the product workspace which repository it operates
-product-ops link ./my-product --application ./my-application --apply
-```
-
-Until that link exists the workspace has no engineering side: adoption has nothing to read and the
-coordinator has nothing to coordinate. Linking names the repository and stops there — executors and
-the coordinator stay disabled until separately enabled.
-
-`/product-ops:start` runs these initialization and validation commands for you when you confirm
-them; the commands above are there for scripting, CI, or when you prefer direct control. Specialist
-executors stay disabled until separately configured, tested, and authorized either way.
-
-The command-runner adapter remains available as a lower-level bounded integration.
-
-Development is a governed adapter, not an implicit side effect. The development role receives an
-approved delivery contract, acceptance criteria, dependencies, evidence, a validation recipe, and
-a write boundary. It returns an implementation reference, test evidence, environment state, known
-risks, and development-owned status.
-
-```text
-product-ops development ./my-product --task TASK-RB-13-...        # plan
-product-ops development ./my-product --task TASK-RB-13-... --apply # execute
-```
-
-An arbitrary coding command is **not** an operating-system sandbox. Run untrusted development
-agents inside a separately constrained worker, container, or virtual machine.
-
-## Safety is part of the product
-
-| Invariant | Enforcement |
-| --- | --- |
-| Producers cannot certify their own material claims | Distinct producer and verifier actors are validated |
-| Humans retain product and risk authority | Durable, attributed approval records gate protected transitions |
-| External writes are exceptional | Adapters are disabled by default and runtime actions plan first |
-| A write is not trusted until read back | Controlled writers require complete post-write comparison |
-| Credentials stay outside Git | Whole-tree secret scanning and named environment-variable references |
-| History remains explainable | Operational records preserve lineage; corrections supersede rather than erase |
-
-See the [security model](docs/security-model.md) and
-[public release gates](docs/publication-gates.md) before enabling real providers.
-
-<details>
-<summary><strong>Current maturity and verification evidence</strong></summary>
+Your code repository keeps its own history and stays yours. It gains a namespace describing its
+engineering boundaries — and adding that to a repository people rely on is your call, shown before
+it happens.
 
 <br>
+
+## Why you can trust what it tells you
+
+The failure mode of an AI doing product work is not bad code. It is **confident claims nobody
+checked**. Six invariants exist to make that hard.
+
+| Invariant | How it is held |
+| --- | --- |
+| 🚫 **Nobody certifies their own work** | Producer and verifier are different actors, and it is validated, not assumed |
+| 🙋 **Product authority stays human** | Decisions are durable, attributed records; a model cannot write one for you |
+| 🔍 **A claim without evidence is not done** | Evidence references are part of the contract, not a nicety |
+| 📝 **A write is not trusted until read back** | Controlled writers compare the whole record after writing |
+| 🧯 **Nothing external happens by accident** | Every adapter is off by default; every runtime action plans first |
+| 🕰️ **History is never rewritten** | Corrections supersede; they do not erase |
+
+Independent verification is a role that **reproduces** claims rather than reading them. It is
+handed out last, it may change nothing, and the repository is hashed before and after — an edit
+voids its own verdict.
+
+<br>
+
+## What is underneath
+
+<details>
+<summary><strong>The two role sets</strong></summary>
+
+<br>
+
+**Product side (13).** Coordination · idea and decision · discovery and research · experience and
+journeys · issues and priority · delivery contract · validation design · risk and logic audit ·
+quality and evidence · workbook integrity · readiness and release · independent verification ·
+product-to-development bridge.
+
+**Engineering side (15).** Coordination · solution architecture · frontend and accessibility ·
+backend and API · client applications · database and storage · data, analytics and AI · platform,
+cloud and network · security and privacy · quality engineering · reliability and performance ·
+developer experience and delivery · SEO and discoverability · technical documentation · independent
+engineering verification.
+
+Each has an explicit `may` and `must_not`. A subagent doing a team's work has that team's authority
+and no more.
+
+</details>
+
+<details>
+<summary><strong>The control surface</strong></summary>
+
+<br>
+
+Everything runs over the Model Context Protocol, so the same setup serves Claude Code, Claude
+Desktop, Codex, and any compliant host.
+
+Read-only by default: **8 tools**, no write path exists at all. With `--allow-writes`: **19** —
+recording intake, running cycles, taking and returning work on both sides, crossing into engineering
+and back, and collecting your decisions.
+
+Per-host setup, including what to do when nothing connects, is in
+[connecting a host](docs/setup/connecting-a-host.md). The authority model is in the
+[MCP control surface](docs/architecture/mcp-control-surface.md).
+
+</details>
+
+<details>
+<summary><strong>Bringing in a project you have already started</strong></summary>
+
+<br>
+
+The repository is read and what the product already *is* gets derived from it — domains, journeys,
+open issues, technical debt — with every derived row recording its source and staying an
+**observation** until you accept it. Coverage is accounted for: every path is either assigned to a
+boundary or excluded with a named reason, and the survey reports itself incomplete if not.
+
+</details>
+
+<details>
+<summary><strong>Layout and maturity</strong></summary>
+
+<br>
+
+```text
+src/          runtime, control surface, adapters, validators
+templates/    canonical governance, roles, workbook, workflow contracts
+schemas/      published validation contracts
+examples/     a full worked example
+docs/         architecture, security, migration, runtime guidance
+```
 
 ```text
 Current stage: Foundation
@@ -294,60 +297,36 @@ Public API stability: Not guaranteed
 Recommended use: Evaluation and pilot projects
 ```
 
-The project is not yet declared stable. The latest runtime branch introduced the interactive
-control plane and extended the suite beyond the original foundation proof. Historical producer and
-independent-verifier records remain under [`docs/verification/`](docs/verification/) and follow the
-documented [supersession policy](docs/verification/evidence-supersession-and-redaction.md).
-
 The package path validates syntax, clean-room identity, tests, portable hashes, a real packed
-artifact, clean clone/archive behavior, dependencies, licenses, and an SBOM. Passing automation is
-producer evidence; it is not a substitute for an independent release verdict.
+artifact, clean clone and archive behaviour, dependencies, licences, and an SBOM across three
+operating systems and two Node versions. Passing automation is producer evidence; it is not an
+independent release verdict, and the project does not claim to be stable.
 
 </details>
-
-<details>
-<summary><strong>What the initializer generates</strong></summary>
 
 <br>
-
-- the canonical 13-role registry with distinct default actors;
-- governance, ownership, routing, and communication contracts;
-- a shared task board and first owned discovery task;
-- the canonical 23-tab CSV workbook;
-- local public schemas for handoffs, evidence, approvals, development results, providers, and
-  controlled writes;
-- disabled Git, spreadsheet, development, and external-provider adapters;
-- runtime stores for intake, approvals, receipts, and metrics;
-- a configuration wizard, migration contract, and synthetic example project.
-
-Forced regeneration preserves valid configuration and operational rows. It rejects path escapes,
-links, unsafe replacement races, and ambiguous recovery states.
-
-</details>
 
 ## Reading map
 
 | If you want to… | Read… |
 | --- | --- |
-| Bootstrap a product | [Start here](START-HERE.md) |
+| Get started | [Start here](START-HERE.md) |
+| Connect Claude Code or Codex | [Connecting a host](docs/setup/connecting-a-host.md) |
 | Understand ownership and separation | [Architecture overview](docs/architecture/overview.md) |
 | Follow one event end to end | [Event lifecycle](docs/architecture/event-lifecycle.md) |
-| Operate approvals, intake, and the coordinator | [Runtime guide](docs/runtime/README.md) |
-| Read the control plane from Claude or Codex | [MCP control surface](docs/architecture/mcp-control-surface.md) |
-| Connect a development agent | [Development runner](docs/runtime/development-runner.md) |
-| Initialize the complete engineering system | [Development OS](docs/development/README.md) |
-| Understand Product/Development synchronization | [Dual OS architecture](docs/architecture/dual-operating-system.md) |
-| Review the latest production-readiness security audit | [Security review](docs/verification/2026-08-02-production-readiness-security-review.md) |
-| Review the first full-cycle product-test corrections | [Root-cause remediation](docs/verification/2026-08-02-product-cycle-root-cause-remediation.md) |
+| Operate approvals, intake and cycles | [Runtime guide](docs/runtime/README.md) |
+| See the authority model | [MCP control surface](docs/architecture/mcp-control-surface.md) |
+| Set up the engineering side | [Development OS](docs/development/README.md) |
+| Understand how the two sides sync | [Dual OS architecture](docs/architecture/dual-operating-system.md) |
+| Work with the canonical record | [Workbook operating model](docs/workbook/operating-model.md) |
+| Review the security position | [Security model](docs/security-model.md) |
 | Connect external systems | [Provider adapters](docs/runtime/provider-adapters.md) |
-| Work with the workbook | [Workbook operating model](docs/workbook/operating-model.md) |
-| Evaluate publication readiness | [Public release gates](docs/publication-gates.md) |
 
 ## Contributing
 
-The repository welcomes evidence-backed improvements. Begin with
-[`CONTRIBUTING.md`](CONTRIBUTING.md), keep changes inside an explicit role and write boundary, and
-never represent producer evidence as independent certification.
+Evidence-backed improvements are welcome. Start with [`CONTRIBUTING.md`](CONTRIBUTING.md), keep
+changes inside an explicit role and write boundary, and never represent producer evidence as
+independent certification.
 
 <div align="center">
   <br>
