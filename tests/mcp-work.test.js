@@ -367,3 +367,95 @@ test("a brief tells the performer that a failed retrieval is not an absence", as
   assert.match(claim.brief.reporting.absenceRule, /retry/i);
   assert.match(claim.brief.reporting.absenceRule, /record the failure/i);
 });
+
+/**
+ * The card that finishes an event closes it.
+ *
+ * When product work was inverted to host-delegated execution this step stayed behind in the
+ * coordinator loop: the delegated path completed every card and then told the coordinator to run a
+ * scheduling pass to "close the cycle", which cannot close anything. So on the only path an owner
+ * uses, the canonical product record was never written. The first real product finished eight cards
+ * with every content tab still empty.
+ */
+test("the last card of an event writes the canonical record", async (t) => {
+  const { root, handlers } = await workspace(t);
+  const { ingestRecord } = await import("../src/runtime/intake.js");
+  const { loadConfig } = await import("../src/config.js");
+  const { replaceTaskboard } = await import("../src/runtime/taskboard.js");
+  const { parseCsv } = await import("../src/csv.js");
+
+  const config = await loadConfig(root);
+  await ingestRecord(root, {
+    type: "new_idea",
+    title: "Players cannot see how far they got",
+    description: "A run ends with no record of the distance.",
+    source: "the owner"
+  }, { dryRun: false });
+  await call(handlers, "product_ops_operate", { apply: true });
+
+  // Every card but the last is already answered, which is the state an event reaches just before it
+  // closes. Each done card carries its sealed run, because that is what done means here.
+  const { headers, records } = await loadTaskboard(root);
+  const event = records.filter((task) => task.event_id !== "EVT-00000000-001");
+  const last = event.at(-1);
+  const directory = path.join(root, ".product-ops", "runtime", "autopilot", "product-runs");
+  await fs.mkdir(directory, { recursive: true });
+  for (const task of event.slice(0, -1)) {
+    await fs.writeFile(path.join(directory, `${task.task_id}-result.json`), `${JSON.stringify({
+      schemaVersion: "1.0.0",
+      taskId: task.task_id,
+      eventId: task.event_id,
+      roleId: task.owner_role,
+      producerActorId: config.agents.find((agent) => agent.id === task.owner_role).actorId,
+      status: "completed",
+      summary: `${task.title} completed.`,
+      findings: [],
+      recommendations: ["Show the distance when the run ends."],
+      acceptanceCriteria: [{ statement: "A finished run shows the distance.", verification: "Play one run." }],
+      impacts: ["frontend"],
+      constraints: [],
+      nonFunctionalRequirements: [],
+      evidence: [],
+      knownRisks: [],
+      completedAt: "2026-08-09T11:00:00.000Z"
+    }, null, 2)}\n`, "utf8");
+  }
+  await replaceTaskboard(root, headers, records.map((task) => ({
+    ...task,
+    status: task.task_id === last.task_id ? "ready" : "done"
+  })), { dryRun: false });
+
+  // The canonical record refuses to advance without the owner's attributed direction decision, so
+  // the event carries one — as it would have in any run that got this far.
+  const { requestApproval, decideApproval } = await import("../src/runtime/approvals.js");
+  const gated = event.find((task) => task.human_gate === "product_direction_or_priority");
+  const { request } = await requestApproval(root, {
+    taskId: gated.task_id,
+    gate: "product_direction_or_priority",
+    question: "One unit, in the browser?"
+  }, { dryRun: false });
+  await decideApproval(root, config, {
+    requestId: request.requestId,
+    decision: "approved",
+    actorId: config.project.humanAuthorityActorId,
+    rationale: "One unit, in the browser, nothing else."
+  }, { dryRun: false });
+
+  const claim = (await call(handlers, "product_ops_next_work")).structuredContent;
+  assert.equal(claim.taskId, last.task_id, "the last open card is the one handed out");
+  const submitted = await call(handlers, "product_ops_submit_work", {
+    taskId: claim.taskId, claimToken: claim.claimToken, apply: true, result: resultFor(claim)
+  });
+  assert.equal(submitted.isError, false, submitted.content[0].text);
+  assert.equal(submitted.structuredContent.cycle.complete, true);
+  assert.match(submitted.content[0].text, /canonical workbook now carries this event's record/,
+    `closing the cycle must be reported as done, not as something still to run: ${submitted.content[0].text}`);
+
+  // The record itself, not the claim about it.
+  const rowsIn = async (file) =>
+    parseCsv(await fs.readFile(path.join(root, "workbook", file), "utf8")).filter((row) => row.some((cell) => cell !== "")).length - 1;
+  for (const file of ["05-events.csv", "10-issues.csv", "11-delivery-tickets.csv", "16-evidence.csv"]) {
+    assert.ok(await rowsIn(file) > 0, `${file} must carry this event's record and does not`);
+  }
+  await fs.access(path.join(root, ".product-ops", "runtime", "autopilot", "reports"));
+});

@@ -6,6 +6,8 @@ import { loadApprovals } from "../../runtime/approvals.js";
 import { loadTaskboard, selectRunnableTasks } from "../../runtime/taskboard.js";
 import { buildProductAgentRequest, runProductAgent, submittedResultExecutor } from "../../autopilot/product-agent.js";
 import { applyRunOutcome, cycleProgress } from "../../autopilot/cycle.js";
+import { loadProductRuns, persistCycleReport, writeCycleReport } from "../../autopilot/orchestrator.js";
+import { materializeCycleWorkbook } from "../../autopilot/workbook.js";
 import { withControlPlaneLease } from "../../runtime/control-plane-lease.js";
 import { readAutomationLink } from "../../autopilot/state.js";
 import { describeTeam } from "../app/teams.js";
@@ -112,6 +114,35 @@ export async function nextWork(context) {
  * and on what terms, and those terms govern every task the event goes on to produce — not just the
  * one card that happened to carry the gate.
  */
+/**
+ * Close a finished event: write its report, then commit its record to the canonical workbook.
+ *
+ * These are the same two steps the coordinator loop takes when its last card lands, called here
+ * because the delegated path finishes cards too and had no way to reach them. `cycleId` follows the
+ * loop's own convention so a cycle closed either way is the same cycle, with the same identifiers,
+ * in the same places.
+ */
+async function closeCycle(root, config, task, tasks) {
+  const intake = await intakeFor(root, task.event_id);
+  if (!intake) throw new Error(`Event ${task.event_id} has no intake record, so there is nothing to write a report about.`);
+  const cycleId = `CYCLE-${task.event_id}`;
+  const runs = await loadProductRuns(root, tasks, "__after_all__");
+  const report = await writeCycleReport(root, cycleId, intake, tasks, new Date());
+  const workbook = await materializeCycleWorkbook(root, config, {
+    cycleId,
+    intake,
+    tasks,
+    runs,
+    now: new Date(runs.at(-1)?.completedAt ?? report.report.completedAt)
+  });
+  report.report.workbook = workbook;
+  await persistCycleReport(root, report);
+  return {
+    report: report.markdown,
+    workbook: { written: workbook.receipts?.length ?? 0, sheets: workbook.manifests?.length ?? 0 }
+  };
+}
+
 function ownerDecisions(requests, task, tasks) {
   const sameEvent = new Set(
     tasks.filter((candidate) => candidate.event_id === task.event_id).map((candidate) => candidate.task_id)
@@ -181,15 +212,30 @@ export async function submitWork(context, args = {}) {
   });
 
   const { recorded, advanced, progress } = outcome;
+  // The card that finishes an event closes it. When product work was inverted to host-delegated
+  // execution, this step stayed behind in the coordinator loop: the delegated path completed every
+  // card and then told the coordinator to run a scheduling pass to "close the cycle", which cannot
+  // close anything. So on the only path an owner actually uses, the canonical product record — the
+  // issues, the tickets, the validation scenarios, the evidence, the whole workbook the model rests
+  // on — was never written. Eight completed cards on the first real product, and every content tab
+  // still empty.
+  const closure = progress.complete
+    ? await closeCycle(context.root, config, task, progress.tasks).catch((error) => ({ error: error.message }))
+    : null;
   const team = describeTeam(role.id, "product");
   const lines = [
     recorded.result.status === "completed"
       ? `Recorded ${task.task_id} for ${team.name} and moved it to done. A completed result is sealed; submitting again returns the sealed record rather than replacing it.`
       : `Recorded a ${recorded.result.status} result for ${task.task_id} (${team.name}) and stopped the card with the producer's own reason. It is not sealed, so the work can be attempted again.`
   ];
-  lines.push(progress.complete
-    ? `Every card for ${task.event_id} is now done. Run product_ops_operate to close the cycle and produce its report.`
-    : `${progress.remaining} of ${progress.total} card(s) for ${task.event_id} remain. Call product_ops_next_work for the next one.`);
+  if (!progress.complete) {
+    lines.push(`${progress.remaining} of ${progress.total} card(s) for ${task.event_id} remain. Call product_ops_next_work for the next one.`);
+  } else if (closure?.error) {
+    lines.push(`Every card for ${task.event_id} is done, but the cycle could not be closed: ${closure.error}`);
+    lines.push("The work is sealed and safe. The canonical record for this event is incomplete until this is resolved, so say so rather than reporting the cycle finished.");
+  } else {
+    lines.push(`Every card for ${task.event_id} is done. The cycle report is written and the canonical workbook now carries this event's record: ${closure.workbook.written} row(s) across ${closure.workbook.sheets} tab(s).`);
+  }
 
   return {
     structuredContent: {

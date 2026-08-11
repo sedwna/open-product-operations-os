@@ -4,6 +4,7 @@ import { readAutomationLink } from "../autopilot/state.js";
 import { runDevelopmentTask } from "./development-runner.js";
 import { readJsonOptional, utcTimestamp, writeJson } from "./io.js";
 import { withControlPlaneLease } from "./control-plane-lease.js";
+import { recordRoutedLineage } from "./coordination-record.js";
 import {
   dependencyState,
   loadTaskboard,
@@ -98,6 +99,15 @@ async function controlTowerCycle(
         actions.push({ type: "create_task", taskId, eventId: record.eventId, ownerRole: step.role });
       }
       taskboardChanged = true;
+      // The coordination boundary writes its hand-off chain down as it lays it, rather than leaving
+      // it to be reconstructed later from cards that may since have been edited. The event row
+      // itself is not written here: the controlled writer owns that, and two authorities for one
+      // canonical row is how a record stops being trustworthy.
+      if (!dryRun) {
+        const routed = tasks.filter((task) => task.event_id === record.eventId);
+        await recordRoutedLineage(root, config, { record, tasks: routed, now: timestamp });
+        actions.push({ type: "record_lineage", eventId: record.eventId, ownerRole: "RB-01" });
+      }
     }
     record.status = "accepted";
     intakeChanged = true;

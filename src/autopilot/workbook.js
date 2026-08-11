@@ -5,16 +5,23 @@ import { applyLocalWrite, rollbackLocalWrite } from "../local-writer.js";
 import { canonicalRecordKeys } from "../workbook-contract.js";
 import { APPROVAL_STORE_FILE } from "../constants.js";
 import { loadApprovals } from "../runtime/approvals.js";
+import { PRODUCT_RUN_ROOT } from "./cycle.js";
 
 export async function materializeCycleWorkbook(root, config, { cycleId, intake, tasks, runs, now }) {
   const ids = cycleIds(cycleId);
   const actor = (role) => config.agents.find((candidate) => candidate.id === role)?.actorId ?? "";
   const run = (role) => runs.find((candidate) => candidate.roleId === role);
   const engineering = run("RB-13");
+  // The fallback named a file that is never written. Sealed runs are `<task>-result.json`, and this
+  // asked for `<task>.json`, so an engineering card that returned no product-side evidence reference
+  // took the whole cycle down with ENOENT at the moment it was closing — after every card was done
+  // and there was nothing left to retry.
   const evidencePath = engineering?.evidence?.find((candidate) => candidate.startsWith(".product-ops/"))
-    ?? `.product-ops/runtime/autopilot/product-runs/${engineering?.taskId}.json`;
+    ?? `${PRODUCT_RUN_ROOT}/${engineering?.taskId}-result.json`;
   const evidenceFile = path.join(root, evidencePath);
-  const evidenceBytes = await fs.readFile(evidenceFile);
+  const evidenceBytes = await fs.readFile(evidenceFile).catch((error) => {
+    throw new Error(`Cycle workbook needs the engineering card's sealed result as evidence, and ${evidencePath} could not be read: ${error.code ?? error.message}.`);
+  });
   const risk = intake.priority === "P0" ? "critical" : intake.priority === "P1" ? "high" : "medium";
   const timestamp = now.toISOString();
   const approvals = await loadApprovals(root);

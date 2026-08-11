@@ -411,7 +411,7 @@ async function markTask(root, headers, tasks, taskId, patch) {
   await replaceTaskboard(root, headers, updated, { dryRun: false });
 }
 
-async function writeCycleReport(root, cycleId, intake, tasks, now) {
+export async function writeCycleReport(root, cycleId, intake, tasks, now) {
   const runs = await loadProductRuns(root, tasks, "__after_all__");
   const engineering = runs.find((run) => run.roleId === "RB-13");
   const final = runs.at(-1);
@@ -444,7 +444,7 @@ async function writeCycleReport(root, cycleId, intake, tasks, now) {
   return output;
 }
 
-async function persistCycleReport(root, output) {
+export async function persistCycleReport(root, output) {
   await writeJson(path.join(root, output.json), output.report);
   await fs.writeFile(path.join(root, output.markdown), renderPersianReport(output.report), "utf8");
 }

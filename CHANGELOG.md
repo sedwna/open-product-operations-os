@@ -45,6 +45,21 @@ All notable changes to this project will be documented here.
   retried; the verifier found the budget by simply asking again. Every document downstream had been
   reasoning from a gap that was never there. The brief now carries the rule, and the coordinator's
   standing instructions say to check whether a subagent looked or merely failed to.
+- Connected the canonical record to the path owners actually use. When product work was inverted to
+  host-delegated execution, closing a cycle stayed behind in the coordinator loop: the delegated
+  path completed every card and then told the coordinator to run a scheduling pass to "close the
+  cycle", which cannot close anything. So the workbook the whole model rests on — issues, delivery
+  tickets, validation scenarios, evidence — was never written. The first real product finished eight
+  cards with every content tab empty, and its agent hand-wrote a decision row because no path
+  existed. The last card of an event now writes the cycle report and materialises the record.
+- Fixed a filename in that record writer that would have taken the cycle down at the moment it
+  closed. It looked for `<task>.json` where sealed runs are `<task>-result.json`, so an engineering
+  card returning no product-side evidence reference failed with ENOENT after every card was done and
+  there was nothing left to retry.
+- Gave the coordination boundary its own written record. RB-01 owns events, taskboard and lineage,
+  and every one but the taskboard was empty after a full product cycle, because the control plane
+  *is* that boundary and was routing work without writing down that it had. Hand-offs are now
+  recorded as the chain is laid, not reconstructed later from cards that may since have changed.
 - Sent the delivery contract across the boundary instead of the history that produced it. The
   exported request flat-mapped every product card's acceptance criteria in board order and kept the
   first thirty, so on a real product the earliest cards — idea triage, discovery — filled every slot
