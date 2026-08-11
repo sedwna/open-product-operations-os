@@ -5,6 +5,21 @@ import { runDevelopmentTask } from "./development-runner.js";
 import { readJsonOptional, utcTimestamp, writeJson } from "./io.js";
 import { withControlPlaneLease } from "./control-plane-lease.js";
 import { recordRoutedLineage } from "./coordination-record.js";
+
+/**
+ * Which route an intake type takes when no route is named for it directly.
+ *
+ * Three of the five things an owner can submit had no route of their own and fell through to
+ * `new_idea`, so an incident — something already broken in a live product — was sent through idea
+ * triage, discovery research and a decision brief before anyone looked at it. An incident and a
+ * user finding are the same shape of work: something is wrong, work out what and fix it. Feedback
+ * and a request genuinely are new ideas, and now say so rather than arriving there by default.
+ */
+const INTAKE_ROUTE_EQUIVALENT = Object.freeze({
+  incident: "user_finding",
+  feedback: "new_idea",
+  request: "new_idea"
+});
 import {
   dependencyState,
   loadTaskboard,
@@ -54,8 +69,9 @@ async function controlTowerCycle(
   }
 
   for (const record of (intakeStore.records ?? []).filter((entry) => entry.status === "proposed")) {
-    const route = config.routing.find((candidate) => candidate.event === record.type) ??
-      config.routing.find((candidate) => candidate.event === "new_idea");
+    const route = config.routing.find((candidate) => candidate.event === record.type)
+      ?? config.routing.find((candidate) => candidate.event === INTAKE_ROUTE_EQUIVALENT[record.type])
+      ?? config.routing.find((candidate) => candidate.event === "new_idea");
     if (!route) {
       actions.push({ type: "route_intake", intakeId: record.intakeId, eventId: record.eventId, ownerRole: "RB-01", output: "events", status: "blocked" });
       continue;

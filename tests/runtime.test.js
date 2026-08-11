@@ -398,3 +398,31 @@ test("metrics still produce their local artifact", async (t) => {
   await exportMetrics(target, { dryRun: false });
   assert.equal((await readJson(path.join(target, ".product-ops/runtime/metrics.json"))).totals.tasks, 1);
 });
+
+/**
+ * Three of the five things an owner can submit had no route of their own and fell through to
+ * `new_idea`. An incident — something already broken in a live product — was sent through idea
+ * triage, discovery research and a decision brief before anyone looked at it.
+ */
+test("an incident is routed as something wrong, not as a new idea", async (t) => {
+  const { target } = await initializedProject(t, "incident-routing");
+  const config = await loadConfig(target);
+  await ingestRecord(target, {
+    type: "incident",
+    title: "Scores stopped saving an hour ago",
+    description: "Every run since the deploy ends with the score lost.",
+    source: "two players",
+    priority: "P0"
+  }, { dryRun: false, now: new Date("2026-08-01T10:00:00Z") });
+  await runControlTower(target, config, { dryRun: false, now: new Date("2026-08-01T10:01:00Z") });
+
+  const rows = parseCsv(await fs.readFile(path.join(target, TASKBOARD_FILE), "utf8"));
+  const header = rows[0];
+  const titles = rows.slice(1)
+    .filter((row) => row[header.indexOf("event_id")] === "EVT-20260801-001")
+    .map((row) => row[header.indexOf("title")]);
+
+  assert.ok(titles.includes("Triage finding"), `an incident takes the finding route: ${titles.join(", ")}`);
+  assert.ok(!titles.includes("Complete discovery"), "and does not go through discovery research first");
+  assert.ok(!titles.includes("Prepare decision brief"), "or wait on a decision brief");
+});

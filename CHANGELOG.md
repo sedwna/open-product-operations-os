@@ -53,6 +53,11 @@ All notable changes to this project will be documented here.
   nothing enforced it and the closing check would have accepted all thirteen. A contract may now
   state its own `writeBoundary.allowedPaths`; it can only narrow the application's policy, and
   naming a path outside it is refused rather than quietly dropped.
+- Stopped sending an incident through idea triage. Three of the five things an owner can submit had
+  no route of their own and fell through to `new_idea`, so something already broken in a live product
+  went through discovery research and a decision brief before anyone looked at it. An incident now
+  takes the finding route; feedback and requests say they are new ideas rather than arriving there by
+  default.
 - Let each role commit its own rows to the record as its card completes, instead of the whole
   product record waiting for one role at the end of the cycle. A product that had raised
   twenty-nine issues and written a contract with thirty acceptance criteria still showed an empty
