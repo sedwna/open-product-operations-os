@@ -27,7 +27,7 @@
         "exclusionsByReason": {
           "type": "object",
           "additionalProperties": { "type": "integer", "minimum": 0 },
-          "propertyNames": { "enum": ["dependency", "build_output", "version_control", "binary_asset", "vendored", "generated", "oversized", "unreadable"] }
+          "propertyNames": { "enum": ["dependency", "build_output", "version_control", "binary_asset", "vendored", "generated", "sensitive", "oversized", "unreadable"] }
         }
       }
     },

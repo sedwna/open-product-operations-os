@@ -64,6 +64,12 @@ const GENERATED_FILES = new Set([
   "poetry.lock", "Pipfile.lock", "Cargo.lock", "composer.lock", "Gemfile.lock", "go.sum"
 ]);
 
+// These paths are part of the repository account, but never part of the material an adoption
+// performer may read. Environment templates describe the configuration contract and stay visible;
+// populated environment variants and explicitly secret-bearing directories do not.
+const SENSITIVE_DIRECTORIES = new Set(["secrets", "production-data"]);
+const SAFE_ENVIRONMENT_TEMPLATES = new Set([".env.example", ".env.sample", ".env.template"]);
+
 const MANIFESTS = new Map([
   ["package.json", "javascript"],
   ["deno.json", "javascript"],
@@ -244,14 +250,19 @@ async function walk(root, maxPaths) {
         return { files, truncated };
       }
       const absolute = path.join(directory, entry.name);
+      const relativePath = relative(root, absolute);
+      if (isSensitivePath(entry.name, entry.isDirectory())) {
+        files.push({ path: relativePath, disposition: "sensitive" });
+        continue;
+      }
       if (directory === root && OWN_SCAFFOLDING.has(entry.name)) {
-        files.push({ path: relative(root, absolute), disposition: "generated" });
+        files.push({ path: relativePath, disposition: "generated" });
         continue;
       }
       if (entry.isSymbolicLink()) {
         // Following a link can leave the repository entirely, and a link's target is surveyed on its
         // own terms if it lives inside. Recording it keeps the count honest without following it.
-        files.push({ path: relative(root, absolute), disposition: "vendored" });
+        files.push({ path: relativePath, disposition: "vendored" });
         continue;
       }
       if (entry.isDirectory()) {
@@ -268,6 +279,14 @@ async function walk(root, maxPaths) {
     }
   }
   return { files, truncated };
+}
+
+function isSensitivePath(name, directory) {
+  const normalized = name.toLowerCase();
+  if (directory && SENSITIVE_DIRECTORIES.has(normalized)) return true;
+  if (normalized === ".env") return true;
+  if (!normalized.startsWith(".env.")) return false;
+  return directory || !SAFE_ENVIRONMENT_TEMPLATES.has(normalized);
 }
 
 async function classify(root, absolute, name) {

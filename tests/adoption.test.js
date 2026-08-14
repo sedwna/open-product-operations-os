@@ -62,6 +62,37 @@ test("what cannot be read is excluded by name, never silently", async (t) => {
   for (const count of Object.values(reasons)) assert.ok(count > 0);
 });
 
+test("credential-bearing paths are accounted for but never handed to a team to read", async (t) => {
+  const root = await application(t, {
+    ".env": "DATABASE_URL=postgres://real-user:real-password@example.invalid/app\n",
+    ".env.local": "AUTH_SECRET=local-secret-material\n",
+    "config/.env.production/api-key.txt": "production-secret-material\n",
+    "fixtures/.env.example/secret.txt": "template-named-directory-secret\n",
+    "secrets/provider-token.txt": "provider-token-material\n",
+    "production-data/users.csv": "email\nprivate@example.invalid\n",
+    ".env.example": "DATABASE_URL=postgres://user:password@localhost/app\n"
+  });
+  const survey = await surveyApplication(root);
+
+  const assigned = new Set(survey.assignments.flatMap((assignment) => assignment.paths));
+  for (const sensitive of [
+    ".env",
+    ".env.local",
+    "config/.env.production",
+    "fixtures/.env.example",
+    "secrets",
+    "production-data"
+  ]) {
+    assert.ok(
+      ![...assigned].some((candidate) => candidate === sensitive || candidate.startsWith(`${sensitive}/`)),
+      `${sensitive} must be counted as sensitive without telling a product agent to read it`
+    );
+  }
+  assert.ok(survey.coverage.exclusionsByReason.sensitive >= 6, "sensitive paths must remain visible in coverage");
+  assert.ok(assigned.has(".env.example"), "a credential-free environment template remains legitimate configuration");
+  assert.equal(survey.coverage.complete, true);
+});
+
 test("truncation is reported as incomplete rather than passed off as a full reading", async (t) => {
   const root = await application(t);
   const survey = await surveyApplication(root, { maxPaths: 3 });
