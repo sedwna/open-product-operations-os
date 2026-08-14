@@ -2,11 +2,13 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { assertNoLinkTraversal, resolveInside, toPosixPath } from "../paths.js";
+import { readPackagedFile } from "../catalog.js";
 import { validatePublishedSchema } from "../schema-validation.js";
 import { assertNoCredentialMaterial } from "../runtime/security.js";
 import { canonicalRecordKeys } from "../workbook-contract.js";
 
 const PRODUCT_RUN_ROOT = ".product-ops/runtime/autopilot/product-runs";
+const PRODUCT_AGENT_RESULT_CONTRACT = JSON.parse(readPackagedFile("schemas/product-agent-run.schema.json"));
 
 export async function runProductAgent(
   root,
@@ -115,6 +117,10 @@ export function buildProductAgentRequest(
     intake,
     cycleHistory: cycleHistory.slice(-3),
     priorRuns: priorRuns.map(compactPriorRun),
+    // The return path validates against this exact schema. Giving performers only its filename made
+    // ordinary nested fields guesswork, so valid observations bounced at submit time even though
+    // the card had never shown the shape it required.
+    resultContract: PRODUCT_AGENT_RESULT_CONTRACT,
     policy: {
       preserveHumanProductAuthority: true,
       noDirectRepositoryWrites: true,

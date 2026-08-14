@@ -67,6 +67,8 @@ test("next_work hands out a team, its boundary, and a claim", async (t) => {
   assert.notEqual(claim.roleId, config.separation.developmentRole, "the development boundary is not delegated through this surface");
   assert.equal(claim.brief.policy.noDirectRepositoryWrites, true);
   assert.equal(claim.brief.policy.preserveHumanProductAuthority, true);
+  assert.equal(claim.brief.resultContract.title, "Product Agent Run");
+  assert.equal(claim.brief.resultContract.properties.nonFunctionalRequirements.items.type, "object");
 });
 
 test("work is returned through the same contract a provider would have to satisfy", async (t) => {
