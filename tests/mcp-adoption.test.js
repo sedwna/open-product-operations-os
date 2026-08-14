@@ -155,6 +155,7 @@ test("adoption results remain observations and end at an owner review gate", asy
   assert.ok(review, "finishing every adoption card must return the observations to human authority");
   assert.equal(review.status, "pending");
   const report = JSON.parse(await fs.readFile(path.join(root, review.evidenceRefs.at(-1)), "utf8"));
-  assert.equal(report.status, "awaiting_owner_review");
+  assert.equal(report.statusAtCompletion, "awaiting_owner_review");
+  assert.equal(report.status, undefined, "immutable evidence must not masquerade as live review state");
   assert.equal(report.observations.length, total);
 });

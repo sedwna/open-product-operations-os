@@ -160,7 +160,10 @@ export async function closeAdoption(root, task, tasks, now = new Date()) {
     eventId: run.eventId,
     applicationRoot: run.applicationRoot,
     revision: run.revision,
-    status: "awaiting_owner_review",
+    // This report is immutable task evidence. Name the state as a completion-time snapshot so an
+    // approval recorded later does not make the artifact look like a stale source of live state.
+    // The approval store remains the canonical place to read the current review disposition.
+    statusAtCompletion: "awaiting_owner_review",
     observations,
     completedAt: utcTimestamp(now)
   }, { dryRun: false });
