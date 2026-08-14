@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { loadConfig, validateConfig, validateConfigRelationships } from "../config.js";
-import { readAutomationLink, writeAutomationLink } from "../autopilot/state.js";
+import { readAutomationLinkRecord, writeAutomationLink } from "../autopilot/state.js";
 
 /**
  * Point a product workspace at the application repository it operates.
@@ -41,7 +41,10 @@ export async function linkCommand(target, options) {
     );
   }
 
-  const existing = await readAutomationLink(productRoot).catch(() => null);
+  // Re-linking is most often needed after the old application directory moved. Read the stored
+  // contract without requiring that stale target to remain available, or relocation would erase
+  // its creation time and could silently revoke authorisations the owner already granted.
+  const existing = await readAutomationLinkRecord(productRoot).catch(() => null);
   const link = {
     schemaVersion: "1.0.0",
     applicationRelativePath: toPosix(path.relative(productRoot, applicationRoot)),

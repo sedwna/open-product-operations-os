@@ -68,6 +68,27 @@ test("relinking preserves authorisations rather than silently resetting them", a
   assert.equal(relinked.createdAt, first.createdAt, "the original link date is history, not something to overwrite");
 });
 
+test("relinking after the old application moved still preserves the stored contract", async (t) => {
+  const { product, application } = await workspaces(t);
+  await linkCommand(product, { application, apply: true });
+
+  const { writeAutomationLink } = await import("../src/autopilot/state.js");
+  const first = await readAutomationLink(product);
+  const { applicationRoot, ...stored } = first;
+  assert.ok(applicationRoot);
+  await writeAutomationLink(product, { ...stored, autoStart: true, engineeringExecutorsEnabled: true });
+
+  const moved = `${application}-moved`;
+  await fs.rename(application, moved);
+  await linkCommand(product, { application: moved, apply: true });
+
+  const relinked = await readAutomationLink(product);
+  assert.equal(relinked.applicationRelativePath, "../app-moved");
+  assert.equal(relinked.autoStart, true);
+  assert.equal(relinked.engineeringExecutorsEnabled, true);
+  assert.equal(relinked.createdAt, first.createdAt);
+});
+
 test("an application without the engineering namespace is refused with the reason", async (t) => {
   const { product, application } = await workspaces(t, { withDevelopmentOs: false });
   await assert.rejects(

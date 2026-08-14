@@ -57,10 +57,15 @@ export async function patchAutopilotState(root, patch, now = new Date()) {
   return writeAutopilotState(root, { ...current, ...patch, updatedAt: now.toISOString() });
 }
 
-export async function readAutomationLink(root) {
+export async function readAutomationLinkRecord(root) {
   const file = path.join(root, LINK_FILE);
   const value = JSON.parse(await fs.readFile(file, "utf8"));
   assertSchema("automation-link.schema.json", value, "Automation link");
+  return value;
+}
+
+export async function readAutomationLink(root) {
+  const value = await readAutomationLinkRecord(root);
   const applicationRoot = path.resolve(root, value.applicationRelativePath);
   if (samePath(root, applicationRoot)) throw new Error("Automation application repository must be separate from Product Operations.");
   const stat = await fs.lstat(applicationRoot).catch(() => null);
