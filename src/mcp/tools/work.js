@@ -12,6 +12,7 @@ import { materializeCycleWorkbook } from "../../autopilot/workbook.js";
 import { withControlPlaneLease } from "../../runtime/control-plane-lease.js";
 import { commitRoleRecords, validateRoleRecords } from "../../runtime/coordination-record.js";
 import { readAutomationLink } from "../../autopilot/state.js";
+import { synchronizeDecisionApprovals } from "../../runtime/decision-projection.js";
 import { describeTeam } from "../app/teams.js";
 import { ToolFailure } from "../authority.js";
 import { untrusted, untrustedList } from "../untrusted.js";
@@ -220,6 +221,10 @@ export async function submitWork(context, args = {}) {
   // second seals the work correctly and leaves the board unchanged, so the next request hands out
   // the same card — a loop that looks like it is running and is not.
   const outcome = await withControlPlaneLease(context.root, async () => {
+    // A settled product-direction approval must reach the canonical decision row before a role
+    // writes issues that reference it. Otherwise submit succeeds, validation fails immediately,
+    // and the workspace is left with correct issue rows pointing at a stale pending decision.
+    const decisionProjection = await synchronizeDecisionApprovals(context.root, config);
     let recorded;
     try {
       recorded = await runProductAgent(context.root, config, task, {
@@ -262,10 +267,10 @@ export async function submitWork(context, args = {}) {
       }
     }
     const advanced = await applyRunOutcome(context.root, board.headers, board.records, task, recorded.result);
-    return { recorded, advanced, committed, progress, closure, sampleCompletion };
+    return { recorded, advanced, committed, progress, closure, sampleCompletion, decisionProjection };
   });
 
-  const { recorded, advanced, committed, progress, closure, sampleCompletion } = outcome;
+  const { recorded, advanced, committed, progress, closure, sampleCompletion, decisionProjection } = outcome;
   // The card that finishes an event closes it. When product work was inverted to host-delegated
   // execution, this step stayed behind in the coordinator loop: the delegated path completed every
   // card and then told the coordinator to run a scheduling pass to "close the cycle", which cannot
@@ -279,6 +284,9 @@ export async function submitWork(context, args = {}) {
       ? `Recorded ${task.task_id} for ${team.name} and moved it to done. A completed result is sealed; submitting again returns the sealed record rather than replacing it.`
       : `Recorded a ${recorded.result.status} result for ${task.task_id} (${team.name}) and stopped the card with the producer's own reason. It is not sealed, so the work can be attempted again.`
   ];
+  if (decisionProjection.synchronized > 0) {
+    lines.push(`${decisionProjection.synchronized} attributed human decision projection(s) were synchronized before canonical role rows were written.`);
+  }
   if (adoptionAssignment && recorded.result.status === "completed") {
     lines.push("The result remains a sourced adoption observation; no canonical product claim was written.");
   } else if (committed.written > 0) {
