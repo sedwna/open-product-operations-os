@@ -76,7 +76,7 @@ export async function requestApproval(
 export async function decideApproval(
   root,
   config,
-  { requestId, decision, actorId, rationale = "", selectedOption = null, conditions = [] },
+  { requestId, decision, actorId, rationale = "", selectedOption = null, conditions = [], attribution = null },
   { dryRun = true, now = new Date() } = {}
 ) {
   if (!['approved', 'rejected'].includes(decision)) {
@@ -84,6 +84,9 @@ export async function decideApproval(
   }
   if (actorId !== config.project.humanAuthorityActorId) {
     throw new Error("Approval actor does not match the configured human authority actor.");
+  }
+  if (attribution !== null && !["human_entered", "panel_entered", "model_relayed"].includes(attribution)) {
+    throw new Error("Approval attribution is not a recognized decision path.");
   }
   // Read and write under one lease so two surfaces cannot both observe the gate as pending and
   // both record a disposition.
@@ -112,7 +115,8 @@ export async function decideApproval(
       conditions: normalizeConditions(conditions),
       decidedAt: utcTimestamp(now),
       decidedByActorId: actorId,
-      rationale
+      rationale,
+      ...(attribution === null ? {} : { attribution })
     };
     const requests = [...store.requests];
     requests[index] = request;

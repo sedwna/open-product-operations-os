@@ -27,6 +27,10 @@
           "decidedAt": { "type": ["string", "null"], "format": "date-time" },
           "decidedByActorId": { "type": ["string", "null"] },
           "rationale": { "type": ["string", "null"] },
+          "attribution": {
+            "enum": ["human_entered", "panel_entered", "model_relayed"],
+            "description": "How the deciding person's words reached the canonical approval record. Present when the decision surface can distinguish the path."
+          },
           "selectedOption": {
             "type": ["string", "null"],
             "description": "Which of the offered options the product owner chose. Null on a plain approve-or-reject gate."

@@ -52,7 +52,8 @@ export async function decide(context, args = {}) {
     actorId: collected.actorId,
     rationale: collected.rationale,
     selectedOption: collected.selectedOption,
-    conditions: collected.conditions
+    conditions: collected.conditions,
+    attribution: collected.attribution
   }, { dryRun: false });
 
   const structuredContent = {
@@ -66,7 +67,7 @@ export async function decide(context, args = {}) {
     decidedByActorId: result.request.decidedByActorId,
     decidedAt: result.request.decidedAt,
     rationale: untrusted(result.request.rationale, { source: "human-decision", id: result.request.requestId }),
-    attribution: collected.attribution
+    attribution: result.request.attribution
   };
   const lines = [`Recorded ${result.request.status} on gate "${result.request.gate}" for ${result.request.taskId}, attributed to ${result.request.decidedByActorId}.`];
   if (result.request.selectedOption) {

@@ -612,6 +612,7 @@ test("decide records what the person entered, not what the model supplied", asyn
   const stored = (await loadApprovals(root)).requests.find((item) => item.requestId === gate.requestId);
   assert.equal(stored.status, "rejected");
   assert.equal(stored.decidedByActorId, "human-product-owner");
+  assert.equal(stored.attribution, "human_entered", "the canonical record must preserve how the owner's words arrived");
 });
 
 /**
@@ -739,6 +740,7 @@ test("a declared dialog that never appears does not trap the owner's decision", 
   const stored = (await loadApprovals(root)).requests.find((item) => item.requestId === gate.requestId);
   assert.equal(stored.status, "approved");
   assert.match(stored.rationale, /nothing ships without me/);
+  assert.equal(stored.attribution, "model_relayed", "read-back must not erase the weaker provenance claim");
 });
 
 test("the dialog bypass carries the owner's words and never supplies them", async (t) => {
@@ -829,6 +831,7 @@ test("a host without elicitation refuses rather than deciding on the owner's beh
   assert.equal(relayed.isError, false, relayed.content[0].text);
   assert.equal(relayed.structuredContent.attribution, "model_relayed");
   assert.match(relayed.content[0].text, /relayed by a model rather than typed by the product owner/);
+  assert.equal((await loadApprovals(root)).requests[0].attribution, "model_relayed");
 });
 
 test("the server-side authority check survives every host path", async (t) => {

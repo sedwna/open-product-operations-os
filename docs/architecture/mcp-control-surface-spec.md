@@ -373,7 +373,9 @@ Elicitation returns `accept`, `decline`, or `cancel`. Only `accept` proceeds; th
 **Fallback path — client declared no elicitation capability** (Codex CLI today):
 the input schema additionally accepts `decision`, `actorId`, and `rationale`, and the result text
 carries an explicit caveat that the rationale was relayed by a model rather than typed by the
-person. The server-side actor check still applies.
+person. The canonical approval record persists that path as `attribution: "model_relayed"`; dialog
+and control-tower-panel decisions persist `human_entered` and `panel_entered` respectively. The
+server-side actor check still applies.
 
 **Ordering.** Elicit first, then acquire the lease, then write. Holding a write lease across a dialog
 that waits on a human is unbounded and would block the dashboard indefinitely.
