@@ -379,18 +379,28 @@ async function decisionsAfterContract(productRoot, productConfig, contract, even
  * dropped. Asking for somewhere you may not write is a disagreement worth surfacing, not a typo to
  * absorb.
  */
-function narrowedAllowedPaths(contract, developmentConfig) {
+function narrowedAllowedPaths(contract, developmentConfig, approval) {
   const policy = developmentConfig.policies.allowedPaths;
   const declared = contract?.writeBoundary?.allowedPaths ?? [];
-  if (declared.length === 0) return policy;
-  const outside = declared.filter((candidate) => !policy.includes(candidate));
+  // A delivery contract is immutable once sealed, but the owner may discover at the crossing that
+  // its least-privilege boundary omitted a path the approved work genuinely needs. Rewriting the
+  // sealed run would erase history; silently inheriting the wider application policy would erase
+  // least privilege. An exact, attributed condition on the development-export approval is the
+  // amendment: it travels with the request and is still bounded by the application's own policy.
+  const additions = (approval?.conditions ?? []).flatMap((condition) => {
+    const match = String(condition).match(/^write-boundary-addition:\s*(.+)$/i);
+    return match ? [match[1].trim()] : [];
+  });
+  const requested = unique([...declared, ...additions]);
+  if (requested.length === 0) return policy;
+  const outside = requested.filter((candidate) => !policy.includes(candidate));
   if (outside.length > 0) {
     throw new Error(
       `The delivery contract asks to write in ${outside.join(", ")}, which the application's own write policy does not allow. `
       + "A delivery may narrow that policy and never widen it; change the application policy deliberately, or drop the paths."
     );
   }
-  return policy.filter((candidate) => declared.includes(candidate));
+  return policy.filter((candidate) => requested.includes(candidate));
 }
 
 const MINIMUM_IMPACTS = ["architecture", "documentation"];
@@ -421,6 +431,7 @@ async function buildDevelopmentRequest(productRoot, developmentConfig, productCo
   const corrections = await decisionsAfterContract(productRoot, productConfig, contract, task.event_id);
   const constraints = unique([
     ...corrections,
+    ...(approval.conditions ?? []).map((condition) => `Owner condition on development export: ${condition}`),
     ...productRuns.flatMap((run) => run.constraints ?? []).filter(isProductConstraint),
     "No production credentials or production-derived customer data",
     "Production deployment requires a separate attributed human approval",
@@ -456,7 +467,7 @@ async function buildDevelopmentRequest(productRoot, developmentConfig, productCo
     nonFunctionalRequirements,
     writeBoundary: {
       repositories: [developmentConfig.project.id],
-      allowedPaths: narrowedAllowedPaths(contract, developmentConfig),
+      allowedPaths: narrowedAllowedPaths(contract, developmentConfig, approval),
       prohibitedPaths: developmentConfig.policies.prohibitedPaths
     },
     validation: {

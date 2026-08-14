@@ -8,7 +8,7 @@ import { initializeDevelopmentOs } from "../src/development/init.js";
 import { planDevelopmentRequest } from "../src/development/planner.js";
 import { loadDevelopmentConfig } from "../src/development/config.js";
 import { loadConfig } from "../src/config.js";
-import { loadApprovals } from "../src/runtime/approvals.js";
+import { decideApproval, loadApprovals } from "../src/runtime/approvals.js";
 import { loadTaskboard, replaceTaskboard } from "../src/runtime/taskboard.js";
 import { parseCsv, stringifyCsv } from "../src/csv.js";
 import { ingestRecord } from "../src/runtime/intake.js";
@@ -322,6 +322,47 @@ test("an owner decision recorded after the contract was sealed crosses with it",
   assert.match(carried, /Chromium only/);
   assert.match(carried, /after this contract was sealed/);
   assert.match(carried, /Gecko stays an open issue/, "its conditions travel too");
+});
+
+test("an attributed export condition can narrowly amend a sealed delivery write boundary", async (t) => {
+  const { product, application, handlers } = await deliveryWorkspace(t);
+  const developmentConfigFile = path.join(application, "development-os.config.json");
+  const developmentConfig = JSON.parse(await fs.readFile(developmentConfigFile, "utf8"));
+  developmentConfig.policies.allowedPaths.push("prisma/schema.prisma", "prisma/migrations");
+  await fs.writeFile(developmentConfigFile, `${JSON.stringify(developmentConfig, null, 2)}\n`, "utf8");
+  await runGit(application, ["add", "development-os.config.json"]);
+  await runGit(application, ["-c", "user.name=T", "-c", "user.email=t@t.test", "commit", "--quiet", "-m", "allow bounded prisma paths"]);
+
+  const opening = await call(handlers, "product_ops_open_delivery", { apply: true });
+  assert.equal(opening.isError, false, JSON.stringify(opening.structuredContent));
+  const waiting = opening.structuredContent;
+  assert.equal(waiting.reason, "waiting_on_owner");
+  const pending = (await call(handlers, "product_ops_pending_decisions")).structuredContent;
+  const gate = pending.items.find((item) => item.requestId === waiting.requestId);
+  assert.ok(gate);
+  const productConfig = await loadConfig(product);
+  await decideApproval(product, productConfig, {
+    requestId: gate.requestId,
+    decision: "approved",
+    actorId: productConfig.project.humanAuthorityActorId,
+    rationale: "Allow only the persistent model paths needed by this delivery.",
+    conditions: [
+      "write-boundary-addition: prisma/schema.prisma",
+      "write-boundary-addition: prisma/migrations",
+      "No production database or external ingestion."
+    ],
+    attribution: "human_entered"
+  }, { dryRun: false });
+
+  const crossed = (await call(handlers, "product_ops_open_delivery", { apply: true })).structuredContent;
+  const exported = JSON.parse(await fs.readFile(
+    path.join(application, ".development-os", "inbox", `${crossed.requestId}.json`), "utf8"));
+  assert.deepEqual(exported.writeBoundary.allowedPaths, [
+    "src", "tests", "prisma/schema.prisma", "prisma/migrations"
+  ]);
+  assert.ok(exported.constraints.includes(
+    "Owner condition on development export: No production database or external ingestion."));
+  assert.ok(!exported.writeBoundary.allowedPaths.includes("prisma"), "the amendment must not widen to the whole directory");
 });
 
 test("a delivery cannot write itself a wider boundary than the application allows", async (t) => {
