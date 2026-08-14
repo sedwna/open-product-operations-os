@@ -180,6 +180,17 @@ placeholder.
 codex mcp add product-ops -- node <absolute path to this repo>/src/mcp/server.js --project . --allow-writes
 ```
 
+Before adding it, run `codex mcp list`. Codex stores this entry globally, so an existing
+`product_ops` / `product-ops` entry may still point at a different product workspace. If it does,
+remove the exact listed entry with `codex mcp remove <name>`, add the correct one, and run
+`codex mcp list` again. Read back the server command and `--project` path; a successful add is not
+proof that the host is targeting this workspace.
+
+After any add, remove, or target change, fully restart Codex before continuing. A task that was
+already open can retain the old MCP process and tool inventory. Its first call must be
+`product_ops_status`; if the reported project id does not match this workspace, it must make no
+writes and report the mismatch.
+
 Hand-editing `~/.codex/config.toml` does not survive: the desktop app rewrites it at startup and
 deletes user-defined entries. The entry vanishes silently, which reads exactly like a broken server.
 

@@ -53,6 +53,21 @@ restart), or the IDE gear menu. All three write the same configuration.
 codex mcp add product-ops -- node <path-to-this-clone>/src/mcp/server.js --project . --allow-writes
 ```
 
+The Codex entry is global. Before adding or retargeting it, run `codex mcp list`. If the existing
+`product_ops` / `product-ops` entry points at another workspace, remove the exact listed name first:
+
+```bash
+codex mcp remove product_ops
+codex mcp add product-ops -- node <path-to-this-clone>/src/mcp/server.js --project <absolute-workspace-path> --allow-writes
+codex mcp list
+```
+
+Read back both the server path and the `--project` argument. Then fully restart Codex. An already
+open task can retain the previous MCP process and tool inventory even after the configuration has
+changed. On the first turn after restart, call `product_ops_status` and compare its project id with
+the workspace before allowing any write. A mismatch is a stop condition, not a reason to continue
+with filesystem fallbacks.
+
 **Do not hand-edit `~/.codex/config.toml` for the desktop app on Windows.** Startup rewrites the
 file and deletes user-defined `[mcp_servers.*]` entries, keeping only app-managed ones
 ([openai/codex#24718](https://github.com/openai/codex/issues/24718)). An entry added by hand
@@ -87,6 +102,11 @@ Work through these in order; each one rules out a whole class of cause.
    server that the host does not list is a configuration problem, not a server problem.
 5. **On Codex desktop for Windows, re-add through the UI.** If the entry vanished, it is the bug
    above.
+6. **Check the target, not only the connection state.** `codex mcp list` must show this clone and
+   this workspace in the command arguments, and `product_ops_status` must report the expected
+   project id. A connected server aimed at another product is still misconfigured.
+7. **Restart after retargeting.** Existing tasks can keep the former MCP process until Codex is
+   fully restarted.
 
 ## After changing the server's code
 

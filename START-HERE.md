@@ -69,13 +69,18 @@ path to the clone:
 }
 ```
 
-**Codex** — `.codex/config.toml`, loaded only for trusted projects:
+**Codex** — add the server through the supported CLI, then restart Codex:
 
-```toml
-[mcp_servers.product_ops]
-command = "node"
-args = ["/absolute/path/to/open-product-operations-os/src/mcp/server.js", "--project", "."]
+```text
+codex mcp list
+codex mcp add product-ops -- node /absolute/path/to/open-product-operations-os/src/mcp/server.js --project /absolute/path/to/product-workspace
+codex mcp list
 ```
+
+If the first listing shows an existing `product_ops` / `product-ops` entry aimed at another
+workspace, remove that exact entry before adding this one. Do not hand-edit the desktop app's global
+configuration. After restart, call `product_ops_status` and confirm the reported project id before
+allowing a write.
 
 The same entry serves Claude Code, Claude Desktop, the ChatGPT desktop app, Codex CLI, the Codex IDE
 extension, and any compliant host.
