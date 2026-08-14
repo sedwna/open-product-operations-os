@@ -8,6 +8,7 @@ import { runControlTower } from "../runtime/control-tower.js";
 import { readJsonOptional } from "../runtime/io.js";
 import { dependencyState, loadTaskboard, replaceTaskboard, selectRunnableTasks } from "../runtime/taskboard.js";
 import { CONTROL_PLANE_LEASE_FILE } from "../runtime/control-plane-lease.js";
+import { decisionProposalForGate } from "../runtime/gate-proposal.js";
 import { runEngineeringDelivery } from "./engineering.js";
 import { runProductAgent } from "./product-agent.js";
 import { materializeCycleWorkbook, materializeWriterCheckpoint } from "./workbook.js";
@@ -329,11 +330,14 @@ async function refreshCycleRouting(root, now) {
   for (const task of tasks.filter((candidate) => candidate.status === "ready" && candidate.human_gate)) {
     const existing = approvals.requests.find((item) => item.taskId === task.task_id && item.gate === task.human_gate);
     if (existing) continue;
+    const proposal = await decisionProposalForGate(root, tasks, task);
     await requestApproval(root, {
       taskId: task.task_id,
       gate: task.human_gate,
-      question: `Authorize gate ${task.human_gate} for task ${task.task_id}?`,
-      context: task.title,
+      question: proposal?.question ?? `Authorize gate ${task.human_gate} for task ${task.task_id}?`,
+      context: proposal?.context ?? task.title,
+      options: proposal?.options ?? ["approved", "rejected"],
+      recommendedOption: proposal?.recommendedOption ?? null,
       evidenceRefs: task.evidence_refs ? task.evidence_refs.split("|").filter(Boolean) : [],
       risks: task.blocked_reason ? [task.blocked_reason] : []
     }, { dryRun: false, now });

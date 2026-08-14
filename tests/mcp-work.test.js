@@ -71,6 +71,87 @@ test("next_work hands out a team, its boundary, and a claim", async (t) => {
   assert.equal(claim.brief.resultContract.properties.nonFunctionalRequirements.items.type, "object");
 });
 
+test("the decision-brief role returns the exact options that a later human gate will present", async (t) => {
+  const { root, handlers } = await workspace(t);
+  const config = await loadConfig(root);
+  const { ingestRecord } = await import("../src/runtime/intake.js");
+  const { replaceTaskboard } = await import("../src/runtime/taskboard.js");
+  const { loadApprovals } = await import("../src/runtime/approvals.js");
+  await ingestRecord(root, {
+    type: "new_idea",
+    title: "Choose a launch route",
+    description: "The owner must choose how much historical data to import.",
+    source: "the owner"
+  }, { dryRun: false });
+  await call(handlers, "product_ops_operate", { apply: true });
+
+  const loaded = await loadTaskboard(root);
+  const eventTasks = loaded.records.filter((task) => task.event_id !== "EVT-00000000-001");
+  const briefTask = eventTasks.find((task) => task.owner_role === "RB-02");
+  const gateTask = eventTasks.find((task) => task.human_gate === "product_direction_or_priority");
+  assert.ok(briefTask && gateTask);
+  await replaceTaskboard(root, loaded.headers, loaded.records.map((task) => {
+    if (task.event_id !== briefTask.event_id) return task;
+    if (task.task_id === briefTask.task_id) return { ...task, status: "done" };
+    if (task.task_id === gateTask.task_id) return { ...task, status: "ready" };
+    return { ...task, status: "backlog" };
+  }), { dryRun: false });
+
+  const runDirectory = path.join(root, ".product-ops/runtime/autopilot/product-runs");
+  await fs.mkdir(runDirectory, { recursive: true });
+  await fs.writeFile(path.join(runDirectory, `${briefTask.task_id}-result.json`), `${JSON.stringify({
+    schemaVersion: "1.0.0",
+    taskId: briefTask.task_id,
+    eventId: briefTask.event_id,
+    roleId: "RB-02",
+    producerActorId: config.agents.find((agent) => agent.id === "RB-02").actorId,
+    status: "completed",
+    summary: "Prepared three bounded launch routes for the owner.",
+    findings: [], recommendations: [], acceptanceCriteria: [], impacts: [], constraints: [],
+    nonFunctionalRequirements: [], evidence: [], knownRisks: [],
+    decisionProposal: {
+      question: "Which historical import route should ProductYab take?",
+      context: "Choose the bounded launch scope.",
+      options: ["A: manual seed", "B: one-year automated backfill", "C: forward-only"],
+      recommendedOption: "B: one-year automated backfill"
+    },
+    completedAt: "2026-08-14T00:00:00.000Z"
+  }, null, 2)}\n`, "utf8");
+
+  await call(handlers, "product_ops_operate", { apply: true });
+  const approval = (await loadApprovals(root)).requests.find((item) => item.taskId === gateTask.task_id);
+  assert.deepEqual(approval.options, ["A: manual seed", "B: one-year automated backfill", "C: forward-only"]);
+  assert.equal(approval.recommendedOption, "B: one-year automated backfill");
+  assert.equal(approval.question, "Which historical import route should ProductYab take?");
+});
+
+test("only RB-02 may prepare a decision proposal and its recommendation must be offered", async (t) => {
+  const { root, handlers } = await workspace(t);
+  const { ingestRecord } = await import("../src/runtime/intake.js");
+  await ingestRecord(root, {
+    type: "new_idea",
+    title: "Choose a bounded product direction",
+    description: "The product owner needs explicit alternatives before delivery.",
+    source: "the owner"
+  }, { dryRun: false });
+  await call(handlers, "product_ops_operate", { apply: true });
+  const claim = await cardFor(handlers, "RB-02", root);
+  assert.match(claim.brief.reporting.decisionProposalRule, /exact question/i);
+  const invalid = await call(handlers, "product_ops_submit_work", {
+    taskId: claim.taskId,
+    claimToken: claim.claimToken,
+    result: resultFor(claim, {
+      decisionProposal: {
+        question: "Which route should the product take?",
+        options: ["A", "B"],
+        recommendedOption: "C"
+      }
+    })
+  });
+  assert.equal(invalid.isError, true);
+  assert.match(JSON.stringify(invalid), /recommendedOption/);
+});
+
 test("work is returned through the same contract a provider would have to satisfy", async (t) => {
   const { root, handlers } = await workspace(t);
   const claim = (await call(handlers, "product_ops_next_work")).structuredContent;
@@ -434,13 +515,17 @@ test("the last card of an event writes the canonical record", async (t) => {
   const { request } = await requestApproval(root, {
     taskId: gated.task_id,
     gate: "product_direction_or_priority",
-    question: "One unit, in the browser?"
+    question: "Which bounded route should proceed?",
+    options: ["manual_seed", "one_year_backfill"],
+    recommendedOption: "one_year_backfill"
   }, { dryRun: false });
   await decideApproval(root, config, {
     requestId: request.requestId,
     decision: "approved",
+    selectedOption: "one_year_backfill",
+    conditions: ["Keep source provenance", "Provide a kill switch"],
     actorId: config.project.humanAuthorityActorId,
-    rationale: "One unit, in the browser, nothing else."
+    rationale: "Backfill one year, then monitor daily."
   }, { dryRun: false });
 
   const claim = (await call(handlers, "product_ops_next_work")).structuredContent;
@@ -459,6 +544,12 @@ test("the last card of an event writes the canonical record", async (t) => {
   for (const file of ["05-events.csv", "10-issues.csv", "11-delivery-tickets.csv", "16-evidence.csv"]) {
     assert.ok(await rowsIn(file) > 0, `${file} must carry this event's record and does not`);
   }
+  const decisionRows = parseCsv(await fs.readFile(path.join(root, "workbook", "09-decision-log.csv"), "utf8"));
+  const decisionHeader = decisionRows[0];
+  const decision = decisionRows.slice(1).find((row) => row[decisionHeader.indexOf("event_id")] === gated.event_id);
+  assert.equal(decision[decisionHeader.indexOf("selected_option")], "one_year_backfill");
+  assert.match(decision[decisionHeader.indexOf("conditions")], /Keep source provenance/);
+  assert.match(decision[decisionHeader.indexOf("conditions")], /Provide a kill switch/);
   await fs.access(path.join(root, ".product-ops", "runtime", "autopilot", "reports"));
 });
 

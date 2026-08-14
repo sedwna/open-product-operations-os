@@ -76,6 +76,7 @@ export async function decide(context, args = {}) {
   if ((result.request.conditions ?? []).length > 0) {
     lines.push(`It carries ${result.request.conditions.length} condition(s). An approval with conditions is not a bare approval — carry them into the work, and say so when you report it done.`);
   }
+  lines.push("This approval registry entry is the canonical gate decision used for routing. A pending decision-log row produced by the earlier brief is a projection and must not be edited by an agent to imitate human authority; it is finalized from this approval when the cycle workbook closes.");
   if (collected.attribution === "model_relayed") {
     lines.push(
       collected.dialogFailed

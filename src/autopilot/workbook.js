@@ -70,13 +70,16 @@ export async function materializeCycleWorkbook(root, config, { cycleId, intake, 
       event_id: intake.eventId,
       title: directionApproval.question,
       status: "approved",
-      selected_option: "approved",
+      selected_option: directionApproval.selectedOption ?? directionApproval.status,
       decision_maker_actor_id: directionApproval.decidedByActorId,
       decided_at: directionApproval.decidedAt,
       brief_reference: APPROVAL_STORE_FILE,
       evidence_refs: directionApproval.requestId,
       risk_acceptance: "none",
-      conditions: directionApproval.rationale ?? "Bounded local autonomous delivery only; production remains separately gated.",
+      conditions: unique([
+        directionApproval.rationale,
+        ...(directionApproval.conditions ?? [])
+      ]).join(" | ") || "Bounded local autonomous delivery only; production remains separately gated.",
       resulting_task_ids: tasks.map((task) => task.task_id).join("|")
     }, { authorityEvidence: humanAuthorityEvidence }),
     record("issues", { issue_id: ids.issue }, {

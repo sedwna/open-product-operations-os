@@ -5,6 +5,7 @@ import { runDevelopmentTask } from "./development-runner.js";
 import { readJsonOptional, utcTimestamp, writeJson } from "./io.js";
 import { withControlPlaneLease } from "./control-plane-lease.js";
 import { recordRoutedLineage } from "./coordination-record.js";
+import { decisionProposalForGate } from "./gate-proposal.js";
 
 /**
  * Which route an intake type takes when no route is named for it directly.
@@ -144,11 +145,14 @@ async function controlTowerCycle(
     if (!existing) {
       actions.push({ type: "request_human_approval", taskId: task.task_id, gate: task.human_gate });
       if (!dryRun) {
+        const proposal = await decisionProposalForGate(root, tasks, task);
         await requestApproval(root, {
           taskId: task.task_id,
           gate: task.human_gate,
-          question: `Authorize gate ${task.human_gate} for task ${task.task_id}?`,
-          context: task.title,
+          question: proposal?.question ?? `Authorize gate ${task.human_gate} for task ${task.task_id}?`,
+          context: proposal?.context ?? task.title,
+          options: proposal?.options ?? ["approved", "rejected"],
+          recommendedOption: proposal?.recommendedOption ?? null,
           evidenceRefs: task.evidence_refs ? task.evidence_refs.split("|").filter(Boolean) : [],
           risks: task.blocked_reason ? [task.blocked_reason] : []
         }, { dryRun: false, now });

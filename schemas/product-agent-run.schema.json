@@ -51,6 +51,24 @@
     },
     "evidence": { "$ref": "#/$defs/strings" },
     "knownRisks": { "$ref": "#/$defs/strings" },
+    "decisionProposal": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "A product-direction question prepared by the decision-brief role for the product owner. The control plane presents these exact options; it never chooses one.",
+      "required": ["question", "options"],
+      "properties": {
+        "question": { "type": "string", "minLength": 5, "maxLength": 400 },
+        "context": { "type": "string", "maxLength": 2000 },
+        "options": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 10,
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1, "maxLength": 200 }
+        },
+        "recommendedOption": { "type": "string", "minLength": 1, "maxLength": 200 }
+      }
+    },
     "canonicalRecords": {
       "type": "array",
       "maxItems": 200,

@@ -83,6 +83,15 @@ export function validateSubmittedProductResult(result, task, role) {
   if (result.roleId !== role.id) mismatches.push("roleId");
   if (result.producerActorId !== role.actorId) mismatches.push("producerActorId");
   if (mismatches.length) throw new Error(`Product agent result mismatches dispatched ${mismatches.join(", ")}.`);
+  if (result.decisionProposal) {
+    if (role.id !== "RB-02") {
+      throw new Error("Only the product decision-brief role may prepare a decisionProposal for the product owner.");
+    }
+    if (result.decisionProposal.recommendedOption
+        && !result.decisionProposal.options.includes(result.decisionProposal.recommendedOption)) {
+      throw new Error("decisionProposal.recommendedOption must be one of decisionProposal.options.");
+    }
+  }
   assertNoCredentialMaterial("Product agent result", result);
 }
 
@@ -145,6 +154,9 @@ export function buildProductAgentRequest(
       // directories for work that needed five.
       ...(role.id === "RB-06"
         ? { writeBoundaryRule: "Set writeBoundary.allowedPaths to the directories this delivery actually needs. It may only narrow what the application already allows, never widen it, and naming a path outside that policy is refused rather than ignored. Leaving it unset hands the whole policy to engineering." }
+        : {}),
+      ...(role.id === "RB-02"
+        ? { decisionProposalRule: "When the owner must choose a product direction, return decisionProposal with the exact question and mutually exclusive options they should see. A recommendation may name one of those options, but this role never records the owner's choice." }
         : {}),
       // Analysis that never reaches the record is analysis nobody can find later. A role that owns
       // a tab is the only role that can put rows in it, and its card is the moment to do so.
