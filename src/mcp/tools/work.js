@@ -5,12 +5,12 @@ import { readJsonOptional } from "../../runtime/io.js";
 import { loadApprovals } from "../../runtime/approvals.js";
 import { loadTaskboard, selectRunnableTasks, visibleTaskboardRecords } from "../../runtime/taskboard.js";
 import { adoptionAssignmentForTask, closeAdoption } from "../../adoption/materialize.js";
-import { buildProductAgentRequest, runProductAgent, submittedResultExecutor } from "../../autopilot/product-agent.js";
+import { buildProductAgentRequest, runProductAgent, submittedResultExecutor, validateSubmittedProductResult } from "../../autopilot/product-agent.js";
 import { applyRunOutcome, cycleProgress, projectRunOutcome } from "../../autopilot/cycle.js";
 import { loadProductRuns, persistCycleReport, writeCycleReport } from "../../autopilot/orchestrator.js";
 import { materializeCycleWorkbook } from "../../autopilot/workbook.js";
 import { withControlPlaneLease } from "../../runtime/control-plane-lease.js";
-import { commitRoleRecords } from "../../runtime/coordination-record.js";
+import { commitRoleRecords, validateRoleRecords } from "../../runtime/coordination-record.js";
 import { readAutomationLink } from "../../autopilot/state.js";
 import { describeTeam } from "../app/teams.js";
 import { ToolFailure } from "../authority.js";
@@ -187,6 +187,23 @@ export async function submitWork(context, args = {}) {
   const adoptionAssignment = await adoptionAssignmentForTask(context.root, task.task_id);
   if (adoptionAssignment && Array.isArray(args.result?.canonicalRecords) && args.result.canonicalRecords.length > 0) {
     throw new ToolFailure("ADOPTION_CLAIMS_NOT_ALLOWED", "Adoption returns sourced observations for owner review; it cannot write accepted canonical claims.");
+  }
+
+  // Plan and apply must enforce the same deterministic contract. Previously plan accepted any
+  // schema-shaped result, while apply sealed its run artifacts and only then discovered that a row
+  // crossed a role or protected-field boundary. The card stayed ready but the sealed file made a
+  // corrected retry impossible. Preflight before either branch keeps rejection side-effect free.
+  try {
+    validateSubmittedProductResult(args.result, task, role);
+  } catch (error) {
+    throw new ToolFailure("RESULT_REJECTED", `The submitted result was refused: ${error.message}`);
+  }
+  if (!adoptionAssignment && args.result.status === "completed") {
+    try {
+      validateRoleRecords(config, args.result);
+    } catch (error) {
+      throw new ToolFailure("RECORD_REJECTED", `${error.message} Fix the rows and submit again; the card has not moved.`);
+    }
   }
 
   if (args.apply !== true) {

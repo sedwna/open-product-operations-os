@@ -557,3 +557,55 @@ test("a role cannot write a record that belongs to another role", async (t) => {
     });
   }
 });
+
+test("plan and apply reject protected canonical fields without sealing artifacts, then allow a corrected retry", async (t) => {
+  const { root, handlers } = await workspace(t);
+  const { ingestRecord } = await import("../src/runtime/intake.js");
+  await ingestRecord(root, {
+    type: "new_idea",
+    title: "Choose the first product direction",
+    description: "The owner needs a decision brief before delivery begins.",
+    source: "the owner"
+  }, { dryRun: false });
+  await call(handlers, "product_ops_operate", { apply: true });
+  const claim = await cardFor(handlers, "RB-02", root);
+  const invalid = resultFor(claim, {
+    canonicalRecords: [{
+      sheet: "decision_log",
+      key: { decision_id: "DEC-PENDING-1" },
+      fields: {
+        status: "pending_human",
+        decision_maker_actor_id: "human-product-owner"
+      }
+    }]
+  });
+
+  for (const apply of [false, true]) {
+    const refused = await call(handlers, "product_ops_submit_work", {
+      taskId: claim.taskId,
+      claimToken: claim.claimToken,
+      result: invalid,
+      ...(apply ? { apply: true } : {})
+    });
+    assert.equal(refused.isError, true, `${apply ? "apply" : "plan"} must reject the same protected field`);
+    assert.equal(refused.structuredContent.code, "RECORD_REJECTED");
+    assert.match(JSON.stringify(refused), /decision_maker_actor_id/);
+    const runs = await fs.readdir(path.join(root, ".product-ops/runtime/autopilot/product-runs")).catch(() => []);
+    assert.deepEqual(runs, [], "a rejected submission must not leave attempt or sealed artifacts");
+  }
+
+  const corrected = await call(handlers, "product_ops_submit_work", {
+    taskId: claim.taskId,
+    claimToken: claim.claimToken,
+    apply: true,
+    result: resultFor(claim, {
+      canonicalRecords: [{
+        sheet: "decision_log",
+        key: { decision_id: "DEC-PENDING-1" },
+        fields: { status: "pending_human", selected_option: "" }
+      }]
+    })
+  });
+  assert.equal(corrected.isError, false, corrected.content[0].text);
+  assert.equal(corrected.structuredContent.applied, true);
+});

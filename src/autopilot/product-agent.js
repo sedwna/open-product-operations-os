@@ -63,6 +63,18 @@ export async function runProductAgent(
     operationalArtifacts,
     now
   });
+  validateSubmittedProductResult(result, task, role);
+  const outputFile = result.status === "completed" ? canonicalOutputFile : attemptOutputFile;
+  await writeExclusiveOrEqual(outputFile, result);
+  return {
+    result,
+    inputFile: path.relative(absoluteRoot, inputFile).replaceAll("\\", "/"),
+    outputFile: path.relative(absoluteRoot, outputFile).replaceAll("\\", "/")
+  };
+}
+
+/** Validate a submitted result against the same contract as a provider run, without writing. */
+export function validateSubmittedProductResult(result, task, role) {
   const errors = validatePublishedSchema("product-agent-run.schema.json", result);
   if (errors.length) throw new Error(`Product agent result is invalid:\n- ${errors.join("\n- ")}`);
   const mismatches = [];
@@ -72,13 +84,6 @@ export async function runProductAgent(
   if (result.producerActorId !== role.actorId) mismatches.push("producerActorId");
   if (mismatches.length) throw new Error(`Product agent result mismatches dispatched ${mismatches.join(", ")}.`);
   assertNoCredentialMaterial("Product agent result", result);
-  const outputFile = result.status === "completed" ? canonicalOutputFile : attemptOutputFile;
-  await writeExclusiveOrEqual(outputFile, result);
-  return {
-    result,
-    inputFile: path.relative(absoluteRoot, inputFile).replaceAll("\\", "/"),
-    outputFile: path.relative(absoluteRoot, outputFile).replaceAll("\\", "/")
-  };
 }
 
 /**
