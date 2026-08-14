@@ -47,7 +47,7 @@ export const PROMPTS = Object.freeze([
       "",
       "There are two ways in from here. Find out which one they are, and do that one properly.",
       "",
-      "ADOPTING AN EXISTING PRODUCT. Once the application is linked, run product_ops_adopt. It accounts for every path in the repository and assigns each to the boundary that must read it. Then work through every assignment with product_ops_next_work — all of them, not a sample. A boundary whose paths were never read is a part of the product that was never adopted, and the owner will find that out later at the worst possible moment.",
+      "ADOPTING AN EXISTING PRODUCT. Once the application is linked, run product_ops_adopt first as a plan. It accounts for every path in the repository and shows which boundary must read it. If coverage is complete and the assignments are sound, call it again with apply true; that records the survey and creates one versioned card per assignment. Then work through every card with product_ops_next_work — all of them, not a sample. A boundary whose paths were never read is a part of the product that was never adopted, and the owner will find that out later at the worst possible moment.",
       "- If coverage.complete is false, say so before anything else and do not describe the repository as adopted. Report what was not accounted for.",
       "- What the teams return are observations carrying their sources. They are not what the product is. That only comes from the owner accepting them, so present the findings and let them decide.",
       "- Do not skip ahead to fixing what you find. Adoption records the product as it stands; changing it is the next cycle's work.",

@@ -1,5 +1,6 @@
 import path from "node:path";
 import { surveyApplication } from "../../adoption/survey.js";
+import { materializeAdoption } from "../../adoption/materialize.js";
 import { readAutomationLink } from "../../autopilot/state.js";
 import { describeTeam } from "../app/teams.js";
 import { ToolFailure } from "../authority.js";
@@ -19,7 +20,10 @@ import { untrusted } from "../untrusted.js";
  * that came from record text could send the survey anywhere on the filesystem. The linked
  * application is the only repository this can read.
  */
-export async function adopt(context) {
+export async function adopt(context, args = {}) {
+  if (args.apply === true && context.allowWrites !== true) {
+    throw new ToolFailure("APPLY_NOT_AUTHORIZED", "This server was started without write authorisation.");
+  }
   const link = await linkedApplication(context.root);
   if (!link) {
     throw new ToolFailure(
@@ -34,6 +38,12 @@ export async function adopt(context) {
   } catch (error) {
     throw new ToolFailure("SURVEY_FAILED", `The application repository could not be surveyed: ${error.message}`);
   }
+  if (args.apply === true && (!survey.coverage.complete || survey.assignments.some((assignment) => assignment.truncated))) {
+    throw new ToolFailure(
+      "SURVEY_INCOMPLETE",
+      "The survey did not retain a complete, assignable path account. Nothing was recorded; reduce the repository scope or path count and survey again."
+    );
+  }
 
   const teams = survey.assignments.map((assignment) => {
     const team = describeTeam(assignment.roleId, "product");
@@ -45,8 +55,10 @@ export async function adopt(context) {
       truncated: assignment.truncated === true
     };
   });
+  const adoption = await materializeAdoption(context.root, survey, { dryRun: args.apply !== true });
 
   const structuredContent = {
+    applied: args.apply === true,
     applicationRoot: survey.applicationRoot,
     revision: survey.revision,
     coverage: survey.coverage,
@@ -67,13 +79,20 @@ export async function adopt(context) {
     history: survey.signals.history,
     churn: survey.signals.churn.slice(0, 10),
     teams,
+    adoption: {
+      key: adoption.key,
+      eventId: adoption.eventId,
+      surveyFile: adoption.surveyFile,
+      created: adoption.created,
+      assignments: adoption.assignments.map(({ taskId, roleId, assignmentFile, pathCount }) => ({ taskId, roleId, assignmentFile, pathCount }))
+    },
     survey
   };
 
-  return { structuredContent, text: narrate(survey, teams) };
+  return { structuredContent, text: narrate(survey, teams, adoption, args.apply === true) };
 }
 
-function narrate(survey, teams) {
+function narrate(survey, teams, adoption, applied) {
   const lines = [];
   const { coverage } = survey;
 
@@ -98,7 +117,9 @@ function narrate(survey, teams) {
   }
 
   lines.push("");
-  lines.push("Every path to be read is assigned to a boundary. Work through them with product_ops_next_work — none of this is adopted until the team that owns it has read it:");
+  lines.push(applied
+    ? `Every path to be read is now carried by ${adoption.assignments.length} versioned card(s). Work through them with product_ops_next_work — none of this is adopted until the team that owns it has read it:`
+    : `Every path to be read would become one of ${adoption.assignments.length} versioned card(s). Nothing was written; call again with apply true before using product_ops_next_work:`);
   for (const entry of teams) {
     lines.push(`  · ${entry.team} — ${entry.pathCount} path(s)${entry.truncated ? " (more than are listed; the boundary still owns all of them)" : ""}`);
   }

@@ -18,6 +18,13 @@ export const PRODUCT_RUN_ROOT = ".product-ops/runtime/autopilot/product-runs";
  * evidence; anything else stops the card and says why, in the producer's words rather than ours.
  */
 export async function applyRunOutcome(root, headers, tasks, task, run, { now = new Date() } = {}) {
+  const projected = projectRunOutcome(tasks, task, run, { now });
+  await replaceTaskboard(root, headers, projected.tasks, { dryRun: false });
+  return projected;
+}
+
+/** Preview the board transition so finalization can succeed before the last card becomes done. */
+export function projectRunOutcome(tasks, task, run, { now = new Date() } = {}) {
   const resultRef = `${PRODUCT_RUN_ROOT}/${task.task_id}-result.json`;
   const patch = run.status === "completed"
     ? {
@@ -35,7 +42,6 @@ export async function applyRunOutcome(root, headers, tasks, task, run, { now = n
       };
 
   const updated = tasks.map((candidate) => candidate.task_id === task.task_id ? { ...candidate, ...patch } : candidate);
-  await replaceTaskboard(root, headers, updated, { dryRun: false });
   return { status: patch.status, resultRef, tasks: updated };
 }
 

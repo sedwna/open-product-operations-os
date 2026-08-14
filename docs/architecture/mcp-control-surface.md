@@ -141,6 +141,7 @@ workstream summary, and is still bounded.
 
 | Tool | Effect | Default |
 | --- | --- | --- |
+| `product_ops_adopt` | Survey a linked application, then record its survey and role-owned cards | `apply: false` |
 | `product_ops_intake` | Normalize and record an idea, finding, incident, or feedback | `apply: false` |
 | `product_ops_operate` | One bounded control-plane scheduling cycle | `apply: false` |
 | `product_ops_autopilot` | `start \| pause \| resume \| retry` on the local coordinator | guarded |

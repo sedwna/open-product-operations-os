@@ -3,9 +3,10 @@ import { loadConfig } from "../../config.js";
 import { INTAKE_STORE_FILE } from "../../constants.js";
 import { readJsonOptional } from "../../runtime/io.js";
 import { loadApprovals } from "../../runtime/approvals.js";
-import { loadTaskboard, selectRunnableTasks } from "../../runtime/taskboard.js";
+import { loadTaskboard, selectRunnableTasks, visibleTaskboardRecords } from "../../runtime/taskboard.js";
+import { adoptionAssignmentForTask, closeAdoption } from "../../adoption/materialize.js";
 import { buildProductAgentRequest, runProductAgent, submittedResultExecutor } from "../../autopilot/product-agent.js";
-import { applyRunOutcome, cycleProgress } from "../../autopilot/cycle.js";
+import { applyRunOutcome, cycleProgress, projectRunOutcome } from "../../autopilot/cycle.js";
 import { loadProductRuns, persistCycleReport, writeCycleReport } from "../../autopilot/orchestrator.js";
 import { materializeCycleWorkbook } from "../../autopilot/workbook.js";
 import { withControlPlaneLease } from "../../runtime/control-plane-lease.js";
@@ -28,7 +29,8 @@ import { untrusted, untrustedList } from "../untrusted.js";
 
 export async function nextWork(context) {
   const config = await loadConfig(context.root);
-  const { records: tasks } = await loadTaskboard(context.root);
+  const { records } = await loadTaskboard(context.root);
+  const tasks = visibleTaskboardRecords(records);
   const approvals = await loadApprovals(context.root);
   const allRunnable = selectRunnableTasks(tasks, approvals.requests);
   const runnable = allRunnable.filter((task) => task.owner_role !== config.separation.developmentRole);
@@ -67,10 +69,12 @@ export async function nextWork(context) {
 
   const intake = await intakeFor(context.root, task.event_id);
   const link = await automationLink(context.root);
+  const adoptionAssignment = await adoptionAssignmentForTask(context.root, task.task_id);
   const brief = buildProductAgentRequest(config, task, role, {
     intake,
     cycleId: task.event_id,
-    applicationRoot: link?.applicationRoot ?? null
+    applicationRoot: link?.applicationRoot ?? null,
+    operationalArtifacts: adoptionAssignment
   });
 
   const team = describeTeam(role.id, "product");
@@ -91,6 +95,7 @@ export async function nextWork(context) {
       mustNot: role.prohibitedActions ?? [],
       ownerDecisions: decisions,
       policy: brief.policy,
+      adoptionAssignment,
       brief
     },
     text: [
@@ -179,6 +184,10 @@ export async function submitWork(context, args = {}) {
 
   const role = config.agents.find((candidate) => candidate.id === task.owner_role);
   if (!role) throw new ToolFailure("NOT_FOUND", `Task ${task.task_id} names role ${task.owner_role}, which this project does not configure.`);
+  const adoptionAssignment = await adoptionAssignmentForTask(context.root, task.task_id);
+  if (adoptionAssignment && Array.isArray(args.result?.canonicalRecords) && args.result.canonicalRecords.length > 0) {
+    throw new ToolFailure("ADOPTION_CLAIMS_NOT_ALLOWED", "Adoption returns sourced observations for owner review; it cannot write accepted canonical claims.");
+  }
 
   if (args.apply !== true) {
     return {
@@ -200,6 +209,7 @@ export async function submitWork(context, args = {}) {
         intake,
         cycleId: task.event_id,
         applicationRoot: link?.applicationRoot ?? null,
+        operationalArtifacts: adoptionAssignment,
         execute: submittedResultExecutor(args.result)
       });
     } catch (error) {
@@ -210,7 +220,7 @@ export async function submitWork(context, args = {}) {
     // Committed before the card moves, so a row that will not go in stops the card rather than
     // leaving it done with a record that never arrived.
     let committed = { written: 0, sheets: [] };
-    if (recorded.result.status === "completed") {
+    if (recorded.result.status === "completed" && !adoptionAssignment) {
       try {
         committed = await commitRoleRecords(context.root, config, recorded.result);
       } catch (error) {
@@ -218,11 +228,27 @@ export async function submitWork(context, args = {}) {
       }
     }
     const board = await loadTaskboard(context.root);
+    const projected = projectRunOutcome(board.records, task, recorded.result);
+    const progress = cycleProgress(projected.tasks, task.event_id);
+    const sampleCompletion = task.event_id === "EVT-00000000-001" && task.title === "Complete the first discovery record";
+    let closure = null;
+    if (progress.complete && !sampleCompletion) {
+      try {
+        closure = adoptionAssignment
+          ? await closeAdoption(context.root, task, progress.tasks)
+          : await closeCycle(context.root, config, task, progress.tasks);
+      } catch (error) {
+        throw new ToolFailure(
+          "CLOSURE_FAILED",
+          `The result is sealed, but finalization failed before the card moved: ${error.message} Retry the same ready card; its sealed result will be reused.`
+        );
+      }
+    }
     const advanced = await applyRunOutcome(context.root, board.headers, board.records, task, recorded.result);
-    return { recorded, advanced, committed, progress: cycleProgress(advanced.tasks, task.event_id) };
+    return { recorded, advanced, committed, progress, closure, sampleCompletion };
   });
 
-  const { recorded, advanced, committed, progress } = outcome;
+  const { recorded, advanced, committed, progress, closure, sampleCompletion } = outcome;
   // The card that finishes an event closes it. When product work was inverted to host-delegated
   // execution, this step stayed behind in the coordinator loop: the delegated path completed every
   // card and then told the coordinator to run a scheduling pass to "close the cycle", which cannot
@@ -230,25 +256,25 @@ export async function submitWork(context, args = {}) {
   // issues, the tickets, the validation scenarios, the evidence, the whole workbook the model rests
   // on — was never written. Eight completed cards on the first real product, and every content tab
   // still empty.
-  const closure = progress.complete
-    ? await closeCycle(context.root, config, task, progress.tasks).catch((error) => ({ error: error.message }))
-    : null;
   const team = describeTeam(role.id, "product");
   const lines = [
     recorded.result.status === "completed"
       ? `Recorded ${task.task_id} for ${team.name} and moved it to done. A completed result is sealed; submitting again returns the sealed record rather than replacing it.`
       : `Recorded a ${recorded.result.status} result for ${task.task_id} (${team.name}) and stopped the card with the producer's own reason. It is not sealed, so the work can be attempted again.`
   ];
-  if (committed.written > 0) {
+  if (adoptionAssignment && recorded.result.status === "completed") {
+    lines.push("The result remains a sourced adoption observation; no canonical product claim was written.");
+  } else if (committed.written > 0) {
     lines.push(`${committed.written} row(s) went into the canonical record: ${committed.sheets.join(", ")}.`);
   } else if (recorded.result.status === "completed") {
     lines.push("This card recorded no canonical rows. That is right for a card whose output is analysis, and wrong for one that produced issues, a ticket, scenarios or evidence — those belong in the record, not only in the run file.");
   }
   if (!progress.complete) {
     lines.push(`${progress.remaining} of ${progress.total} card(s) for ${task.event_id} remain. Call product_ops_next_work for the next one.`);
-  } else if (closure?.error) {
-    lines.push(`Every card for ${task.event_id} is done, but the cycle could not be closed: ${closure.error}`);
-    lines.push("The work is sealed and safe. The canonical record for this event is incomplete until this is resolved, so say so rather than reporting the cycle finished.");
+  } else if (adoptionAssignment) {
+    lines.push(`Every adoption card for ${task.event_id} is done. Observations are recorded at ${closure.reportFile}; owner review is waiting as ${closure.approvalRequestId}.`);
+  } else if (sampleCompletion) {
+    lines.push("The setup discovery sample is done. It is an orientation card, not a product event, so no cycle report was created.");
   } else {
     lines.push(`Every card for ${task.event_id} is done. The cycle report is written and the canonical workbook now carries this event's record: ${closure.workbook.written} row(s) across ${closure.workbook.sheets} tab(s).`);
   }

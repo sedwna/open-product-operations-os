@@ -181,22 +181,27 @@ export const TOOL_DEFINITIONS = Object.freeze([
     },
     handler: write.autopilot
   },
-  // Two tools below read without writing and are still registered under the plan tier rather than
-  // the read tier. That is deliberate, not an oversight in either direction.
+  // Two tools below can reach beyond an ordinary read and are therefore registered under the plan
+  // tier rather than the read tier. That is deliberate, not an oversight in either direction.
   //
-  // `adopt` reads a *different repository* than the one this server is bound to. Reaching outside
-  // the project boundary is a larger thing to grant than reading inside it, whatever the tool then
-  // does with what it finds.
+  // `adopt` reads a *different repository* than the one this server is bound to. Its default is a
+  // read-only plan; explicit apply records the survey and the cards that make its assignments real.
   //
   // `next_work` hands out a claim whose only use is `submit_work`. On a read-only server it could
   // only ever produce work nobody can return, which is a worse answer than not offering it.
   {
     name: "product_ops_adopt",
     title: "Survey the existing application",
-    description: "Account for every path in the linked application and assign each to the boundary that must read it. Reads only.",
+    description: "Account for every path in the linked application and plan role-owned adoption cards. Set apply true to record the survey and cards.",
     tier: TIERS.PLAN,
-    annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
-    inputSchema: { type: "object", properties: {}, additionalProperties: false },
+    annotations: PLAN_ANNOTATIONS,
+    inputSchema: {
+      type: "object",
+      properties: {
+        apply: { type: "boolean", default: false, description: "Record the survey and role-owned adoption cards. Omitted or false returns the plan only." }
+      },
+      additionalProperties: false
+    },
     handler: adopt
   },
   {
