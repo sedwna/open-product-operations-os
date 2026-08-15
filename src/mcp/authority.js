@@ -63,7 +63,8 @@ export const TOOL_ERROR_CODES = Object.freeze([
   "WORK_INCOMPLETE",
   "DELIVERY_NOT_CLOSEABLE",
   "CLOSURE_FAILED",
-  "RECORD_REJECTED"
+  "RECORD_REJECTED",
+  "MCP_RESTART_REQUIRED"
 ]);
 
 export function toolFailure(error) {

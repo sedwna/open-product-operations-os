@@ -63,6 +63,8 @@ export function projectStatus(snapshot, { verbosity = "brief", ceiling } = {}) {
     truncated: { decisions: pending.length > BRIEF_DECISIONS, risks: (snapshot.risks ?? []).length > BRIEF_RISKS }
   };
 
+  if (snapshot.runtime) projection.runtime = snapshot.runtime;
+
   if (full) {
     projection.roleActivity = snapshot.roleActivity ?? [];
     projection.readiness = snapshot.readiness ?? null;
@@ -90,6 +92,9 @@ export function renderStatusText(projection) {
       : `${decisions.pending} human gate(s) awaiting a decision: ${decisions.items.map((item) => item.requestId).join(", ")}.`
   ];
   if (cycle.lastError) lines.push(`Last error: ${cycle.lastError}`);
+  if (projection.runtime?.restartRequired) {
+    lines.push("MCP_RESTART_REQUIRED: Product Operations source changed after this process started. Restart the host before any planning or write.");
+  }
   if (projection.truncated.decisions || projection.truncated.risks) {
     lines.push("Some entries were omitted to stay inside the result budget; read productops:// resources for the full set.");
   }
@@ -152,6 +157,7 @@ function enforceCeiling(projection, limit) {
       risks: [],
       latestCycle: null,
       automation: projection.automation,
+      runtime: projection.runtime,
       truncated: { decisions: true, risks: true, minimised: true }
     };
   }

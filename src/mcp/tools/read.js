@@ -10,11 +10,16 @@ import { untrusted, untrustedList } from "../untrusted.js";
 import { ToolFailure } from "../authority.js";
 import { ENGINEERING_ROLE_IDS, PRODUCT_ROLE_IDS, describeTeam, teamName } from "../app/teams.js";
 import { PANEL_MIME_TYPE, PANEL_URI, renderPanel } from "../app/panel.js";
+import { inspectRuntimeFreshness } from "../freshness.js";
 
 const MAX_FINDINGS = 50;
 
 export async function status(context, { verbosity = "brief" } = {}) {
-  const snapshot = await loadWorkspaceSnapshot(context.root);
+  const [snapshot, runtime] = await Promise.all([
+    loadWorkspaceSnapshot(context.root),
+    inspectRuntimeFreshness(context.runtimeFreshness)
+  ]);
+  snapshot.runtime = runtime;
   const projection = projectStatus(snapshot, { verbosity, ceiling: verbosity === "full" ? undefined : context.briefCeiling });
   return { structuredContent: projection, text: renderStatusText(projection) };
 }

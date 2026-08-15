@@ -10,7 +10,7 @@ import { setControlPlaneSurface } from "../runtime/control-plane-lease.js";
 import { readPackagedFile } from "../catalog.js";
 import { INVALID_PARAMS, RpcError, serveStdio } from "./jsonrpc.js";
 import { TOOL_DEFINITIONS, toListEntry } from "./registry.js";
-import { selectRegisteredTools, toolFailure, toolResult } from "./authority.js";
+import { selectRegisteredTools, toolFailure, toolResult, TIERS, ToolFailure } from "./authority.js";
 import { createDecisionTokenIssuer } from "./tools/read.js";
 import { createClaimTokenIssuer } from "./tools/work.js";
 import { RESOURCES, RESOURCE_TEMPLATES, readResource } from "./resources.js";
@@ -18,6 +18,7 @@ import { PROMPTS, getPrompt, toListEntry as toPromptEntry } from "./prompts.js";
 import { DEFAULT_BRIEF_CEILING } from "./projection.js";
 import { PANEL_MIME_TYPE } from "./app/panel.js";
 import { watchCanonicalRecords } from "./watch.js";
+import { captureRuntimeFreshness, inspectRuntimeFreshness } from "./freshness.js";
 
 /**
  * The newest revision this server prefers when a client offers nothing usable.
@@ -104,6 +105,7 @@ export async function createServerContext(options) {
     verifyDecisionToken: tokens.verify,
     claimToken: claims.issue,
     verifyClaimToken: claims.verify,
+    runtimeFreshness: await captureRuntimeFreshness({ version: packageVersion() }),
     subscriptions: new Set()
   };
 }
@@ -142,6 +144,16 @@ export function createHandlers(context, { version = packageVersion() } = {}) {
       const definition = byName.get(params?.name);
       if (!definition) throw new RpcError(INVALID_PARAMS, `Tool "${params?.name}" is not registered on this server.`);
       try {
+        if (definition.tier !== TIERS.READ) {
+          const freshness = await inspectRuntimeFreshness(context.runtimeFreshness);
+          if (freshness.restartRequired) {
+            throw new ToolFailure(
+              "MCP_RESTART_REQUIRED",
+              "Product Operations source changed after this MCP process started. Restart the host before planning or applying any write.",
+              { runtime: freshness }
+            );
+          }
+        }
         return toolResult(await definition.handler(context, params.arguments ?? {}));
       } catch (error) {
         return toolFailure(error);

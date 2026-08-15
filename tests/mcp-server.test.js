@@ -21,6 +21,7 @@ import { TOOL_ERROR_CODES } from "../src/mcp/authority.js";
 import { DEFAULT_BRIEF_CEILING, byteLength, projectStatus } from "../src/mcp/projection.js";
 import { untrusted } from "../src/mcp/untrusted.js";
 import { PANEL_MIME_TYPE, PANEL_URI } from "../src/mcp/app/panel.js";
+import { captureRuntimeFreshness, inspectRuntimeFreshness } from "../src/mcp/freshness.js";
 import { makeTempDirectory } from "./helpers.js";
 
 async function makeProject(t) {
@@ -374,6 +375,8 @@ test("status reports the cycle and stays inside the byte ceiling", async (t) => 
   assert.equal(typeof result.structuredContent.counts.total, "number");
   assert.ok(byteLength(result.structuredContent) <= DEFAULT_BRIEF_CEILING);
   assert.match(result.content[0].text, /cycle idle/);
+  assert.equal(result.structuredContent.runtime.status, "fresh");
+  assert.equal(result.structuredContent.runtime.restartRequired, false);
 
   const full = await handlers["tools/call"]({ name: "product_ops_status", arguments: { verbosity: "full" } });
   assert.equal(Array.isArray(full.structuredContent.roleActivity), true);
@@ -833,6 +836,32 @@ test("a host without elicitation refuses rather than deciding on the owner's beh
   assert.equal(relayed.structuredContent.attribution, "model_relayed");
   assert.match(relayed.content[0].text, /relayed by a model rather than typed by the product owner/);
   assert.equal((await loadApprovals(root)).requests[0].attribution, "model_relayed");
+});
+
+test("a source change is visible in status and blocks every non-read tool until restart", async (t) => {
+  const sourceRoot = await makeTempDirectory("product-ops-mcp-source-");
+  t.after(() => fs.rm(sourceRoot, { recursive: true, force: true }));
+  await fs.writeFile(path.join(sourceRoot, "runtime.js"), "export const revision = 1;\n", "utf8");
+
+  const { context, handlers } = await handlersFor(t, { allowWrites: true });
+  context.runtimeFreshness = await captureRuntimeFreshness({
+    sourceRoot,
+    version: "test",
+    now: () => new Date("2026-08-15T15:00:00.000Z")
+  });
+  assert.equal((await inspectRuntimeFreshness(context.runtimeFreshness)).status, "fresh");
+
+  await fs.writeFile(path.join(sourceRoot, "runtime.js"), "export const revision = 2;\n", "utf8");
+  const status = await handlers["tools/call"]({ name: "product_ops_status", arguments: {} });
+  assert.equal(status.isError, false, "read tools remain available for diagnosis");
+  assert.equal(status.structuredContent.runtime.status, "restart_required");
+  assert.equal(status.structuredContent.runtime.restartRequired, true);
+  assert.match(status.content[0].text, /MCP_RESTART_REQUIRED/);
+
+  const plannedWrite = await handlers["tools/call"]({ name: "product_ops_operate", arguments: { apply: false } });
+  assert.equal(plannedWrite.isError, true);
+  assert.equal(plannedWrite.structuredContent.code, "MCP_RESTART_REQUIRED");
+  assert.equal(plannedWrite.structuredContent.runtime.restartRequired, true);
 });
 
 test("the server-side authority check survives every host path", async (t) => {

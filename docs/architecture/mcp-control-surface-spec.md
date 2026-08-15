@@ -135,12 +135,13 @@ treating the call as a protocol fault:
 | `ELICITATION_DECLINED` | the person declined or cancelled the dialog |
 | `NOT_FOUND` | unknown task, cycle, or approval identifier |
 | `AUTOPILOT_NOT_CONFIGURED` | autopilot control requested with no automation link |
+| `MCP_RESTART_REQUIRED` | package source changed after this MCP process started; read tools remain available, but every planning or write tool is refused until host restart |
 
 JSON-RPC protocol errors are reserved for malformed requests and unknown tool names.
 
 ## 4. Tier A — read tools
 
-All seven carry `annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }`.
+All eight carry `annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false }`.
 
 ### 4.1 `product_ops_status`
 
@@ -178,9 +179,24 @@ All seven carry `annotations: { readOnlyHint: true, destructiveHint: false, idem
   "risks": [{ "id": "…", "severity": "critical|high|medium", "ownerRole": "…", "title": "…" }],
   "latestCycle": { "cycleId": "…", "status": "…", "completedAt": "…", "reportResource": "productops://cycle/latest" },
   "automation": { "provider": "codex|claude|null", "status": "…", "continuousOrchestrator": false },
+  "runtime": {
+    "status": "fresh|restart_required|unknown",
+    "version": "…",
+    "startedAt": "2026-08-04T…Z",
+    "startupFingerprint": "sha256|null",
+    "currentFingerprint": "sha256|null",
+    "restartRequired": false,
+    "error": "SOURCE_FINGERPRINT_UNAVAILABLE|null"
+  },
   "truncated": { "decisions": false, "risks": false }
 }
 ```
+
+The runtime fingerprint covers the loaded package's `src/` tree. `product_ops_status` recomputes it
+without exposing an absolute path. When it differs from the startup fingerprint, status remains
+readable and reports `restartRequired: true`; every non-read tool fails with
+`MCP_RESTART_REQUIRED`. This prevents a host-retained process from planning or writing with an old
+validator or scheduler after the checkout has changed.
 
 Bounds: `decisions.items` ≤ 5, `risks` ≤ 3, every string field ≤ 200 characters. If the serialized
 result exceeds `--brief-byte-ceiling`, drop `risks`, then `decisions.items`, setting the matching

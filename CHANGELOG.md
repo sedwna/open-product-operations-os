@@ -4,6 +4,12 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+- Made retained MCP processes fail closed after the package source changes. `product_ops_status`
+  now reports a path-free startup/current source fingerprint and `restartRequired`; read tools stay
+  available for diagnosis, while every planning or write tool returns
+  `MCP_RESTART_REQUIRED` until the host is restarted. This turns the previously silent stale
+  validator/scheduler failure into an observable and enforced boundary.
+
 - Removed every surface the old delivery model left behind: the local HTTP dashboard and its
   writable loopback mode, the HTML setup wizard, the engineering dashboard page, the Codex and
   Claude CLI readiness probes, and the spawned-provider product executors. One delivery model
