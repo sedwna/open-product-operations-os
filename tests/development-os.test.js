@@ -60,6 +60,12 @@ test("development OS initializes an independent 15-role engineering system", asy
   const validation = await validateDevelopmentOs(root);
   assert.deepEqual(validation.errors, []);
   assert.equal(validation.contractCounts.requests, 0);
+  await fs.rm(path.join(root, "engineering/schemas/engineering-evidence-amendment.schema.json"));
+  assert.deepEqual(
+    (await validateDevelopmentOs(root)).errors,
+    [],
+    "an additive schema must not invalidate a workspace created under the same schema version"
+  );
 });
 
 test("engineering evidence amendments are append-only, digest-guarded, idempotent, and routed to ENG-15", async (t) => {

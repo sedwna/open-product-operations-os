@@ -105,7 +105,13 @@ export const DEVELOPMENT_REQUIRED_FILES = [
   "engineering/reliability/service-levels.md",
   "engineering/database/database-readiness.md",
   "engineering/seo/technical-seo-readiness.md",
-  ...PUBLISHED_SCHEMAS.map((schema) => `engineering/schemas/${schema}`)
+  // Additive contract schemas are copied into newly initialized workspaces, but cannot become a
+  // retroactive prerequisite for workspaces created under the same DEVELOPMENT_SCHEMA_VERSION.
+  // Requiring one here would make a valid existing product fail validation merely by upgrading the
+  // OS package. A future schema-version migration may promote it to required explicitly.
+  ...PUBLISHED_SCHEMAS
+    .filter((schema) => schema !== "engineering-evidence-amendment.schema.json")
+    .map((schema) => `engineering/schemas/${schema}`)
 ];
 
 function developmentReadme(config) {
