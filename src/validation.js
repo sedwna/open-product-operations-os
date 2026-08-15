@@ -267,9 +267,11 @@ function validateEventRecords(contents, config, files, errors) {
 }
 
 function validateCrossWorkbookRelationships(contents, config, errors) {
+  let canonicalTasks = [];
   const workbookTaskboard = config.workbook.sheets.find((sheet) => sheet.key === "taskboard");
   if (contents.has(TASKBOARD_FILE) && workbookTaskboard && contents.has(workbookTaskboard.file)) {
     const canonical = rowsToObjects(parseCsv(contents.get(TASKBOARD_FILE))).records;
+    canonicalTasks = canonical;
     const projection = rowsToObjects(parseCsv(contents.get(workbookTaskboard.file))).records;
     const projectedById = new Map(projection.filter((row) => !isPlaceholder(row.task_id)).map((row) => [row.task_id, row]));
     for (const task of canonical.filter((row) => !isPlaceholder(row.task_id))) {
@@ -293,6 +295,15 @@ function validateCrossWorkbookRelationships(contents, config, errors) {
       : [];
   };
   const decisions = new Map(sheetRecords("decision_log").map((row) => [row.decision_id, row]));
+  for (const event of sheetRecords("events")) {
+    if (event.status !== "closed") continue;
+    const unfinished = canonicalTasks.filter((task) =>
+      task.event_id === event.event_id && !isPlaceholder(task.task_id) && task.status !== "done"
+    );
+    if (unfinished.length > 0) {
+      errors.push(`Workbook event "${event.event_id}" is closed while ${unfinished.length} canonical task(s) remain unfinished.`);
+    }
+  }
   for (const [kind, rows] of [["issue", sheetRecords("issues")], ["delivery ticket", sheetRecords("delivery_tickets")]]) {
     for (const row of rows) {
       const decision = decisions.get(row.decision_id);

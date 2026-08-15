@@ -528,6 +528,22 @@ test("the last card of an event writes the canonical record", async (t) => {
     rationale: "Backfill one year, then monitor daily."
   }, { dryRun: false });
 
+  // A role-owned record may already have been committed before finalization. Closure fills only
+  // missing projections and must preserve the semantic owner's row byte-for-byte.
+  const { appendCanonicalRows } = await import("../src/runtime/coordination-record.js");
+  const roleOwnedIssueId = `ISS-${gated.event_id.replace(/^EVT-/, "")}`;
+  await appendCanonicalRows(root, config, "issues", [{
+    issue_id: roleOwnedIssueId,
+    event_id: gated.event_id,
+    title: "Role-owned issue survives closure",
+    status: "validated",
+    priority: "P1",
+    risk: "high",
+    decision_id: `DEC-${gated.event_id.replace(/^EVT-/, "")}`,
+    owner_role: "RB-05",
+    owner_actor_id: config.agents.find((agent) => agent.id === "RB-05").actorId
+  }]);
+
   const claim = (await call(handlers, "product_ops_next_work")).structuredContent;
   assert.equal(claim.taskId, last.task_id, "the last open card is the one handed out");
   const submitted = await call(handlers, "product_ops_submit_work", {
@@ -544,6 +560,10 @@ test("the last card of an event writes the canonical record", async (t) => {
   for (const file of ["05-events.csv", "10-issues.csv", "11-delivery-tickets.csv", "16-evidence.csv"]) {
     assert.ok(await rowsIn(file) > 0, `${file} must carry this event's record and does not`);
   }
+  const issueRows = parseCsv(await fs.readFile(path.join(root, "workbook", "10-issues.csv"), "utf8"));
+  const issueHeader = issueRows[0];
+  const roleOwnedIssue = issueRows.slice(1).find((row) => row[issueHeader.indexOf("issue_id")] === roleOwnedIssueId);
+  assert.equal(roleOwnedIssue[issueHeader.indexOf("title")], "Role-owned issue survives closure");
   const decisionRows = parseCsv(await fs.readFile(path.join(root, "workbook", "09-decision-log.csv"), "utf8"));
   const decisionHeader = decisionRows[0];
   const decision = decisionRows.slice(1).find((row) => row[decisionHeader.indexOf("event_id")] === gated.event_id);

@@ -4,6 +4,7 @@ import path from "node:path";
 import { applyLocalWrite, rollbackLocalWrite } from "../local-writer.js";
 import { canonicalRecordKeys } from "../workbook-contract.js";
 import { APPROVAL_STORE_FILE } from "../constants.js";
+import { parseCsv, rowsToObjects } from "../csv.js";
 import { loadApprovals } from "../runtime/approvals.js";
 import { PRODUCT_RUN_ROOT } from "./cycle.js";
 
@@ -172,7 +173,17 @@ export async function materializeCycleWorkbook(root, config, { cycleId, intake, 
   ];
 
   const prepared = [];
+  const existing = [];
   for (const item of records) {
+    // Roles now commit their own canonical records as each card completes. Closure is a fallback
+    // projection for anything still missing; it must never try to insert a second copy of a record
+    // that already crossed its proper semantic boundary. This also makes a retry safe after a
+    // previous closure stopped part-way through: completed inserts are observed and reused while
+    // only genuinely absent records are planned.
+    if (await canonicalRecordExists(root, config, item)) {
+      existing.push({ sheet: item.sheetKey, key: item.key });
+      continue;
+    }
     const manifest = buildInsertManifest(config, item.sheetKey, intake.eventId, item.key, item.changes, timestamp, cycleId, item.options);
     const directory = path.join(root, ".product-ops", "runtime", "autopilot", "manifests");
     await fs.mkdir(directory, { recursive: true });
@@ -195,8 +206,23 @@ export async function materializeCycleWorkbook(root, config, { cycleId, intake, 
   }
   return {
     manifests: prepared.map((item) => path.relative(root, item.manifestFile).replaceAll("\\", "/")),
-    receipts
+    receipts,
+    existing
   };
+}
+
+async function canonicalRecordExists(root, config, item) {
+  const sheet = config.workbook.sheets.find((candidate) => candidate.key === item.sheetKey);
+  if (!sheet) throw new Error(`Unknown workbook sheet ${item.sheetKey}.`);
+  const keyFields = canonicalRecordKeys(item.sheetKey);
+  const text = await fs.readFile(path.join(root, sheet.file), "utf8");
+  const matches = rowsToObjects(parseCsv(text)).records.filter((row) =>
+    keyFields.every((field) => String(row[field] ?? "") === String(item.key[field] ?? ""))
+  );
+  if (matches.length > 1) {
+    throw new Error(`${sheet.file} contains ${matches.length} copies of canonical key ${JSON.stringify(item.key)}.`);
+  }
+  return matches.length === 1;
 }
 
 async function registerManifestAudit(root, config, manifest, cycleId, timestamp) {
