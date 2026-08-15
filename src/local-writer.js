@@ -577,6 +577,21 @@ function buildWritePlanFromText(
     }
     const [{ row: matchedRow, index: rowIndex }] = matchingRows;
 
+    if (requested.operation === "rekey") {
+      const desiredKey = Object.fromEntries(keyFields.map((field) => [
+        field,
+        field in requested.changes ? scalar(requested.changes[field]) : scalar(requested.key[field])
+      ]));
+      const collision = rows.some((candidate, index) =>
+        index > 0 && index !== rowIndex && keyFields.every(
+          (field) => candidate[indexes.get(field)] === desiredKey[field]
+        )
+      );
+      if (collision) {
+        throw new Error(`Write target already contains requested rekey destination ${JSON.stringify(desiredKey)}.`);
+      }
+    }
+
     for (const [field, newValue] of Object.entries(requested.changes)) {
       const columnIndex = indexes.get(field);
       const currentValue = matchedRow[columnIndex] ?? "";
@@ -595,6 +610,15 @@ function buildWritePlanFromText(
       rows[rowIndex][columnIndex] = desiredValue;
       changes.push({ rowIndex, field, from: currentValue, to: desiredValue });
     }
+  }
+
+  const finalCanonicalKeys = new Set();
+  for (const [index, row] of rows.slice(1).entries()) {
+    const key = JSON.stringify(keyFields.map((field) => row[indexes.get(field)] ?? ""));
+    if (finalCanonicalKeys.has(key)) {
+      throw new Error(`Write result duplicates a canonical key at row ${index + 2}.`);
+    }
+    finalCanonicalKeys.add(key);
   }
 
   const planHash = sha256(

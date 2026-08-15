@@ -94,7 +94,7 @@
             "additionalProperties": false,
             "required": ["key", "preconditions", "changes"],
             "properties": {
-              "operation": { "enum": ["update", "insert"] },
+              "operation": { "enum": ["update", "insert", "rekey"] },
               "key": { "$ref": "#/$defs/nonEmptyScalarObject" },
               "preconditions": { "$ref": "#/$defs/nonEmptyScalarObject" },
               "changes": { "$ref": "#/$defs/nonEmptyScalarObject" }

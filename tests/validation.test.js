@@ -126,6 +126,59 @@ test("controlled local writer inserts a new canonical row with absent-record pre
   assert.equal(replay.plannedWrites, 0);
 });
 
+test("controlled local writer rekeys an invalid canonical identity with exact preconditions", async (t) => {
+  const { target } = await initializedProject(t, "writer-rekey");
+  const config = await readJson(path.join(target, CONFIG_FILE));
+  const sheet = config.workbook.sheets.find((entry) => entry.key === "validation_runs");
+  const actor = (role) => config.agents.find((agent) => agent.id === role).actorId;
+  const workbookPath = path.join(target, sheet.file);
+  const rows = parseCsv(await fs.readFile(workbookPath, "utf8"));
+  const record = rows[0].map(() => "");
+  const set = (field, value) => { record[rows[0].indexOf(field)] = value; };
+  set("run_id", "RUN-20260815-001");
+  set("event_id", "EVT-20260815-001");
+  set("status", "completed");
+  set("executor_role", "RB-09");
+  set("executor_actor_id", actor("RB-09"));
+  set("environment_alias", "local-test-synthetic");
+  rows.push(record);
+  await fs.writeFile(workbookPath, stringifyCsv(rows), "utf8");
+
+  const protectedColumns = sheet.columns.filter((field) =>
+    [...config.fieldAuthority.protectedDevelopmentFields, ...config.fieldAuthority.protectedHumanFields].includes(field)
+  );
+  const manifest = {
+    schemaVersion: "1.0.0", manifestId: "WFM-REKEY-001", eventId: "EVT-20260815-001", status: "authorized",
+    semanticOwner: { role: "RB-09", actorId: actor("RB-09") },
+    authorization: { ownerActorId: actor("RB-09"), authorizedByActorId: actor("RB-09"), authorizedAt: "2026-08-15T00:00:00Z", ownerConfirmed: true, humanProductionAuthorizationId: "not_applicable" },
+    writer: { role: "RB-10", actorId: actor("RB-10") },
+    target: { systemAlias: "local-test", environment: "test", file: sheet.file },
+    scope: {
+      sheet: sheet.name,
+      keyFields: ["run_id"],
+      allowedFields: ["run_id", "environment_alias"],
+      prohibitedFields: protectedColumns,
+      rows: [{
+        operation: "rekey",
+        key: { run_id: "RUN-20260815-001" },
+        preconditions: { run_id: "RUN-20260815-001", environment_alias: "local-test-synthetic" },
+        changes: { run_id: "VRN-20260815-001", environment_alias: "test" }
+      }]
+    },
+    controls: { dryRunRequired: true, smallestBoundedRange: "one invalid validation-run row", fullRecordReadbackRequired: true, secondReadPath: "local CSV reopen", replayMustWriteZero: true, rollbackPlan: "Restore the verified pre-write CSV backup for this bounded rekey.", refuseIfEnvironmentAmbiguous: true, refuseIfPreconditionMismatch: true, secretValuesForbidden: true },
+    createdAt: "2026-08-15T00:00:00Z"
+  };
+
+  assert.deepEqual(validateWriteManifest(manifest, config), []);
+  const preview = await applyLocalWrite(target, manifest, config, { dryRun: true });
+  assert.equal(preview.plannedWrites, 2);
+  const applied = await applyLocalWrite(target, manifest, config, { dryRun: false, approvedPlanHash: preview.planHash });
+  assert.equal(applied.recordsChanged, 1);
+  const stored = parseCsv(await fs.readFile(workbookPath, "utf8"));
+  assert.ok(stored.some((row) => row[0] === "VRN-20260815-001"));
+  assert.ok(!stored.some((row) => row[0] === "RUN-20260815-001"));
+});
+
 async function preparedWriter(t, name) {
   const { target } = await initializedProject(t, name);
   const config = await readJson(path.join(target, CONFIG_FILE));

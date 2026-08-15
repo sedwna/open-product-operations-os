@@ -596,7 +596,7 @@ test("a role commits its own rows to the tab it owns as its card completes", asy
     result: resultFor(claim, {
       canonicalRecords: [{
         sheet: "issues",
-        key: { issue_id: "ISS-0001" },
+        key: { issue_id: "ISS-20260815-001" },
         fields: { title: "No distance is shown when a run ends", status: "open", priority: "P1", owner_role: "RB-05" }
       }]
     })
@@ -607,7 +607,7 @@ test("a role commits its own rows to the tab it owns as its card completes", asy
   const rows = parseCsv(await fs.readFile(path.join(root, "workbook", "10-issues.csv"), "utf8"))
     .filter((row) => row.some((cell) => cell !== ""));
   const header = rows[0];
-  const written = rows.slice(1).find((row) => row[header.indexOf("issue_id")] === "ISS-0001");
+  const written = rows.slice(1).find((row) => row[header.indexOf("issue_id")] === "ISS-20260815-001");
   assert.ok(written, "the row is in the record, not only in the run file");
   assert.equal(written[header.indexOf("event_id")], claim.eventId, "and it is tied to the event that produced it");
 });
@@ -663,7 +663,7 @@ test("plan and apply reject protected canonical fields without sealing artifacts
   const invalid = resultFor(claim, {
     canonicalRecords: [{
       sheet: "decision_log",
-      key: { decision_id: "DEC-PENDING-1" },
+      key: { decision_id: "DEC-20260815-001" },
       fields: {
         status: "pending_human",
         decision_maker_actor_id: "human-product-owner"
@@ -692,10 +692,58 @@ test("plan and apply reject protected canonical fields without sealing artifacts
     result: resultFor(claim, {
       canonicalRecords: [{
         sheet: "decision_log",
-        key: { decision_id: "DEC-PENDING-1" },
+        key: { decision_id: "DEC-20260815-001" },
         fields: { status: "pending_human", selected_option: "" }
       }]
     })
+  });
+  assert.equal(corrected.isError, false, corrected.content[0].text);
+  assert.equal(corrected.structuredContent.applied, true);
+});
+
+test("plan and apply reject canonical rows that whole-project validation would reject", async (t) => {
+  const { root, handlers } = await workspace(t);
+  const { ingestRecord } = await import("../src/runtime/intake.js");
+  await ingestRecord(root, {
+    type: "new_idea",
+    title: "Verify a completed implementation",
+    description: "The validation executor must record a canonical run.",
+    source: "the owner"
+  }, { dryRun: false });
+  await call(handlers, "product_ops_operate", { apply: true });
+  const claim = await cardFor(handlers, "RB-09", root);
+  const proposed = (runId, environmentAlias) => resultFor(claim, {
+    canonicalRecords: [{
+      sheet: "validation_runs",
+      key: { run_id: runId },
+      fields: {
+        status: "completed",
+        executor_role: "RB-09",
+        executor_actor_id: claim.producerActorId,
+        environment_alias: environmentAlias
+      }
+    }]
+  });
+
+  for (const apply of [false, true]) {
+    const refused = await call(handlers, "product_ops_submit_work", {
+      taskId: claim.taskId,
+      claimToken: claim.claimToken,
+      result: proposed("RUN-20260815-001", "local-test-synthetic"),
+      ...(apply ? { apply: true } : {})
+    });
+    assert.equal(refused.isError, true, `${apply ? "apply" : "plan"} must reject the same invalid row`);
+    assert.equal(refused.structuredContent.code, "RECORD_REJECTED");
+    assert.match(JSON.stringify(refused), /invalid canonical identity.*unauthorized environment/);
+    const runs = await fs.readdir(path.join(root, ".product-ops/runtime/autopilot/product-runs")).catch(() => []);
+    assert.deepEqual(runs, [], "semantic preflight failures must not leave sealed artifacts");
+  }
+
+  const corrected = await call(handlers, "product_ops_submit_work", {
+    taskId: claim.taskId,
+    claimToken: claim.claimToken,
+    result: proposed("VRN-20260815-001", "test"),
+    apply: true
   });
   assert.equal(corrected.isError, false, corrected.content[0].text);
   assert.equal(corrected.structuredContent.applied, true);

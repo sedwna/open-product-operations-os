@@ -431,7 +431,9 @@ export function validateWriteManifest(manifest, config, relativePath = "write ma
     if (prohibited.has(field)) {
       errors.push(`${relativePath} field "${field}" is both allowed and prohibited.`);
     }
-    if (canonicalKeyFields.includes(field)) {
+    const authorizedRekeyField = canonicalKeyFields.includes(field) &&
+      manifest.scope.rows.some((row) => row.operation === "rekey" && field in row.changes);
+    if (canonicalKeyFields.includes(field) && !authorizedRekeyField) {
       errors.push(`${relativePath} may not allow canonical key field "${field}".`);
     }
   }
@@ -457,8 +459,12 @@ export function validateWriteManifest(manifest, config, relativePath = "write ma
       );
     }
     const insert = row.operation === "insert";
+    const rekey = row.operation === "rekey";
     if (insert && (row.preconditions.$record !== "absent" || Object.keys(row.preconditions).length !== 1)) {
       errors.push(`${label} insert requires the exact precondition {"$record":"absent"}.`);
+    }
+    if (rekey && !canonicalKeyFields.some((field) => field in row.changes)) {
+      errors.push(`${label} rekey must change at least one canonical key field.`);
     }
     for (const field of Object.keys(row.changes)) {
       const authorizedProtected = (config.fieldAuthority.protectedHumanFields.includes(field) && humanAuthorityEvidence)
@@ -468,6 +474,9 @@ export function validateWriteManifest(manifest, config, relativePath = "write ma
       }
       if (!insert && !(field in row.preconditions)) {
         errors.push(`${label} change to field "${field}" requires an old-value precondition.`);
+      }
+      if (canonicalKeyFields.includes(field) && !rekey) {
+        errors.push(`${label} canonical key field "${field}" may change only through rekey.`);
       }
     }
   }
@@ -640,78 +649,10 @@ function validateWorkbook(sheet, text, config, errors) {
     return;
   }
 
-  const keyFields = CANONICAL_RECORD_KEYS[sheet.key] ?? [sheet.columns[0]];
   const seenKeys = new Set();
-  const actorByRole = new Map(config.agents.map((agent) => [agent.id, agent.actorId]));
-  const roles = new Set(actorByRole.keys());
-  const statusRule = STATUS_FIELDS[sheet.key];
-  const idPattern =
-    sheet.key === "taskboard"
-      ? new RegExp(config.taskIds.pattern)
-      : RECORD_ID_PATTERNS[sheet.key];
-
   for (const [index, record] of parsed.records.entries()) {
     const label = `Workbook "${sheet.file}" row ${index + 2}`;
-    const keyParts = keyFields.map((field) => record[field]?.trim() ?? "");
-    if (keyParts.some((value) => value === "")) {
-      errors.push(`${label} must define record key ${keyFields.join("|")}.`);
-    } else {
-      const key = JSON.stringify(keyParts);
-      if (seenKeys.has(key)) {
-        errors.push(`${label} duplicates record key "${keyParts.join("|")}".`);
-      }
-      seenKeys.add(key);
-    }
-
-    const identity = keyParts[0];
-    const placeholderKeyParts = keyParts.filter(isPlaceholder);
-    if (placeholderKeyParts.length > 0) {
-      if (placeholderKeyParts.length !== keyParts.length) {
-        errors.push(`${label} mixes placeholder and real canonical key values.`);
-      } else if (
-        !CANONICAL_PLACEHOLDER_KEYS.get(sheet.key)?.has(JSON.stringify(keyParts))
-      ) {
-        errors.push(`${label} uses a non-canonical placeholder record key.`);
-      }
-      validatePlaceholderRecord(record, label, sheet, config, errors);
-    }
-    if (
-      idPattern &&
-      identity &&
-      !isPlaceholder(identity) &&
-      !idPattern.test(identity)
-    ) {
-      errors.push(`${label} has invalid canonical identity "${identity}".`);
-    }
-
-    if (statusRule) {
-      const [field, family] = statusRule;
-      const value = record[field]?.trim() ?? "";
-      if (!value) {
-        errors.push(`${label} must define ${family} status.`);
-      } else if (
-        !isPlaceholder(value) &&
-        !canonicalCatalog.statuses[family].includes(value)
-      ) {
-        errors.push(`${label} uses undefined ${family} status "${value}".`);
-      }
-    }
-    if (
-      sheet.key === "status_catalog" &&
-      (!Object.hasOwn(canonicalCatalog.statuses, record.status_family) ||
-        !canonicalCatalog.statuses[record.status_family]?.includes(record.status_value))
-    ) {
-      errors.push(
-        `${label} defines non-canonical status "${record.status_family}|${record.status_value}".`
-      );
-    }
-
-    if (!isPlaceholder(identity)) {
-      validateRecordRoles(record, label, roles, actorByRole, errors);
-      validateRecordSeparation(record, label, config, actorByRole, errors);
-      validateRecordEnvironment(record, label, config, errors);
-      validateProtectedRecordFields(record, label, sheet, config, errors);
-    }
+    validateCanonicalWorkbookRecord(sheet, record, config, errors, { label, seenKeys });
   }
 
   if (sheet.key === "role_registry") {
@@ -759,6 +700,79 @@ function validateWorkbook(sheet, text, config, errors) {
         `Workbook "${sheet.file}" must contain the complete canonical status catalog.`
       );
     }
+  }
+}
+
+/**
+ * Apply the canonical workbook semantics to one proposed row.
+ *
+ * Product-run preflight calls this same function before it seals a result. That keeps submission
+ * and whole-project validation aligned on identities, statuses, actors and environments.
+ */
+export function validateCanonicalWorkbookRecord(
+  sheet,
+  record,
+  config,
+  errors,
+  { label = `Proposed ${sheet.key} record`, seenKeys = new Set() } = {}
+) {
+  const keyFields = CANONICAL_RECORD_KEYS[sheet.key] ?? [sheet.columns[0]];
+  const actorByRole = new Map(config.agents.map((agent) => [agent.id, agent.actorId]));
+  const roles = new Set(actorByRole.keys());
+  const statusRule = STATUS_FIELDS[sheet.key];
+  const idPattern = sheet.key === "taskboard"
+    ? new RegExp(config.taskIds.pattern)
+    : RECORD_ID_PATTERNS[sheet.key];
+  const keyParts = keyFields.map((field) => record[field]?.trim() ?? "");
+
+  if (keyParts.some((value) => value === "")) {
+    errors.push(`${label} must define record key ${keyFields.join("|")}.`);
+  } else {
+    const key = JSON.stringify(keyParts);
+    if (seenKeys.has(key)) {
+      errors.push(`${label} duplicates record key "${keyParts.join("|")}".`);
+    }
+    seenKeys.add(key);
+  }
+
+  const identity = keyParts[0];
+  const placeholderKeyParts = keyParts.filter(isPlaceholder);
+  if (placeholderKeyParts.length > 0) {
+    if (placeholderKeyParts.length !== keyParts.length) {
+      errors.push(`${label} mixes placeholder and real canonical key values.`);
+    } else if (!CANONICAL_PLACEHOLDER_KEYS.get(sheet.key)?.has(JSON.stringify(keyParts))) {
+      errors.push(`${label} uses a non-canonical placeholder record key.`);
+    }
+    validatePlaceholderRecord(record, label, sheet, config, errors);
+  }
+  if (idPattern && identity && !isPlaceholder(identity) && !idPattern.test(identity)) {
+    errors.push(`${label} has invalid canonical identity "${identity}".`);
+  }
+
+  if (statusRule) {
+    const [field, family] = statusRule;
+    const value = record[field]?.trim() ?? "";
+    if (!value) {
+      errors.push(`${label} must define ${family} status.`);
+    } else if (!isPlaceholder(value) && !canonicalCatalog.statuses[family].includes(value)) {
+      errors.push(`${label} uses undefined ${family} status "${value}".`);
+    }
+  }
+  if (
+    sheet.key === "status_catalog" &&
+    (!Object.hasOwn(canonicalCatalog.statuses, record.status_family) ||
+      !canonicalCatalog.statuses[record.status_family]?.includes(record.status_value))
+  ) {
+    errors.push(
+      `${label} defines non-canonical status "${record.status_family}|${record.status_value}".`
+    );
+  }
+
+  if (!isPlaceholder(identity)) {
+    validateRecordRoles(record, label, roles, actorByRole, errors);
+    validateRecordSeparation(record, label, config, actorByRole, errors);
+    validateRecordEnvironment(record, label, config, errors);
+    validateProtectedRecordFields(record, label, sheet, config, errors);
   }
 }
 
