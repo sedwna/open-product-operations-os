@@ -11,8 +11,10 @@ import { readJsonOptional } from "../src/runtime/io.js";
 import { CONTROL_PLANE_LEASE_FILE } from "../src/runtime/control-plane-lease.js";
 import { loadTaskboard, replaceTaskboard } from "../src/runtime/taskboard.js";
 import {
+  bindElicitation,
   createHandlers,
   createServerContext,
+  ELICITATION_TIMEOUT_MS,
   parseServerArguments
 } from "../src/mcp/server.js";
 import { fileURLToPath } from "node:url";
@@ -836,6 +838,25 @@ test("a host without elicitation refuses rather than deciding on the owner's beh
   assert.equal(relayed.structuredContent.attribution, "model_relayed");
   assert.match(relayed.content[0].text, /relayed by a model rather than typed by the product owner/);
   assert.equal((await loadApprovals(root)).requests[0].attribution, "model_relayed");
+});
+
+test("elicitation is bounded so a lying host cannot leave the control tower spinning", async () => {
+  const calls = [];
+  const transport = {
+    request(method, params, options) {
+      calls.push({ method, params, options });
+      return Promise.resolve({ action: "cancel" });
+    }
+  };
+  const elicit = bindElicitation(transport);
+  const response = await elicit({ message: "Decide" });
+  assert.deepEqual(response, { action: "cancel" });
+  assert.deepEqual(calls, [{
+    method: "elicitation/create",
+    params: { message: "Decide" },
+    options: { timeoutMs: ELICITATION_TIMEOUT_MS }
+  }]);
+  assert.equal(ELICITATION_TIMEOUT_MS, 60_000);
 });
 
 test("a source change is visible in status and blocks every non-read tool until restart", async (t) => {

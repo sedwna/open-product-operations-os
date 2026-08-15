@@ -198,6 +198,11 @@ readable and reports `restartRequired: true`; every non-read tool fails with
 `MCP_RESTART_REQUIRED`. This prevents a host-retained process from planning or writing with an old
 validator or scheduler after the checkout has changed.
 
+An elicitation request is bounded to 60 seconds. A host that declares the capability but does not
+render or answer the dialog therefore returns control with `ELICITATION_DECLINED`; the gate remains
+pending and can be settled through the panel or by relaying the owner's exact words from the
+conversation. The timeout never implies approval or rejection.
+
 Bounds: `decisions.items` ≤ 5, `risks` ≤ 3, every string field ≤ 200 characters. If the serialized
 result exceeds `--brief-byte-ceiling`, drop `risks`, then `decisions.items`, setting the matching
 `truncated` flag. The ceiling is a hard guarantee, not a target.

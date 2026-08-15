@@ -9,6 +9,9 @@ All notable changes to this project will be documented here.
   available for diagnosis, while every planning or write tool returns
   `MCP_RESTART_REQUIRED` until the host is restarted. This turns the previously silent stale
   validator/scheduler failure into an observable and enforced boundary.
+- Bounded human-gate elicitation to 60 seconds. A host that declares a dialog but never renders or
+  answers it now returns the still-pending gate to the panel/conversation path instead of leaving
+  the control tower blocked on an unbounded spinner; timeout never records a disposition.
 
 - Removed every surface the old delivery model left behind: the local HTTP dashboard and its
   writable loopback mode, the HTML setup wizard, the engineering dashboard page, the Codex and

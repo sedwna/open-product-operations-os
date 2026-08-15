@@ -34,6 +34,7 @@ import { captureRuntimeFreshness, inspectRuntimeFreshness } from "./freshness.js
  */
 const PREFERRED_PROTOCOL_VERSION = "2026-07-28";
 const PROTOCOL_REVISION_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
+export const ELICITATION_TIMEOUT_MS = 60_000;
 
 export function negotiateProtocolVersion(requested) {
   return PROTOCOL_REVISION_PATTERN.test(requested) ? requested : PREFERRED_PROTOCOL_VERSION;
@@ -192,6 +193,14 @@ export function createHandlers(context, { version = packageVersion() } = {}) {
   };
 }
 
+/**
+ * A host may declare elicitation and then never render it. Keep that failure bounded so the owner
+ * can answer through the panel or conversation instead of leaving the control tower on a spinner.
+ */
+export function bindElicitation(transport, { timeoutMs = ELICITATION_TIMEOUT_MS } = {}) {
+  return (params) => transport.request("elicitation/create", params, { timeoutMs });
+}
+
 export async function startServer(argv, { input = process.stdin, output = process.stdout } = {}) {
   const context = await createServerContext(parseServerArguments(argv));
   setControlPlaneSurface("mcp");
@@ -205,7 +214,7 @@ export async function startServer(argv, { input = process.stdin, output = proces
   });
   // Assigned after the transport exists; handlers close over the context, so initialize still sees
   // it when the client connects.
-  context.elicit = (params) => transport.request("elicitation/create", params);
+  context.elicit = bindElicitation(transport);
 
   // Only what a client actually subscribed to is announced. A server that notified about every
   // change would be chatter, and a client that never subscribed asked for none of it.
