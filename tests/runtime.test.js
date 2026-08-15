@@ -60,7 +60,11 @@ test("control tower selects ready tasks and routes normalized intake", async (t)
     dryRun: true,
     now: new Date("2026-08-01T10:01:00Z")
   });
-  assert.ok(receipt.actions.some((action) => action.type === "dispatch_task" && action.ownerRole === "RB-03"));
+  assert.ok(receipt.actions.some((action) => action.type === "dispatch_task" && action.ownerRole === "RB-02"));
+  assert.ok(
+    !receipt.actions.some((action) => action.type === "dispatch_task" && action.taskId.endsWith("-0001")),
+    "the setup sample must disappear from scheduling once a real cycle exists"
+  );
   assert.ok(receipt.actions.some((action) => action.type === "route_intake" && action.ownerRole === "RB-02"));
   const applied = await runControlTower(target, config, {
     dryRun: false,

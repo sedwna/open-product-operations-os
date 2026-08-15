@@ -34,7 +34,7 @@ export function dependencyState(task, byId) {
 
 export function selectRunnableTasks(tasks, approvals = []) {
   const byId = new Map(tasks.map((task) => [task.task_id, task]));
-  return tasks.filter((task) => {
+  return visibleTaskboardRecords(tasks).filter((task) => {
     if (task.status !== "ready") {
       return false;
     }
