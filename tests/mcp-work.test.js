@@ -172,7 +172,7 @@ test("work is returned through the same contract a provider would have to satisf
     result: resultFor(claim),
     apply: true
   });
-  assert.equal(applied.structuredContent.applied, true);
+  assert.equal(applied.structuredContent.applied, true, JSON.stringify(applied.structuredContent));
   assert.equal(applied.structuredContent.sealed, true);
   assert.equal(applied.structuredContent.team, claim.team);
 

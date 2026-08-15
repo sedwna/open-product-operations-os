@@ -30,6 +30,7 @@ test("all public JSON schemas parse and declare Draft 2020-12", async () => {
     "development-request.schema.json",
     "development-run.schema.json",
     "development-sync-receipt.schema.json",
+    "engineering-evidence-amendment.schema.json",
     "engineering-gate-evidence.schema.json",
     "engineering-plan.schema.json",
     "engineering-result.schema.json",

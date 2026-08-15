@@ -8,6 +8,7 @@ import { completeDevelopmentResult } from "../development/result.js";
 import { runEngineeringWorkstream } from "../development/runner.js";
 import { contractDigest } from "../development/contracts.js";
 import { loadDevelopmentConfig } from "../development/config.js";
+import { loadEngineeringEvidenceAmendments } from "../development/amendment.js";
 import { decideApproval, loadApprovals, requestApproval } from "../runtime/approvals.js";
 import { validatePublishedSchema } from "../schema-validation.js";
 import { QUALITY_GATES } from "../development/catalog.js";
@@ -150,15 +151,22 @@ export async function openEngineeringDelivery(
 export async function closeEngineeringDelivery(
   productRoot,
   applicationRoot,
-  { request, plan, requestDigest, developmentConfig, runs, branch, cycleId, now = new Date() }
-) {
-  const changedComponents = await changedImplementationComponents(applicationRoot);
-  if (changedComponents.length === 0) {
-    throw new Error("Engineering completed every workstream without producing implementation changes.");
+  {
+    request, plan, requestDigest, developmentConfig, runs, branch, cycleId,
+    implementationProof = null, now = new Date()
   }
-  await assertImplementationBoundary(applicationRoot, changedComponents, developmentConfig.policies);
-  const implementationRevision = await implementationDigest(applicationRoot, changedComponents);
-  const sealedRuns = await sealWorkstreamRuns(applicationRoot, plan, runs, implementationRevision);
+) {
+  const proof = implementationProof ?? await preflightEngineeringDelivery(
+    applicationRoot, plan, runs, developmentConfig.policies
+  );
+  const { changedComponents, implementationRevision } = proof;
+  // The original autonomous runner leaves implementation changes in the working tree until close,
+  // so close still seals those runs to one content digest. Host-delegated work is intentionally
+  // committed and sealed one workstream at a time; rewriting those immutable results at close would
+  // destroy their chain of custody. In that path ENG-15's verified commit is the delivery revision.
+  const sealedRuns = proof.source === "working_tree"
+    ? await sealWorkstreamRuns(applicationRoot, plan, runs, implementationRevision)
+    : runs;
   const evidence = await createGateEvidence(applicationRoot, plan, sealedRuns, implementationRevision, now);
   const result = buildEngineeringResult({
     request,
@@ -189,6 +197,65 @@ export async function closeEngineeringDelivery(
     changedComponents,
     productEvidenceRefs
   };
+}
+
+/**
+ * Resolve the implementation proof without writing anything.
+ *
+ * This is shared by close dry-run and apply so the preview cannot approve a clean committed
+ * delivery that apply later rejects. Dirty-tree execution is the legacy autonomous path. A clean
+ * tree is valid only when immutable completed runs name changed components and ENG-15 binds its
+ * passing verdict to a real commit reachable from the current application revision.
+ */
+export async function preflightEngineeringDelivery(root, plan, runs, policies) {
+  const verifierWorkstream = plan.workstreams.find((workstream) => workstream.ownerRole === "ENG-15");
+  const verifierRun = verifierWorkstream ? runs.get(verifierWorkstream.id) : null;
+  const amendments = await loadEngineeringEvidenceAmendments(root, plan.planId);
+  if (amendments.length > 0) {
+    if (!verifierRun || verifierRun.status !== "completed" || verifierRun.verificationDisposition !== "passed") {
+      throw new Error("Engineering amendments require a completed passing ENG-15 run.");
+    }
+    const missingAmendments = amendments
+      .filter(({ storedAt }) => !(verifierRun.evidence ?? []).includes(storedAt))
+      .map(({ amendment }) => amendment.amendmentId);
+    if (missingAmendments.length > 0) {
+      throw new Error(`The passing ENG-15 run does not verify engineering amendment(s): ${missingAmendments.join(", ")}.`);
+    }
+  }
+  const workingTreeComponents = await changedImplementationComponents(root);
+  if (workingTreeComponents.length > 0) {
+    await assertImplementationBoundary(root, workingTreeComponents, policies);
+    return {
+      source: "working_tree",
+      changedComponents: workingTreeComponents,
+      implementationRevision: await implementationDigest(root, workingTreeComponents)
+    };
+  }
+
+  const changedComponents = unique(
+    [...runs.values()].flatMap((run) => Array.isArray(run.changedComponents) ? run.changedComponents : [])
+  ).filter((file) => !file.startsWith(".development-os/") && !file.startsWith("engineering/taskboard/"));
+  if (changedComponents.length === 0) {
+    throw new Error("Engineering completed every workstream without producing implementation changes.");
+  }
+  await assertImplementationBoundary(root, changedComponents, policies);
+
+  if (!verifierRun || verifierRun.status !== "completed" || verifierRun.verificationDisposition !== "passed") {
+    throw new Error("Committed engineering work requires a completed passing ENG-15 run.");
+  }
+  const implementationRevision = String(verifierRun.implementationRevision ?? "").trim();
+  if (!implementationRevision) {
+    throw new Error("The passing ENG-15 run does not identify the commit it verified.");
+  }
+  try {
+    await runGit(root, ["cat-file", "-e", `${implementationRevision}^{commit}`]);
+    await runGit(root, ["merge-base", "--is-ancestor", implementationRevision, "HEAD"]);
+  } catch {
+    throw new Error(
+      `The passing ENG-15 revision ${implementationRevision} is not a commit reachable from the current application revision.`
+    );
+  }
+  return { source: "sealed_runs", changedComponents, implementationRevision };
 }
 
 export function dependencyOrderedWorkstreams(workstreams) {

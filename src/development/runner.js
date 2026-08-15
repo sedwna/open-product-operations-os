@@ -88,9 +88,11 @@ export async function runEngineeringWorkstream(
   if (delegated) {
     if (dryRun) return { dryRun, runId, inputFile, resultFile, payload, delegated: true, workingDirectory };
     await writeExclusiveOrEqual(root, inputFile, json(payload));
-    const verifierBefore = workstream.ownerRole === "ENG-15" ? await verifierWorkspaceDigest(root) : null;
+    const verifierBefore = workstream.ownerRole === "ENG-15"
+      ? await verifierWorkspaceDigest(root, config.policies.prohibitedPaths)
+      : null;
     const delegatedResult = await execute({ root: path.resolve(root), planId, workstreamId, workstream, payload });
-    if (verifierBefore && await verifierWorkspaceDigest(root) !== verifierBefore) {
+    if (verifierBefore && await verifierWorkspaceDigest(root, config.policies.prohibitedPaths) !== verifierBefore) {
       throw new Error("Independent engineering verifier modified repository content; verification must remain read-only.");
     }
     return recordWorkstreamResult(root, {
@@ -141,7 +143,9 @@ export async function runEngineeringWorkstream(
   if (dryRun) return { dryRun, runId, inputFile, resultFile, payload, executable: executor.executable, arguments: argumentsList, workingDirectory };
   await writeExclusiveOrEqual(root, inputFile, json(payload));
   const usesRawOutput = executor.arguments.some((argument) => argument.includes("{rawOutputFile}"));
-  const verifierDigestBefore = workstream.ownerRole === "ENG-15" ? await verifierWorkspaceDigest(root) : null;
+  const verifierDigestBefore = workstream.ownerRole === "ENG-15"
+    ? await verifierWorkspaceDigest(root, config.policies.prohibitedPaths)
+    : null;
   let execution;
   let resultText;
   try {
@@ -154,7 +158,7 @@ export async function runEngineeringWorkstream(
       environmentAllowlist: executor.environmentAllowlist,
       spawnProcess
     });
-    if (verifierDigestBefore && await verifierWorkspaceDigest(root) !== verifierDigestBefore) {
+    if (verifierDigestBefore && await verifierWorkspaceDigest(root, config.policies.prohibitedPaths) !== verifierDigestBefore) {
       throw new Error("Independent engineering verifier modified repository content; verification must remain read-only.");
     }
     resultText = usesRawOutput ? await fs.readFile(path.join(root, rawOutputFile), "utf8") : execution.stdout;
@@ -213,14 +217,18 @@ export function extractClaudeStructuredOutput(value) {
   return envelope.structured_output;
 }
 
-async function verifierWorkspaceDigest(root) {
+export async function verifierWorkspaceDigest(root, prohibitedPaths = [".git", "node_modules"]) {
   const hash = crypto.createHash("sha256");
+  const excluded = [".git", ".development-os/runs", ...prohibitedPaths]
+    .map((value) => String(value).replaceAll("\\", "/").replace(/^\.\//, "").replace(/\/$/, ""))
+    .filter(Boolean);
+  const isExcluded = (relative) => excluded.some((candidate) =>
+    relative === candidate || relative.startsWith(`${candidate}/`));
   async function visit(directory, relative = "") {
     const entries = await fs.readdir(directory, { withFileTypes: true });
     for (const entry of entries.sort((left, right) => left.name.localeCompare(right.name))) {
       const childRelative = relative ? `${relative}/${entry.name}` : entry.name;
-      if (childRelative === ".git" || childRelative.startsWith(".git/")
-          || childRelative === ".development-os/runs" || childRelative.startsWith(".development-os/runs/")) continue;
+      if (isExcluded(childRelative)) continue;
       const absolute = path.join(directory, entry.name);
       hash.update(childRelative).update("\0");
       if (entry.isDirectory()) await visit(absolute, childRelative);

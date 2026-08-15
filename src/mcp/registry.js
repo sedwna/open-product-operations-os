@@ -299,6 +299,50 @@ export const TOOL_DEFINITIONS = Object.freeze([
     handler: engineering.submitEngineeringWork
   },
   {
+    name: "product_ops_amend_engineering_evidence",
+    title: "Append a correction to engineering evidence",
+    description: "Record a digest-guarded, owner-attributed correction without rewriting a sealed run. Plans by default and always routes the corrected claim to ENG-15.",
+    tier: TIERS.PLAN,
+    annotations: PLAN_ANNOTATIONS,
+    inputSchema: {
+      type: "object",
+      properties: {
+        planId: { type: "string", pattern: "^ENGPLAN-[A-Za-z0-9._-]+$" },
+        workstreamId: { type: "string", pattern: "^WS-[0-9]{2}$" },
+        artifactPath: { type: "string", minLength: 1, maxLength: 500 },
+        expectedSha256: { type: "string", pattern: "^[a-f0-9]{64}$" },
+        corrections: {
+          type: "array", minItems: 1,
+          items: {
+            type: "object", additionalProperties: false,
+            properties: {
+              field: { type: "string", pattern: "^/" },
+              priorValue: { type: ["string", "number", "boolean", "null"] },
+              correctedValue: { type: ["string", "number", "boolean", "null"] }
+            },
+            required: ["field", "priorValue", "correctedValue"]
+          }
+        },
+        reason: { type: "string", minLength: 10, maxLength: 2000 },
+        evidence: {
+          type: "array", minItems: 1,
+          items: {
+            type: "object", additionalProperties: false,
+            properties: {
+              reference: { type: "string", minLength: 3, maxLength: 500 },
+              sha256: { type: "string", pattern: "^[a-f0-9]{64}$" }
+            },
+            required: ["reference"]
+          }
+        },
+        apply: { type: "boolean", default: false, description: "Append the amendment. Omitted or false returns the plan only." }
+      },
+      required: ["planId", "workstreamId", "artifactPath", "expectedSha256", "corrections", "reason", "evidence"],
+      additionalProperties: false
+    },
+    handler: engineering.amendEngineeringEvidence
+  },
+  {
     name: "product_ops_decide",
     title: "Record a human decision",
     description: "Put a pending human gate to the product owner and record their disposition. The decision and rationale are collected from the person, not from you.",

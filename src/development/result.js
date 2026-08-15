@@ -123,7 +123,13 @@ async function validateCompletionEvidence(root, result, plan, config) {
     if (run.ownerRole !== workstream.ownerRole) mismatches.push("ownerRole");
     if (run.producerActorId !== expectedActor) mismatches.push("producerActorId");
     if (run.status !== "completed") mismatches.push("status");
-    if (run.implementationRevision !== result.implementationRevision) mismatches.push("implementationRevision");
+    // Producer runs are immutable evidence for the commit each producer actually made. In a
+    // commit-per-workstream delivery those revisions necessarily differ. The final ENG-15 run is
+    // the one that must target the delivery revision; every producer run is still bound here by
+    // its content digest, actor, workstream identity and completed status.
+    if (workstream.ownerRole === "ENG-15" && run.implementationRevision !== result.implementationRevision) {
+      mismatches.push("implementationRevision");
+    }
     if (contractDigest(run) !== reference.runDigest) mismatches.push("runDigest");
     if (mismatches.length) throw new Error(`Engineering workstream run ${workstream.id} mismatches ${mismatches.join(", ")}.`);
   }

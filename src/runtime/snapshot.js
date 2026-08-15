@@ -122,14 +122,18 @@ export async function loadEngineeringProgress(applicationRoot) {
     const required = ["workstream_id", "owner_role", "domain", "title", "status", "updated_at"];
     if (!required.every((header) => headers.includes(header))) return null;
 
+    const canonicalCompleted = await completedEngineeringRunKeys(root);
     const workstreams = rows.slice(1).map((row) => {
       const value = (header) => row[headers.indexOf(header)] ?? "";
+      const key = `${value("request_id")}\0${value("workstream_id")}`;
       return {
         id: value("workstream_id"),
         ownerRole: value("owner_role"),
         domain: value("domain"),
         title: value("title"),
-        status: value("status"),
+        // Result contracts are canonical. The CSV is an operator projection and can lag after a
+        // host-delegated submission, so a sealed completed result must win over its stale row.
+        status: canonicalCompleted.has(key) ? "completed" : value("status"),
         updatedAt: value("updated_at")
       };
     }).filter((workstream) => workstream.id);
@@ -151,6 +155,41 @@ export async function loadEngineeringProgress(applicationRoot) {
     if (error?.code === "ENOENT") return null;
     throw error;
   }
+}
+
+async function completedEngineeringRunKeys(root) {
+  const plansDirectory = path.join(root, ".development-os", "plans");
+  const runsDirectory = path.join(root, ".development-os", "runs");
+  const completed = new Set();
+  let entries;
+  try { entries = await fs.readdir(plansDirectory, { withFileTypes: true }); }
+  catch (error) { if (error.code === "ENOENT") return completed; throw error; }
+  for (const entry of entries.filter((candidate) => candidate.isFile() && candidate.name.endsWith(".json"))) {
+    const planFile = path.join(plansDirectory, entry.name);
+    await assertNoLinkTraversal(root, planFile, "Engineering plan");
+    const stat = await fs.lstat(planFile);
+    if (!stat.isFile() || stat.isSymbolicLink()) continue;
+    let plan;
+    try { plan = JSON.parse(await fs.readFile(planFile, "utf8")); }
+    catch { continue; }
+    for (const workstream of plan.workstreams ?? []) {
+      const runFile = path.join(runsDirectory, `${plan.planId}-${workstream.id}-result.json`);
+      let run;
+      try {
+        await assertNoLinkTraversal(root, runFile, "Engineering workstream result");
+        const runStat = await fs.lstat(runFile);
+        if (!runStat.isFile() || runStat.isSymbolicLink()) continue;
+        run = JSON.parse(await fs.readFile(runFile, "utf8"));
+      } catch (error) {
+        if (error.code === "ENOENT") continue;
+        throw error;
+      }
+      if (run.status === "completed" && run.workstreamId === workstream.id) {
+        completed.add(`${plan.requestId}\0${workstream.id}`);
+      }
+    }
+  }
+  return completed;
 }
 
 async function loadLatestAutopilotReport(root, state) {

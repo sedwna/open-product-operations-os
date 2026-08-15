@@ -12,7 +12,10 @@ import { initializeDevelopmentOs } from "../src/development/init.js";
 import { planDevelopmentRequest } from "../src/development/planner.js";
 import { completeDevelopmentResult } from "../src/development/result.js";
 import { validateDevelopmentOs } from "../src/development/validation.js";
-import { effectiveCodexSandboxArguments, extractClaudeStructuredOutput, runEngineeringWorkstream } from "../src/development/runner.js";
+import {
+  effectiveCodexSandboxArguments, extractClaudeStructuredOutput, runEngineeringWorkstream,
+  verifierWorkspaceDigest
+} from "../src/development/runner.js";
 import { TASKBOARD_COLUMNS } from "../src/constants.js";
 import { main as developmentMain } from "../src/development-cli.js";
 import { decideApproval, requestApproval } from "../src/runtime/approvals.js";
@@ -24,6 +27,24 @@ test("development CLI initializes, validates, and rejects unrelated options", as
   assert.equal(await developmentMain(["init", root], output.io), 0);
   assert.equal(await developmentMain(["validate", root], output.io), 0);
   await assert.rejects(developmentMain(["status", root, "--force"], output.io), /does not accept --force/);
+});
+
+test("independent verification digest excludes prohibited dependency trees but detects source edits", async (t) => {
+  const root = await temporaryRoot(t, "development-verifier-digest-");
+  await fs.mkdir(path.join(root, "src"), { recursive: true });
+  await fs.mkdir(path.join(root, "node_modules", "fixture"), { recursive: true });
+  await fs.writeFile(path.join(root, "src", "index.js"), "export const value = 1;\n", "utf8");
+  await fs.writeFile(path.join(root, "node_modules", "fixture", "index.js"), "module.exports = 1;\n", "utf8");
+
+  const before = await verifierWorkspaceDigest(root, ["node_modules"]);
+  await fs.writeFile(path.join(root, "node_modules", "fixture", "index.js"), "module.exports = 2;\n", "utf8");
+  assert.equal(
+    await verifierWorkspaceDigest(root, ["node_modules"]),
+    before,
+    "dependency installation state is outside the canonical verifier snapshot"
+  );
+  await fs.writeFile(path.join(root, "src", "index.js"), "export const value = 2;\n", "utf8");
+  assert.notEqual(await verifierWorkspaceDigest(root, ["node_modules"]), before);
 });
 
 test("development OS initializes an independent 15-role engineering system", async (t) => {
@@ -39,6 +60,48 @@ test("development OS initializes an independent 15-role engineering system", asy
   const validation = await validateDevelopmentOs(root);
   assert.deepEqual(validation.errors, []);
   assert.equal(validation.contractCounts.requests, 0);
+});
+
+test("engineering evidence amendments are append-only, digest-guarded, idempotent, and routed to ENG-15", async (t) => {
+  const root = await temporaryRoot(t, "development-amendment-");
+  await initializeDevelopmentOs(root, { dryRun: false });
+  const requestFile = path.join(root, "request.json");
+  await writeJson(requestFile, developmentRequest("AMENDMENT-001"));
+  const { plan } = await planDevelopmentRequest(root, requestFile, { dryRun: false });
+  const targetPath = ".development-os/evidence/producer-claim.json";
+  const targetContent = `${JSON.stringify({ command: "npm test", passed: false })}\n`;
+  await fs.writeFile(path.join(root, targetPath), targetContent, "utf8");
+  const amendmentFile = path.join(root, "amendment-input.json");
+  const input = {
+    planId: plan.planId,
+    workstreamId: "WS-01",
+    artifactPath: targetPath,
+    expectedSha256: crypto.createHash("sha256").update(targetContent).digest("hex"),
+    corrections: [{ field: "/passed", priorValue: false, correctedValue: true }],
+    reason: "The producer result recorded the pre-rerun state instead of the passing rerun.",
+    evidence: [{ reference: "CI rerun 184 passed all checks" }]
+  };
+  await writeJson(amendmentFile, input);
+
+  const preview = captureIo();
+  assert.equal(await developmentMain(["amend", root, "--amendment", amendmentFile], preview.io), 0);
+  assert.match(preview.stdout.join("\n"), /Planned AMEND-/);
+  assert.equal((await fs.readdir(path.join(root, ".development-os/evidence"))).filter((name) => name.endsWith(".amendment.json")).length, 0);
+
+  assert.equal(await developmentMain(["amend", root, "--amendment", amendmentFile, "--apply"], captureIo().io), 0);
+  assert.equal(await developmentMain(["amend", root, "--amendment", amendmentFile, "--apply"], captureIo().io), 0, "retries preserve the first timestamp and bytes");
+  const amendmentNames = (await fs.readdir(path.join(root, ".development-os/evidence"))).filter((name) => name.endsWith(".amendment.json"));
+  assert.equal(amendmentNames.length, 1);
+  const amendment = await readJson(path.join(root, ".development-os/evidence", amendmentNames[0]));
+  assert.equal(amendment.ownerRole, plan.workstreams.find((item) => item.id === "WS-01").ownerRole);
+  assert.equal(amendment.recordedByRole, "ENG-01");
+  assert.equal(amendment.status, "pending_independent_verification");
+  const validation = await validateDevelopmentOs(root);
+  assert.deepEqual(validation.errors, []);
+  assert.ok(validation.warnings.some((warning) => warning.includes("awaiting ENG-15")));
+
+  await fs.writeFile(path.join(root, targetPath), `${JSON.stringify({ command: "npm test", passed: true })}\n`, "utf8");
+  assert.ok((await validateDevelopmentOs(root)).errors.some((error) => error.includes("target digest changed")));
 });
 
 test("planner activates database, frontend, SEO, security, QA, docs, and independent verification", async (t) => {

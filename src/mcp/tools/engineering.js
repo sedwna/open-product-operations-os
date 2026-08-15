@@ -3,7 +3,9 @@ import path from "node:path";
 import { runEngineeringWorkstream, submittedWorkstreamResult } from "../../development/runner.js";
 import { loadDevelopmentConfig } from "../../development/config.js";
 import { readAutomationLink } from "../../autopilot/state.js";
-import { closeEngineeringDelivery, cycleBranch, openEngineeringDelivery } from "../../autopilot/engineering.js";
+import {
+  closeEngineeringDelivery, cycleBranch, openEngineeringDelivery, preflightEngineeringDelivery
+} from "../../autopilot/engineering.js";
 import { loadProductRuns, recordEngineeringProductRun } from "../../autopilot/orchestrator.js";
 import { applyRunOutcome } from "../../autopilot/cycle.js";
 import { loadConfig } from "../../config.js";
@@ -16,6 +18,7 @@ import { withControlPlaneLease } from "../../runtime/control-plane-lease.js";
 import { describeTeam } from "../app/teams.js";
 import { ToolFailure } from "../authority.js";
 import { untrusted } from "../untrusted.js";
+import { recordEngineeringEvidenceAmendment } from "../../development/amendment.js";
 
 /**
  * The engineering half of host-delegated execution.
@@ -159,6 +162,34 @@ export async function submitEngineeringWork(context, args = {}) {
     text: recorded.result.status === "completed"
       ? `Recorded and sealed ${workstream.id} for ${team.name}. Call product_ops_next_engineering_work for the next one.`
       : `Recorded a ${recorded.result.status} result for ${workstream.id} (${team.name}). It is not sealed, so the work can be attempted again.`
+  };
+}
+
+export async function amendEngineeringEvidence(context, args = {}) {
+  if (args.apply === true && context.allowWrites !== true) {
+    throw new ToolFailure("APPLY_NOT_AUTHORIZED", "This server was started without write authorisation.");
+  }
+  const application = await linkedApplication(context.root);
+  let recorded;
+  try {
+    recorded = await recordEngineeringEvidenceAmendment(application, args, { dryRun: args.apply !== true });
+  } catch (error) {
+    throw new ToolFailure("AMENDMENT_REJECTED", `The engineering evidence amendment was refused: ${error.message}`);
+  }
+  return {
+    structuredContent: {
+      applied: !recorded.dryRun,
+      amendmentId: recorded.amendment.amendmentId,
+      planId: recorded.amendment.planId,
+      workstreamId: recorded.amendment.workstreamId,
+      ownerRole: recorded.amendment.ownerRole,
+      target: recorded.amendment.target,
+      storedAt: recorded.storedAt,
+      status: recorded.amendment.status
+    },
+    text: recorded.dryRun
+      ? `Planned: would append ${recorded.amendment.amendmentId}; the original artifact remains immutable and ENG-15 must verify the corrected claim. Nothing was written.`
+      : `Recorded ${recorded.amendment.amendmentId} as append-only evidence. The original artifact was not changed; route the correction to ENG-15.`
   };
 }
 
@@ -378,16 +409,33 @@ export async function closeDelivery(context, args = {}) {
     );
   }
 
-  if (!apply) {
-    return {
-      structuredContent: { applied: false, taskId: task.task_id, planId, workstreams: plan.workstreams.length },
-      text: `Planned: would seal ${plan.workstreams.length} completed workstream(s) in ${planId}, produce quality-gate evidence, and return the result to ${task.task_id}. Nothing has been written.`
-    };
-  }
-
   const developmentConfig = await loadDevelopmentConfig(application);
   const request = await storedRequest(application, developmentConfig, plan.requestId);
   const runs = await sealedRunResults(application, planId, plan);
+  let implementationProof;
+  try {
+    implementationProof = await preflightEngineeringDelivery(
+      application, plan, runs, developmentConfig.policies
+    );
+  } catch (error) {
+    throw new ToolFailure("DELIVERY_NOT_CLOSEABLE", `The delivery could not be closed: ${error.message}`);
+  }
+
+  if (!apply) {
+    return {
+      structuredContent: {
+        applied: false,
+        taskId: task.task_id,
+        planId,
+        workstreams: plan.workstreams.length,
+        implementationRevision: implementationProof.implementationRevision,
+        changedComponents: implementationProof.changedComponents,
+        proofSource: implementationProof.source
+      },
+      text: `Planned: would close ${plan.workstreams.length} completed workstream(s) in ${planId} from ${implementationProof.source} proof, produce quality-gate evidence, and return the result to ${task.task_id}. Nothing has been written.`
+    };
+  }
+
   let delivery;
   try {
     delivery = await closeEngineeringDelivery(context.root, application, {
@@ -397,7 +445,8 @@ export async function closeDelivery(context, args = {}) {
       developmentConfig,
       runs,
       branch: cycleBranch(task.event_id),
-      cycleId: task.event_id
+      cycleId: task.event_id,
+      implementationProof
     });
   } catch (error) {
     throw new ToolFailure("DELIVERY_NOT_CLOSEABLE", `The delivery could not be closed: ${error.message}`);

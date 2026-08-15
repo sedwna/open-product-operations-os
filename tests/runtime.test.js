@@ -426,3 +426,34 @@ test("an incident is routed as something wrong, not as a new idea", async (t) =>
   assert.ok(!titles.includes("Complete discovery"), "and does not go through discovery research first");
   assert.ok(!titles.includes("Prepare decision brief"), "or wait on a decision brief");
 });
+
+test("sealed workstream results override a stale engineering taskboard projection", async (t) => {
+  const root = await makeTempDirectory("product-ops-engineering-canonical-progress-");
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  await fs.mkdir(path.join(root, "engineering", "taskboard"), { recursive: true });
+  await fs.mkdir(path.join(root, ".development-os", "plans"), { recursive: true });
+  await fs.mkdir(path.join(root, ".development-os", "runs"), { recursive: true });
+  await fs.writeFile(path.join(root, "engineering", "taskboard", "workstreams.csv"), stringifyCsv([
+    ["workstream_id", "request_id", "owner_role", "domain", "title", "status", "dependency_ids", "evidence_refs", "updated_at"],
+    ["WS-01", "DEVREQ-1", "ENG-01", "coordination", "Coordinate", "ready", "", "", "2026-08-02T10:00:00Z"],
+    ["WS-02", "DEVREQ-1", "ENG-15", "verification", "Verify", "ready", "WS-01", "", "2026-08-02T10:01:00Z"]
+  ]), "utf8");
+  const planId = "ENGPLAN-1";
+  const workstreams = [{ id: "WS-01" }, { id: "WS-02" }];
+  await fs.writeFile(path.join(root, ".development-os", "plans", `${planId}.json`), JSON.stringify({
+    planId, requestId: "DEVREQ-1", workstreams
+  }), "utf8");
+  for (const workstream of workstreams) {
+    await fs.writeFile(
+      path.join(root, ".development-os", "runs", `${planId}-${workstream.id}-result.json`),
+      JSON.stringify({ workstreamId: workstream.id, status: "completed" }),
+      "utf8"
+    );
+  }
+
+  const progress = await loadEngineeringProgress(root);
+  assert.equal(progress.total, 2);
+  assert.equal(progress.completed, 2);
+  assert.equal(progress.ready, 0);
+  assert.ok(progress.workstreams.every((workstream) => workstream.status === "completed"));
+});

@@ -27,16 +27,18 @@ export async function synchronizeDecisionApprovals(root, config) {
   const header = parsed[0] ?? decisionSheet.columns;
   const rows = parsed.slice(1);
   const value = (row, field) => row[header.indexOf(field)] ?? "";
+  const eligibleApprovals = approvals.requests.filter((request) =>
+    request.gate === "product_direction_or_priority"
+      && request.status === "approved"
+      && request.decidedByActorId
+      && request.decidedAt);
+  if (eligibleApprovals.length === 0) return { synchronized: 0, skipped: [], receipts: [] };
   const approvalBytes = await fs.readFile(path.join(root, APPROVAL_STORE_FILE));
   const approvalSha256 = sha256(approvalBytes);
   const receipts = [];
   const skipped = [];
 
-  for (const approval of approvals.requests.filter((request) =>
-    request.gate === "product_direction_or_priority"
-      && request.status === "approved"
-      && request.decidedByActorId
-      && request.decidedAt)) {
+  for (const approval of eligibleApprovals) {
     const task = tasks.find((candidate) => candidate.task_id === approval.taskId);
     if (!task) {
       skipped.push({ requestId: approval.requestId, reason: "task_not_found" });

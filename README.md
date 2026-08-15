@@ -256,7 +256,7 @@ and no more.
 Everything runs over the Model Context Protocol, so the same setup serves Claude Code, Claude
 Desktop, Codex, and any compliant host.
 
-Read-only by default: **8 tools**, no write path exists at all. With `--allow-writes`: **19** —
+Read-only by default: **8 tools**, no write path exists at all. With `--allow-writes`: **20** —
 recording intake, running cycles, taking and returning work on both sides, crossing into engineering
 and back, and collecting your decisions.
 

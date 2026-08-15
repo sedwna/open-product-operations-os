@@ -13,6 +13,7 @@ const PUBLISHED_SCHEMAS = [
   "engineering-plan.schema.json",
   "engineering-result.schema.json",
   "engineering-workstream-run.schema.json",
+  "engineering-evidence-amendment.schema.json",
   "development-sync-receipt.schema.json"
 ];
 

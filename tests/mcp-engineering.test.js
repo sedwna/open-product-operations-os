@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
@@ -104,6 +105,37 @@ test("a submitted result passes the same contract a spawned executor would", asy
   assert.equal(applied.structuredContent.sealed, true);
   const stored = JSON.parse(await fs.readFile(path.join(application, applied.structuredContent.resultFile), "utf8"));
   assert.equal(stored.workstreamId, claim.workstreamId);
+});
+
+test("the MCP surface appends an owner-attributed evidence amendment without rewriting its target", async (t) => {
+  const { application, handlers } = await linkedWorkspace(t);
+  const plan = JSON.parse(await fs.readFile(path.join(application, ".development-os/plans/ENGPLAN-MCP-ENGINEERING-001.json"), "utf8"));
+  const targetPath = ".development-os/evidence/mcp-producer-claim.json";
+  const bytes = `${JSON.stringify({ passed: false, command: "npm test" })}\n`;
+  await fs.writeFile(path.join(application, targetPath), bytes, "utf8");
+  const args = {
+    planId: plan.planId,
+    workstreamId: plan.workstreams[0].id,
+    artifactPath: targetPath,
+    expectedSha256: crypto.createHash("sha256").update(bytes).digest("hex"),
+    corrections: [{ field: "/passed", priorValue: false, correctedValue: true }],
+    reason: "The immutable producer record captured the state before the passing rerun.",
+    evidence: [{ reference: "CI rerun 184 passed all checks" }]
+  };
+
+  const preview = await call(handlers, "product_ops_amend_engineering_evidence", args);
+  assert.equal(preview.isError, false, JSON.stringify(preview.structuredContent));
+  assert.equal(preview.structuredContent.applied, false);
+  await assert.rejects(fs.access(path.join(application, preview.structuredContent.storedAt)));
+
+  const applied = await call(handlers, "product_ops_amend_engineering_evidence", { ...args, apply: true });
+  assert.equal(applied.isError, false, JSON.stringify(applied.structuredContent));
+  assert.equal(applied.structuredContent.applied, true);
+  assert.equal(applied.structuredContent.status, "pending_independent_verification");
+  assert.equal(await fs.readFile(path.join(application, targetPath), "utf8"), bytes, "the sealed target remains immutable");
+  const amendment = JSON.parse(await fs.readFile(path.join(application, applied.structuredContent.storedAt), "utf8"));
+  assert.equal(amendment.ownerRole, plan.workstreams[0].ownerRole);
+  assert.equal(amendment.recordedByRole, "ENG-01");
 });
 
 test("only ENG-15 may issue a verification disposition", async (t) => {
@@ -245,24 +277,52 @@ test("a delivery crosses into engineering and comes back, entirely through the s
   assert.equal(premature.isError, true);
   assert.equal(premature.structuredContent.code, "WORK_INCOMPLETE");
 
+  const amendmentTarget = ".development-os/evidence/crossing-producer-claim.json";
+  const amendmentBytes = `${JSON.stringify({ passed: false })}\n`;
+  await fs.writeFile(path.join(application, amendmentTarget), amendmentBytes, "utf8");
+  const plan = JSON.parse(await fs.readFile(path.join(application, ".development-os/plans", `${crossed.planId}.json`), "utf8"));
+  const amended = await call(handlers, "product_ops_amend_engineering_evidence", {
+    planId: crossed.planId,
+    workstreamId: plan.workstreams[0].id,
+    artifactPath: amendmentTarget,
+    expectedSha256: crypto.createHash("sha256").update(amendmentBytes).digest("hex"),
+    corrections: [{ field: "/passed", priorValue: false, correctedValue: true }],
+    reason: "The producer claim captured the state before the passing rerun completed.",
+    evidence: [{ reference: "rerun passed in the delegated engineering session" }],
+    apply: true
+  });
+  assert.equal(amended.isError, false, JSON.stringify(amended.structuredContent));
+
   let performed = 0;
+  let verifiedRevision = null;
   for (;;) {
     const claim = (await call(handlers, "product_ops_next_engineering_work")).structuredContent;
     if (!claim.available) {
       assert.equal(claim.reason, "all_complete", `stuck: ${claim.reason}`);
       break;
     }
-    // What a delegated subagent would do: write inside the contract's boundary, then return.
-    await fs.writeFile(
-      path.join(application, "src", `${claim.workstreamId.toLowerCase()}.js`),
-      `export const ${claim.workstreamId.replace("-", "_").toLowerCase()} = true;\n`,
-      "utf8"
-    );
+    // Producers commit their bounded work before independent verification. The verifier changes
+    // nothing and binds its verdict to that reachable commit, exactly as a host-delegated cycle does.
+    if (claim.ownerRole !== "ENG-15") {
+      await fs.writeFile(
+        path.join(application, "src", `${claim.workstreamId.toLowerCase()}.js`),
+        `export const ${claim.workstreamId.replace("-", "_").toLowerCase()} = true;\n`,
+        "utf8"
+      );
+    } else {
+      await runGit(application, ["add", "-A"]);
+      await runGit(application, [
+        "-c", "user.name=T", "-c", "user.email=t@t.test", "commit", "--quiet", "-m", "sealed producer work"
+      ]);
+      verifiedRevision = (await runGit(application, ["rev-parse", "HEAD"])).stdout.trim();
+    }
+    const result = workstreamResult(claim, verifiedRevision);
+    if (claim.ownerRole === "ENG-15") result.evidence.push(amended.structuredContent.storedAt);
     const submitted = await call(handlers, "product_ops_submit_engineering_work", {
       workstreamId: claim.workstreamId,
       claimToken: claim.claimToken,
       apply: true,
-      result: workstreamResult(claim)
+      result
     });
     assert.equal(submitted.isError, false, JSON.stringify(submitted.structuredContent));
     performed += 1;
@@ -270,7 +330,15 @@ test("a delivery crosses into engineering and comes back, entirely through the s
   }
   assert.equal(performed, crossed.workstreams);
 
-  const closed = (await call(handlers, "product_ops_close_delivery", { apply: true })).structuredContent;
+  const preview = (await call(handlers, "product_ops_close_delivery")).structuredContent;
+  assert.equal(preview.applied, false);
+  assert.equal(preview.proofSource, "sealed_runs");
+  assert.equal(preview.implementationRevision, verifiedRevision);
+  assert.ok(preview.changedComponents.length > 0);
+
+  const closure = await call(handlers, "product_ops_close_delivery", { apply: true });
+  assert.equal(closure.isError, false, JSON.stringify(closure.structuredContent));
+  const closed = closure.structuredContent;
   assert.equal(closed.applied, true);
   assert.ok(closed.changedComponents.length > 0, "a delivery that changed nothing is not a delivery");
 
@@ -536,7 +604,7 @@ async function settleGate(handlers, product, requestId) {
   assert.equal((await loadApprovals(product)).requests.find((item) => item.requestId === requestId).status, "approved");
 }
 
-function workstreamResult(claim) {
+function workstreamResult(claim, verifiedRevision = null) {
   return {
     schemaVersion: "1.0.0",
     planId: claim.planId,
@@ -545,8 +613,8 @@ function workstreamResult(claim) {
     producerActorId: claim.producerActorId,
     status: "completed",
     verificationDisposition: claim.ownerRole === "ENG-15" ? "passed" : "not_applicable",
-    implementationRevision: "abcdef1234567890",
-    changedComponents: ["src"],
+    implementationRevision: verifiedRevision ?? "abcdef1234567890",
+    changedComponents: claim.ownerRole === "ENG-15" ? [] : ["src"],
     commands: ["node --test"],
     evidence: ["evidence/run.json"],
     knownRisks: [],

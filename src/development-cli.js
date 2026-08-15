@@ -9,6 +9,7 @@ import { completeDevelopmentResult } from "./development/result.js";
 import { validateDevelopmentOs } from "./development/validation.js";
 import { runEngineeringWorkstream } from "./development/runner.js";
 import { configureDevelopmentExecutors, doctorDevelopmentExecutors } from "./development/executor-setup.js";
+import { recordEngineeringEvidenceAmendment } from "./development/amendment.js";
 
 const HELP = `Open Development Operations OS CLI
 
@@ -18,6 +19,7 @@ Usage:
   development-os plan <target> --request <json-file> [--apply]
   development-os complete <target> --result <json-file> [--apply]
   development-os execute <target> --plan <plan-id> --workstream <workstream-id> [--apply]
+  development-os amend <target> --amendment <json-file> [--apply]
   development-os executor-setup <target> --provider <codex|claude|command> --role <ENG-01|all> [options] [--enable] [--apply]
   development-os executor-doctor <target> [--role <ENG-01|all>]
   development-os status <target>
@@ -28,6 +30,7 @@ Commands:
   plan      Import one product-approved request and create a multi-discipline engineering plan.
   complete  Validate an independently verified engineering result and prepare it for Product Operations.
   execute   Dispatch one dependency-ready workstream through its disabled-by-default specialist executor.
+  amend     Append a digest-guarded correction to immutable engineering evidence; ENG-15 must verify it.
   executor-setup  Safely configure disabled-by-default Codex or command executors; activation requires --enable and a passing doctor.
   executor-doctor Read-only executor, schema, path, environment, and isolation diagnostics.
   status    Report synchronized request, plan, result, and receipt counts.
@@ -78,6 +81,14 @@ export async function main(argv = process.argv.slice(2), io = console) {
     const result = await runEngineeringWorkstream(target, parsed.plan, parsed.workstream, { dryRun: !parsed.apply });
     io.log(`${result.dryRun ? "Planned" : "Completed"} specialist run ${result.runId}.`);
     io.log(`Input: ${result.inputFile}; result: ${result.resultFile}.`);
+    return 0;
+  }
+  if (parsed.command === "amend") {
+    if (!parsed.amendment) throw new Error("amend requires --amendment <json-file>.");
+    const input = JSON.parse(await fs.readFile(path.resolve(parsed.amendment), "utf8"));
+    const result = await recordEngineeringEvidenceAmendment(target, input, { dryRun: !parsed.apply });
+    io.log(`${result.dryRun ? "Planned" : "Stored"} ${result.amendment.amendmentId} for ${result.amendment.workstreamId}.`);
+    io.log(`Target digest: ${result.amendment.target.artifactSha256}; verification: ENG-15 required.`);
     return 0;
   }
   if (parsed.command === "executor-setup") {
@@ -133,7 +144,7 @@ function parse(argv) {
       result.provided.add("arguments");
       continue;
     }
-    if (["--request", "--result", "--plan", "--workstream", "--output", "--provider", "--role", "--executable", "--argument", "--working-directory", "--timeout-ms"].includes(value)) {
+    if (["--request", "--result", "--plan", "--workstream", "--amendment", "--output", "--provider", "--role", "--executable", "--argument", "--working-directory", "--timeout-ms"].includes(value)) {
       const key = value.slice(2).replace(/-([a-z])/g, (_, letter) => letter.toUpperCase());
       const next = values.shift();
       if (!next || next.startsWith("--")) throw new Error(`${value} requires a value.`);
@@ -158,6 +169,7 @@ function validateOptions(parsed) {
     plan: ["request", "apply"],
     complete: ["result", "apply"],
     execute: ["plan", "workstream", "apply"],
+    amend: ["amendment", "apply"],
     "executor-setup": ["provider", "role", "executable", "arguments", "workingDirectory", "timeoutMs", "enable", "apply", "dryRun"],
     "executor-doctor": ["role"],
     status: []

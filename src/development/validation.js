@@ -9,6 +9,7 @@ import { loadDevelopmentConfig, validateDevelopmentConfig } from "./config.js";
 import { DEVELOPMENT_REQUIRED_FILES } from "./generator.js";
 import { buildPlan } from "./planner.js";
 import { validateResultRelationships } from "./result.js";
+import { loadEngineeringEvidenceAmendments } from "./amendment.js";
 
 const WORKSTREAM_HEADERS = ["workstream_id", "request_id", "owner_role", "domain", "title", "status", "dependency_ids", "evidence_refs", "updated_at"];
 
@@ -39,12 +40,13 @@ export async function validateDevelopmentOs(root) {
     const results = await readJsonDirectory(absoluteRoot, config.sync.outbox, "engineering-result.schema.json", errors);
     const receipts = await readJsonDirectory(absoluteRoot, config.sync.receipts, "development-sync-receipt.schema.json", errors);
     const runs = await readRunResults(absoluteRoot, errors);
+    const amendments = await readAmendments(absoluteRoot, plans, config, errors, warnings);
     contractCounts.requests = requests.size;
     contractCounts.plans = plans.size;
     contractCounts.results = results.size;
     contractCounts.receipts = receipts.size;
     contractCounts.runs = runs.length;
-    checkedFiles += requests.size + plans.size + results.size + receipts.size + runs.length;
+    checkedFiles += requests.size + plans.size + results.size + receipts.size + runs.length + amendments.length;
     for (const plan of plans.values()) {
       const request = requests.get(plan.requestId);
       if (!request) errors.push(`Engineering plan ${plan.planId} has no stored request.`);
@@ -77,6 +79,39 @@ export async function validateDevelopmentOs(root) {
   }
   await scanManagedTree(absoluteRoot, errors);
   return { root: absoluteRoot, config, errors, warnings, checkedFiles, contractCounts };
+}
+
+async function readAmendments(root, plans, config, errors, warnings) {
+  let records;
+  try { records = await loadEngineeringEvidenceAmendments(root); }
+  catch (error) { errors.push(error.message); return []; }
+  for (const { amendment, storedAt } of records) {
+    const plan = plans.get(amendment.planId);
+    const workstream = plan?.workstreams.find((candidate) => candidate.id === amendment.workstreamId);
+    const expectedOwner = config.roles.find((role) => role.id === workstream?.ownerRole)?.actorId;
+    const expectedRecorder = config.roles.find((role) => role.id === "ENG-01")?.actorId;
+    if (!plan) errors.push(`Engineering amendment ${amendment.amendmentId} has no stored plan.`);
+    else if (!workstream) errors.push(`Engineering amendment ${amendment.amendmentId} has no planned workstream.`);
+    else if (amendment.ownerRole !== workstream.ownerRole || amendment.ownerActorId !== expectedOwner) {
+      errors.push(`Engineering amendment ${amendment.amendmentId} does not match workstream ownership.`);
+    }
+    if (amendment.recordedByRole !== "ENG-01" || amendment.recordedByActorId !== expectedRecorder) {
+      errors.push(`Engineering amendment ${amendment.amendmentId} is not attributed to the configured engineering coordinator.`);
+    }
+    const verifier = plan?.workstreams.find((candidate) => candidate.ownerRole === "ENG-15");
+    if (verifier) {
+      try {
+        const run = JSON.parse(await fs.readFile(path.join(root, ".development-os", "runs", `${plan.planId}-${verifier.id}-result.json`), "utf8"));
+        if (run.status !== "completed" || run.verificationDisposition !== "passed" || !(run.evidence ?? []).includes(storedAt)) {
+          warnings.push(`Engineering amendment ${amendment.amendmentId} is awaiting explicit ENG-15 evidence.`);
+        }
+      } catch (error) {
+        if (error.code === "ENOENT") warnings.push(`Engineering amendment ${amendment.amendmentId} is awaiting ENG-15 verification.`);
+        else errors.push(`Cannot inspect ENG-15 verification for ${amendment.amendmentId}: ${error.message}.`);
+      }
+    }
+  }
+  return records;
 }
 
 async function readRunResults(root, errors) {

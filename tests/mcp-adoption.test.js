@@ -146,7 +146,7 @@ test("adoption results remain observations and end at an owner review gate", asy
       result: resultFor(claim),
       apply: true
     });
-    assert.equal(submitted.isError, false);
+    assert.equal(submitted.isError, false, JSON.stringify(submitted.structuredContent));
     assert.equal(submitted.structuredContent.cycle.done, index + 1);
   }
 
