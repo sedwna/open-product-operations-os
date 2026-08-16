@@ -1,0 +1,18 @@
+stateDiagram-v2
+    [*] --> Intake
+    Intake --> Discovery
+    Discovery --> ProductDecision
+    ProductDecision --> Contract: approved
+    ProductDecision --> Discovery: revise / reject
+    Contract --> EngineeringGate
+    EngineeringGate --> Engineering: approved
+    EngineeringGate --> Contract: conditions / reject
+    Engineering --> TechnicalVerification
+    TechnicalVerification --> ProductQA: pass + sealed result
+    TechnicalVerification --> Engineering: evidence gap / control failure
+    ProductQA --> ProductVerification
+    ProductVerification --> Readiness: pass
+    ProductVerification --> Contract: corrective task
+    Readiness --> ReleaseDecision
+    ReleaseDecision --> [*]: accepted / released
+    ReleaseDecision --> Contract: hold / revise

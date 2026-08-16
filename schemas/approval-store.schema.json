@@ -20,6 +20,15 @@
           "context": { "type": "string" },
           "options": { "type": "array", "minItems": 2, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
           "recommendedOption": { "type": ["string", "null"] },
+          "recommendationRationale": {
+            "type": "string",
+            "description": "Why the prepared recommendation is preferred. It informs the owner and never decides for them."
+          },
+          "optionImpacts": {
+            "type": "object",
+            "additionalProperties": { "type": "string", "minLength": 1 },
+            "description": "Human-readable consequence of choosing each offered option, keyed by the exact option value."
+          },
           "evidenceRefs": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
           "risks": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
           "status": { "enum": ["pending", "approved", "rejected"] },

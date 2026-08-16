@@ -548,7 +548,7 @@ async function deliveryWorkspace(t) {
   const context = await createServerContext({ project: product, allowWrites: true });
   // The owner answers in their own words; the test speaks for them exactly once, at the gate.
   context.elicit = async () => ({ action: "accept", content: {
-    decision: "approved",
+    decision: "تأیید — ادامه طبق گزینه انتخاب‌شده",
     actorId: config.project.humanAuthorityActorId,
     rationale: "Bounded work in a separate repository, and nothing ships without me."
   } });

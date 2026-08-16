@@ -33,6 +33,13 @@ async function mountPanel(t) {
     taskId: first.task_id,
     gate: "product_direction_or_priority",
     question: "Ship per-workspace summary days, or keep one global default?",
+    context: "This choice controls the schedule used by future digests.",
+    recommendedOption: "approved",
+    recommendationRationale: "It preserves the migration path requested by coordinators.",
+    optionImpacts: {
+      approved: "The bounded migration can continue.",
+      rejected: "The task remains at the product gate."
+    },
     risks: ["Scheduled sends must migrate without dropping one."]
   }, { dryRun: false });
 
@@ -112,6 +119,10 @@ test("what a person reads carries no envelope markers", async (t) => {
   assert.equal(/untrusted-record/.test(rendered), false, "the envelope is for the model, not for the reader");
   assert.match(rendered, /Ship per-workspace summary days/, "the question itself must survive unwrapping");
   assert.match(rendered, /Scheduled sends must migrate/, "so must the recorded risks");
+  assert.match(rendered, /چرا این سؤال را می‌بینید/);
+  assert.match(rendered, /پیشنهاد سیستم: approved/);
+  assert.match(rendered, /It preserves the migration path/);
+  assert.match(rendered, /The bounded migration can continue/);
 });
 
 test("record text is escaped, so a hostile record cannot inject markup into the panel", async (t) => {
@@ -190,13 +201,24 @@ test("the composer records the owner's own words and refuses an empty rationale"
   const box = document.getElementById(`t-${gate.requestId}`);
   assert.equal(typeof approve.onclick, "function", "each gate needs an approve control");
   assert.equal(typeof reject.onclick, "function", "and a reject control");
+  const defer = document.getElementById(`d-${gate.requestId}`);
+  assert.equal(typeof defer.onclick, "function", "and a safe defer control");
 
   // A disposition without reasoning is not a durable decision.
   posted.length = 0;
   box.value = "   ";
   approve.onclick();
   assert.equal(posted.length, 0, "an empty rationale must not reach the server");
-  assert.match(document.getElementById(`m-${gate.requestId}`).textContent, /دلیلش را بنویسید/);
+  assert.match(document.getElementById(`m-${gate.requestId}`).textContent, /دلیل، شرط، یا مسیر جایگزین/);
+
+  box.value = "I agree";
+  approve.onclick();
+  assert.equal(posted.length, 0, "a generic acknowledgement must not become approval");
+  assert.match(document.getElementById(`m-${gate.requestId}`).textContent, /I agree/);
+
+  defer.onclick();
+  assert.equal(posted.length, 0, "deferring leaves the gate pending without a write call");
+  assert.match(document.getElementById(`m-${gate.requestId}`).textContent, /هیچ تأیید یا ردی ثبت نشد/);
 
   box.value = "پیش از نوشتن داستان مهاجرت، نه.";
   reject.onclick();

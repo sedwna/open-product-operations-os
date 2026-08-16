@@ -31,6 +31,36 @@ test("repository-relative Markdown links resolve", async () => {
   assert.deepEqual(missing, []);
 });
 
+test("README diagrams are checked-in SVGs with maintainable Mermaid sources", async () => {
+  const readme = await fs.readFile(path.join(root, "README.md"), "utf8");
+  assert.doesNotMatch(
+    readme,
+    /```mermaid/,
+    "GitHub Mermaid rendering depends on a separate viewscreen service; README must use local assets"
+  );
+
+  const assetMatches = [
+    ...readme.matchAll(/<img\s+src="(\.github\/assets\/diagrams\/([^"]+\.svg))"/g)
+  ];
+  assert.equal(assetMatches.length, 6);
+
+  for (const [, assetPath, assetFile] of assetMatches) {
+    const svg = await fs.readFile(path.join(root, assetPath), "utf8");
+    assert.match(svg, /<svg[\s>]/i, `${assetPath} must be an SVG`);
+    assert.match(svg, /viewBox=/i, `${assetPath} must scale inside GitHub's README`);
+    assert.doesNotMatch(svg, /syntax error|parse error/i);
+
+    const sourcePath = path.join(
+      root,
+      ".github",
+      "diagrams",
+      assetFile.replace(/\.svg$/, ".mmd")
+    );
+    const source = await fs.readFile(sourcePath, "utf8");
+    assert.match(source, /^(flowchart|stateDiagram-v2|sequenceDiagram)/);
+  }
+});
+
 async function findMarkdown(directory) {
   const found = [];
   for (const entry of await fs.readdir(directory, { withFileTypes: true })) {

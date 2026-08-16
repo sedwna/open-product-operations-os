@@ -1,0 +1,28 @@
+flowchart LR
+    R["Sealed product request"] --> C["Engineering coordination"]
+    C --> A["Architecture and mandatory gates"]
+    A --> X{"Impact-aware plan"}
+
+    X --> FE["Frontend / clients"]
+    X --> BE["Backend / API"]
+    X --> DB["Data / database / AI"]
+    X --> PL["Platform / security / SRE"]
+    X --> DX["Delivery / SEO / docs"]
+
+    FE --> QE["Quality engineering"]
+    BE --> QE
+    DB --> QE
+    PL --> QE
+    DX --> QE
+
+    QE --> IV["Independent engineering verification"]
+    IV --> RS["Sealed engineering result"]
+
+    classDef contract fill:#E7F7EF,stroke:#27845A,color:#123E2C,stroke-width:2px;
+    classDef core fill:#F4F0E5,stroke:#8A7442,color:#332B1B;
+    classDef specialist fill:#F8F5EC,stroke:#AA8F55,color:#332B1B;
+    classDef verify fill:#F1E8FF,stroke:#7C3AED,color:#2E1065,stroke-width:2px;
+    class R,RS contract;
+    class C,A,X,QE core;
+    class FE,BE,DB,PL,DX specialist;
+    class IV verify;

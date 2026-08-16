@@ -24,6 +24,8 @@ export async function requestApproval(
     context = "",
     options = ["approved", "rejected"],
     recommendedOption = null,
+    recommendationRationale = "",
+    optionImpacts = {},
     evidenceRefs = [],
     risks = []
   },
@@ -47,6 +49,8 @@ export async function requestApproval(
       context,
       options,
       recommendedOption,
+      recommendationRationale,
+      optionImpacts,
       evidenceRefs,
       risks,
       status: "pending",
@@ -105,13 +109,13 @@ export async function decideApproval(
     if (selectedOption !== null && !offered.includes(selectedOption)) {
       throw new Error(`Gate "${pending.gate}" did not offer "${selectedOption}". It offered: ${offered.join(", ")}.`);
     }
-    if (choiceRequired && selectedOption === null) {
+    if (choiceRequired && decision === "approved" && selectedOption === null) {
       throw new Error(`Gate "${pending.gate}" asked the product owner to choose between ${offered.join(", ")}. A bare ${decision} does not say which one they chose.`);
     }
     const request = {
       ...pending,
       status: decision,
-      selectedOption,
+      selectedOption: decision === "rejected" ? null : selectedOption,
       conditions: normalizeConditions(conditions),
       decidedAt: utcTimestamp(now),
       decidedByActorId: actorId,

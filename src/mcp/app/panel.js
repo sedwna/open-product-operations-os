@@ -70,6 +70,11 @@ border:1px solid var(--color-border-primary,light-dark(#c9c4bb,#3a4048));
 background:var(--color-background-primary,light-dark(#fff,#15181d));color:inherit}
 button.yes{background:light-dark(#1d6b3f,#2f8a55);color:#fff;border-color:transparent}
 button.no{background:light-dark(#a33a33,#b6483f);color:#fff;border-color:transparent}
+button.defer{background:transparent}
+.recommendation{border-inline-start:3px solid light-dark(#d19122,#d8a13b);padding:7px 9px;
+background:light-dark(#fff7e8,#332817);border-radius:6px;font-size:12px}
+.option-impact{margin-top:2px;padding:5px 8px;border-radius:5px;
+background:var(--color-background-primary,light-dark(#f8f7f4,#15181d));font-size:11.5px}
 .flow{display:flex;gap:0;overflow-x:auto;padding-bottom:3px}
 .step{flex:0 0 auto;display:flex;align-items:center;gap:0}
 .node{border:1px solid var(--color-border-primary,light-dark(#e3e0da,#2c313a));border-radius:8px;
@@ -190,8 +195,10 @@ function render(){
   s.decisions.items.forEach(function(item){
     var yes=document.getElementById("y-"+item.requestId);
     var no=document.getElementById("n-"+item.requestId);
+    var later=document.getElementById("d-"+item.requestId);
     if(yes)yes.onclick=function(){submit(item,"approved");};
     if(no)no.onclick=function(){submit(item,"rejected");};
+    if(later)later.onclick=function(){defer(item);};
   });
 }
 
@@ -269,21 +276,31 @@ function gate(item){
   // yes throws the answer away and records the owner as having simply agreed.
   var opts=item.options&&item.options.length?item.options:["approved","rejected"];
   var choose=!(opts.length===2&&opts.indexOf("approved")>-1&&opts.indexOf("rejected")>-1);
-  var chooser=choose?'<div class="note">کدام گزینه؟</div><select id="o-'+id+'" dir="auto">'
+  var chooser=choose?'<div class="note">کدام مسیر را انتخاب می‌کنید؟ گزینهٔ پیشنهادی مشخص است، اما تصمیم با شماست.</div><select id="o-'+id+'" dir="auto">'
     +opts.map(function(o){return '<option value="'+esc(o)+'"'
       +(item.recommendedOption===o?" selected":"")+">"+esc(o)
       +(item.recommendedOption===o?" — پیشنهاد سیستم":"")+"</option>";}).join("")
     +"</select>":"";
-  return '<div class="gate"><div class="gate-q" dir="auto">'+plain(item.question)+'</div>'
+  var impacts=item.optionImpacts||{};
+  var impactList=opts.map(function(o){return impacts[o]
+    ?'<div class="option-impact" dir="auto"><b>'+esc(o)+'</b> — اثر: '+plain(impacts[o])+"</div>":"";}).join("");
+  var recommendation=item.recommendedOption
+    ?'<div class="recommendation" dir="auto"><b>پیشنهاد سیستم: '+esc(item.recommendedOption)+'</b><br>'
+      +'دلیل پیشنهاد: '+(item.recommendationRationale?plain(item.recommendationRationale):
+        "برای این پیشنهاد هنوز دلیل مستقلی ثبت نشده؛ پیش از تأیید، شواهد و ریسک‌ها را بررسی کنید.")+"</div>"
+    :"";
+  return '<div class="gate"><div class="note">چرا این سؤال را می‌بینید؟ این تسک به تصمیم مالک محصول رسیده و بدون انتخاب صریح شما ادامه نمی‌یابد.</div>'
+    +'<div class="gate-q" dir="auto">'+plain(item.question)+'</div>'
     +'<div class="muted">'+esc(teamOf(ownerOf(item.taskId)))+' · <code>'+esc(item.gate)+"</code> · "+esc(item.taskId)+"</div>"
-    +(item.context?'<div class="note" dir="auto">'+plain(item.context)+"</div>":"")
+    +(item.context?'<div class="note" dir="auto">زمینه: '+plain(item.context)+"</div>":"")
     +(item.risks&&item.risks.length?'<ul class="risks">'+item.risks.map(function(r){return '<li dir="auto">'+plain(r)+"</li>";}).join("")+"</ul>":"")
-    +chooser
-    +'<textarea id="t-'+id+'" dir="auto" placeholder="دلیل تصمیم‌تان را بنویسید — همین متن در پروندهٔ محصول ثبت و به شما نسبت داده می‌شود."></textarea>'
+    +recommendation+impactList+chooser
+    +'<textarea id="t-'+id+'" dir="auto" placeholder="چرا این تصمیم را می‌گیرید؟ اگر هیچ گزینه‌ای مناسب نیست، مسیر پیشنهادی خودتان را اینجا بنویسید. متن‌هایی مثل «I agree» یا «اوکی» کافی نیستند."></textarea>'
     +'<textarea id="c-'+id+'" dir="auto" class="cond" placeholder="شرط‌ها (اختیاری) — هر شرط در یک خط. تأیید مشروط با تأیید ساده یکی نیست."></textarea>'
-    +'<div class="row"><button class="yes" id="y-'+id+'">تأیید</button>'
-    +'<button class="no" id="n-'+id+'">رد</button>'
-    +'<span class="note" id="m-'+id+'">بدون دلیل، تصمیم ثبت نمی‌شود.</span></div></div>';
+    +'<div class="row"><button class="yes" id="y-'+id+'">تأیید و ادامه</button>'
+    +'<button class="no" id="n-'+id+'">رد / هیچ‌کدام</button>'
+    +'<button class="defer" id="d-'+id+'">فعلاً تصمیم نمی‌گیرم</button>'
+    +'<span class="note" id="m-'+id+'">تعویق چیزی ثبت نمی‌کند؛ تأیید یا رد به توضیح واقعی نیاز دارد.</span></div></div>';
 }
 function ownerOf(taskId){
   var f=state&&state.flow;if(!f||!f.steps)return null;
@@ -313,6 +330,17 @@ function refresh(quiet){
     .catch(function(e){ if(quiet)schedule(); else fail(e); })
     .then(function(){busy=false;});
 }
+function meaningful(text){
+  var value=String(text||"").trim();
+  if(value.length<5)return false;
+  var normalized=value.toLocaleLowerCase("fa-IR").replace(/[.!؟،,;:\\s]+/g," ").trim();
+  return ["agree","agreed","i agree","approve","approved","yes","ok","okay","go","go ahead",
+    "تایید","تأیید","موافقم","قبول","بله","اوکی","باشه","انجام شود","ادامه بده"].indexOf(normalized)===-1;
+}
+function defer(item){
+  var note=document.getElementById("m-"+item.requestId);
+  if(note)note.textContent="تصمیم برای بعد باقی ماند؛ هیچ تأیید یا ردی ثبت نشد.";
+}
 /**
  * The product owner writes their own reasoning here and chooses. The source flag tells the server a
  * person composed this rather than a model summarising them; the record keeps that attribution.
@@ -322,8 +350,8 @@ function submit(item,decision){
   var box=document.getElementById("t-"+item.requestId);
   var note=document.getElementById("m-"+item.requestId);
   var rationale=box&&box.value?box.value.trim():"";
-  if(!rationale){
-    if(note)note.textContent="برای ثبت تصمیم، دلیلش را بنویسید.";
+  if(!meaningful(rationale)){
+    if(note)note.textContent="لطفاً دلیل، شرط، یا مسیر جایگزین را توضیح دهید؛ پاسخ عمومی مثل «I agree» کافی نیست.";
     if(box)box.focus();
     return;
   }
@@ -339,7 +367,7 @@ function submit(item,decision){
   clearDrafts(item.requestId);
   call("product_ops_decide",{requestId:item.requestId,decisionToken:item.decisionToken,apply:true,
     source:"panel",decision:decision,rationale:rationale,
-    selectedOption:chooser?chooser.value:undefined,
+    selectedOption:decision==="approved"&&chooser?chooser.value:undefined,
     conditions:conditions.length?conditions:undefined,
     actorId:state&&state.humanAuthorityActorId?state.humanAuthorityActorId:undefined})
     .then(function(){busy=false;refresh();})

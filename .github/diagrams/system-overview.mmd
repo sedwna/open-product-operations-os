@@ -1,0 +1,47 @@
+flowchart TB
+    H["Human product owner<br/>direction · trade-offs · acceptance"]
+    CT["Control Tower<br/>shows state · routes work · asks decisions"]
+
+    subgraph POS ["PRODUCT OPERATIONS OS — meaning and acceptance"]
+      S["Signal<br/>idea · feedback · incident"] --> D["Discovery<br/>evidence · unknowns"]
+      D --> I["Product intent<br/>journey · issue · priority"]
+      I --> C["Delivery contract<br/>testable acceptance criteria"]
+    end
+
+    G1{"Human gate<br/>send to engineering?"}
+    B1["Sealed request<br/>schema · revision · SHA-256"]
+
+    subgraph DOS ["DEVELOPMENT OPERATIONS OS — implementation and technical proof"]
+      P["Engineering plan<br/>dependencies · workstreams · gates"] --> W["Implementation<br/>code · data · infrastructure · docs"]
+      W --> V["Independent verification<br/>reproduce claims · change nothing"]
+    end
+
+    B2["Sealed result<br/>revision · evidence · SHA-256"]
+    Q["Product QA and readiness<br/>validate outcome · preserve evidence"]
+    G2{"Human gate<br/>accept / release / deploy?"}
+
+    H --> CT
+    CT --> H
+    CT --> S
+    C --> G1
+    G1 -->|approved| B1
+    B1 --> P
+    V --> B2
+    B2 --> Q
+    Q --> G2
+    G2 -->|decision recorded| CT
+    G2 -.->|corrective loop| I
+
+    classDef human fill:#FFF1C7,stroke:#B7791F,color:#34230A,stroke-width:2px;
+    classDef tower fill:#F1E8FF,stroke:#7C3AED,color:#2E1065,stroke-width:2px;
+    classDef product fill:#E8F1FF,stroke:#3973B7,color:#102A43;
+    classDef engineering fill:#F4F0E5,stroke:#8A7442,color:#332B1B;
+    classDef contract fill:#E7F7EF,stroke:#27845A,color:#123E2C,stroke-width:2px;
+    classDef gate fill:#FFF4E5,stroke:#D97706,color:#4A2B08,stroke-width:2px;
+
+    class H human;
+    class CT tower;
+    class S,D,I,C,Q product;
+    class P,W,V engineering;
+    class B1,B2 contract;
+    class G1,G2 gate;

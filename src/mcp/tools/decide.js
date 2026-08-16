@@ -3,6 +3,17 @@ import { decideApproval, loadApprovals } from "../../runtime/approvals.js";
 import { ToolFailure } from "../authority.js";
 import { untrusted, untrustedList } from "../untrusted.js";
 
+const DIALOG_DECISIONS = Object.freeze({
+  "تأیید — ادامه طبق گزینه انتخاب‌شده": "approved",
+  "رد — هیچ‌کدام از گزینه‌ها مناسب نیست": "rejected",
+  "تعویق — فعلاً تصمیم نمی‌گیرم": "deferred"
+});
+
+const GENERIC_RATIONALES = new Set([
+  "agree", "agreed", "i agree", "approve", "approved", "yes", "ok", "okay", "go", "go ahead",
+  "تایید", "تأیید", "موافقم", "قبول", "بله", "اوکی", "باشه", "انجام شود", "ادامه بده"
+]);
+
 /**
  * Record the product owner's disposition on a pending human gate.
  *
@@ -25,6 +36,11 @@ export async function decide(context, args = {}) {
         gate: request.gate,
         options: request.options ?? ["approved", "rejected"],
         recommendedOption: request.recommendedOption ?? null,
+        recommendationRationale: untrusted(request.recommendationRationale, { source: "approval", id: request.requestId }),
+        optionImpacts: Object.fromEntries(Object.entries(request.optionImpacts ?? {}).map(([option, impact]) => [
+          option,
+          untrusted(impact, { source: "approval", id: request.requestId })
+        ])),
         willAsk: offeredOptions(request).binary
           ? ["decision", "actorId", "rationale", "conditions"]
           : ["decision", "selectedOption", "actorId", "rationale", "conditions"],
@@ -43,6 +59,20 @@ export async function decide(context, args = {}) {
   const collected = args.source === "panel"
     ? composed(args, config, request)
     : await collectDisposition(context, config, request, args);
+
+  if (collected.deferred) {
+    return {
+      structuredContent: {
+        applied: false,
+        pending: true,
+        deferred: true,
+        requestId: request.requestId,
+        taskId: request.taskId,
+        gate: request.gate
+      },
+      text: "تصمیم به زمان دیگری موکول شد. هیچ تأیید یا ردی ثبت نشد و دروازه همچنان باز است."
+    };
+  }
 
   // The disposition is settled before any lock is taken. Holding a write lease across a dialog that
   // waits on a person would block every other local surface for as long as they take to answer.
@@ -130,6 +160,13 @@ async function collectDisposition(context, config, request, args) {
   if (args.dialogUnavailable === true) {
     return { ...relayed(args, request), dialogFailed: true };
   }
+  if (hasExplicitDecisionPayload(args)) {
+    throw new ToolFailure("DECISION_SOURCE_CONFLICT", [
+      "این درخواست هم پاسخ از پیش‌پرشده دارد و هم می‌خواهد فرم انسانی را باز کند؛ هیچ‌کدام ثبت نشد.",
+      "برای فرم انسانی، فقط requestId، decisionToken و apply را بفرستید تا خود مالک انتخاب کند.",
+      "پاسخ صریح عامل هرگز نباید بی‌صدا با پاسخ فرم جایگزین شود یا بر آن غلبه کند."
+    ].join(" "));
+  }
   try {
     return await elicit(context, config, request);
   } catch (error) {
@@ -142,6 +179,11 @@ async function collectDisposition(context, config, request, args) {
   }
 }
 
+function hasExplicitDecisionPayload(args) {
+  return ["decision", "selectedOption", "actorId", "rationale", "conditions"]
+    .some((key) => Object.prototype.hasOwnProperty.call(args, key));
+}
+
 /** A gate that offered real options asks which one, not just whether. */
 function offeredOptions(request) {
   const options = request.options ?? ["approved", "rejected"];
@@ -151,21 +193,45 @@ function offeredOptions(request) {
 
 async function elicit(context, config, request) {
   const { options, binary } = offeredOptions(request);
+  const recommendation = request.recommendedOption ?? null;
   const properties = {
-    decision: { type: "string", enum: ["approved", "rejected"], title: "Disposition" },
-    actorId: { type: "string", title: "Deciding actor", default: config.project.humanAuthorityActorId },
-    rationale: { type: "string", title: "Rationale", minLength: 1, maxLength: 2000 },
-    conditions: { type: "string", title: "Conditions, one per line (optional)", maxLength: 2000 }
+    decision: {
+      type: "string",
+      enum: Object.keys(DIALOG_DECISIONS),
+      title: "تصمیم شما — تأیید، رد/هیچ‌کدام، یا تصمیم‌گیری در آینده"
+    },
+    actorId: {
+      type: "string",
+      title: "شناسه تصمیم‌گیرنده — مقدار پیش‌فرض را تغییر ندهید",
+      default: config.project.humanAuthorityActorId
+    },
+    rationale: {
+      type: "string",
+      title: "توضیح شما — چرا این تصمیم را گرفتید؟ اگر هیچ گزینه‌ای مناسب نیست، پیشنهاد خودتان را اینجا بنویسید",
+      minLength: 2,
+      maxLength: 2000
+    },
+    conditions: {
+      type: "string",
+      title: "شرط‌های اجرای تصمیم — اختیاری؛ هر شرط در یک خط",
+      maxLength: 2000
+    }
   };
   if (!binary) {
-    properties.selectedOption = { type: "string", enum: options, title: "Which option" };
+    properties.selectedOption = {
+      type: "string",
+      enum: options,
+      title: recommendation
+        ? `انتخاب مسیر — پیشنهاد سیستم: ${recommendation}`
+        : "انتخاب مسیر — یکی از گزینه‌های زیر"
+    };
   }
   const response = await context.elicit({
-    message: `Gate "${request.gate}" on task ${request.taskId}. ${String(request.question ?? "Approve or reject?").slice(0, 400)}`,
+    message: decisionMessage(request, options),
     requestedSchema: {
       type: "object",
       properties,
-      required: binary ? ["decision", "actorId", "rationale"] : ["decision", "selectedOption", "actorId", "rationale"]
+      required: ["decision", "actorId", "rationale"]
     }
   }).catch((error) => {
     // A host that declares elicitation and then fails to deliver it leaves the gate unanswerable
@@ -178,15 +244,17 @@ async function elicit(context, config, request) {
     throw new ToolFailure("ELICITATION_DECLINED", `The product owner ${response?.action === "decline" ? "declined" : "cancelled"} the dialog. Nothing was recorded. If they meant to decide and the dialog was in the way, the control tower panel takes the same decision without one.`);
   }
   const content = response.content ?? {};
-  if (!["approved", "rejected"].includes(content.decision) || typeof content.rationale !== "string" || content.rationale.trim() === "") {
+  const decision = DIALOG_DECISIONS[content.decision];
+  if (decision === "deferred") return { deferred: true };
+  if (!["approved", "rejected"].includes(decision) || !meaningfulRationale(content.rationale)) {
     throw new ToolFailure("ELICITATION_DECLINED", "The dialog returned an incomplete disposition. Nothing was recorded.");
   }
-  if (!binary && !options.includes(content.selectedOption)) {
+  if (!binary && decision === "approved" && !options.includes(content.selectedOption)) {
     throw new ToolFailure("ELICITATION_DECLINED", `The dialog returned no choice among ${options.join(", ")}. Nothing was recorded.`);
   }
   return {
-    decision: content.decision,
-    selectedOption: binary ? null : content.selectedOption,
+    decision,
+    selectedOption: binary || decision === "rejected" ? null : content.selectedOption,
     conditions: splitConditions(content.conditions),
     actorId: String(content.actorId ?? config.project.humanAuthorityActorId),
     rationale: content.rationale.trim().slice(0, 2000),
@@ -194,9 +262,46 @@ async function elicit(context, config, request) {
   };
 }
 
+function decisionMessage(request, options) {
+  const context = String(request.context ?? "").trim();
+  const impacts = request.optionImpacts ?? {};
+  const optionLines = options.map((option, index) => {
+    const recommended = request.recommendedOption === option ? " — پیشنهاد سیستم" : "";
+    const impact = impacts[option] ? `\n   اثر انتخاب: ${impacts[option]}` : "";
+    return `${index + 1}) ${option}${recommended}${impact}`;
+  });
+  const rationale = String(request.recommendationRationale ?? "").trim();
+  return [
+    "تصمیم انسانی لازم است — هیچ اقدامی بدون انتخاب صریح شما انجام نمی‌شود.",
+    `تسک: ${request.taskId} | دروازه: ${request.gate}`,
+    "",
+    "چرا این پنجره باز شده؟",
+    context || "این تسک به نقطه‌ای رسیده که ادامه مسیر به اختیار مالک محصول نیاز دارد.",
+    "",
+    "سؤال تصمیم:",
+    String(request.question ?? "این مسیر تأیید شود یا رد؟").slice(0, 400),
+    "",
+    "گزینه‌ها و اثرشان:",
+    ...optionLines,
+    ...(request.recommendedOption ? ["", `پیشنهاد سیستم: ${request.recommendedOption}`, `دلیل پیشنهاد: ${rationale || "برای این پیشنهاد هنوز دلیل مستقلی در پرونده ثبت نشده؛ پیش از تأیید، شواهد و ریسک‌های زیر را در نظر بگیرید."}`] : []),
+    ...((request.risks ?? []).length ? ["", "ریسک‌های ثبت‌شده:", ...(request.risks ?? []).slice(0, 5).map((risk) => `• ${risk}`)] : []),
+    "",
+    "اگر هیچ گزینه‌ای مناسب نیست، «رد — هیچ‌کدام» را انتخاب کنید و مسیر پیشنهادی خودتان را در بخش توضیح بنویسید.",
+    "اگر هنوز آماده تصمیم نیستید، «تعویق» را انتخاب کنید؛ در این حالت هیچ چیزی ثبت نمی‌شود.",
+    "متن‌هایی مثل «I agree»، «تأیید» یا «اوکی» دلیل تصمیم محسوب نمی‌شوند."
+  ].join("\n").slice(0, 5000);
+}
+
 /** The dialog takes conditions as free text because a host's schema has no repeatable field. */
 function splitConditions(value) {
   return String(value ?? "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean).slice(0, 20);
+}
+
+function meaningfulRationale(value) {
+  const rationale = String(value ?? "").trim();
+  if (rationale.length < 5) return false;
+  const normalized = rationale.toLocaleLowerCase("fa-IR").replace(/[.!؟،,;:\s]+/g, " ").trim();
+  return !GENERIC_RATIONALES.has(normalized);
 }
 
 /**
@@ -216,16 +321,16 @@ function composed(args, config, request) {
     throw new ToolFailure("ELICITATION_DECLINED", `Gate "${request.gate}" needs an explicit approved or rejected disposition.`);
   }
   const rationale = String(args.rationale ?? "").trim();
-  if (rationale === "") {
-    throw new ToolFailure("ELICITATION_DECLINED", "A disposition without a rationale is not a durable decision. Write why.");
+  if (!meaningfulRationale(rationale)) {
+    throw new ToolFailure("ELICITATION_DECLINED", "A generic acknowledgement is not a durable rationale. Explain why, name a condition, or write the alternative you want.");
   }
   const { options, binary } = offeredOptions(request);
-  if (!binary && !options.includes(args.selectedOption)) {
+  if (!binary && args.decision === "approved" && !options.includes(args.selectedOption)) {
     throw new ToolFailure("ELICITATION_DECLINED", `Gate "${request.gate}" offered ${options.join(", ")}. The panel must send back which one the owner picked.`);
   }
   return {
     decision: args.decision,
-    selectedOption: binary ? null : args.selectedOption,
+    selectedOption: binary || args.decision === "rejected" ? null : args.selectedOption,
     conditions: Array.isArray(args.conditions) ? args.conditions : [],
     actorId: String(args.actorId ?? config.project.humanAuthorityActorId),
     rationale: rationale.slice(0, 2000),
@@ -239,13 +344,13 @@ function composed(args, config, request) {
  */
 function relayed(args, request) {
   const { options, binary } = offeredOptions(request);
-  if (!binary && !options.includes(args.selectedOption)) {
+  if (!binary && args.decision === "approved" && !options.includes(args.selectedOption)) {
     throw new ToolFailure(
       "ELICITATION_UNAVAILABLE",
       `Gate "${request.gate}" asked the product owner to choose between ${options.join(", ")}. Ask them, and pass back the option they named as selectedOption.`
     );
   }
-  if (!["approved", "rejected"].includes(args.decision) || !args.actorId || !String(args.rationale ?? "").trim()) {
+  if (!["approved", "rejected"].includes(args.decision) || !args.actorId || !meaningfulRationale(args.rationale)) {
     throw new ToolFailure(
       "ELICITATION_UNAVAILABLE",
       [
@@ -258,7 +363,7 @@ function relayed(args, request) {
   }
   return {
     decision: args.decision,
-    selectedOption: binary ? null : args.selectedOption,
+    selectedOption: binary || args.decision === "rejected" ? null : args.selectedOption,
     conditions: Array.isArray(args.conditions) ? args.conditions : [],
     actorId: String(args.actorId),
     rationale: String(args.rationale).trim().slice(0, 2000),

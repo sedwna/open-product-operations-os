@@ -1,0 +1,17 @@
+flowchart LR
+    M["Owner-authored manifest"] --> W["Bounded mechanical write"]
+    W --> R["Complete read-back receipt"]
+    R --> E["Reproducible evidence"]
+    E --> V["Independent verifier"]
+    V -->|PASS| N["Readiness recalculated"]
+    V -->|EVIDENCE GAP| F["Owner-scoped corrective task"]
+    V -->|CONTROL FAILURE| F
+
+    classDef author fill:#E8F1FF,stroke:#3973B7,color:#102A43;
+    classDef write fill:#FFF4E5,stroke:#D97706,color:#4A2B08;
+    classDef proof fill:#E7F7EF,stroke:#27845A,color:#123E2C;
+    classDef verify fill:#F1E8FF,stroke:#7C3AED,color:#2E1065;
+    class M author;
+    class W,F write;
+    class R,E,N proof;
+    class V verify;

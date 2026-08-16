@@ -180,6 +180,11 @@ export async function pendingDecisions(context, { limit = 10 } = {}) {
     context: untrusted(request.context, { source: "approval", id: request.requestId }),
     options: request.options,
     recommendedOption: request.recommendedOption,
+    recommendationRationale: untrusted(request.recommendationRationale, { source: "approval", id: request.requestId }),
+    optionImpacts: Object.fromEntries(Object.entries(request.optionImpacts ?? {}).map(([option, impact]) => [
+      option,
+      untrusted(impact, { source: "approval", id: request.requestId })
+    ])),
     risks: untrustedList(request.risks, { source: "approval", id: request.requestId }),
     evidenceRefs: (request.evidenceRefs ?? []).slice(0, 20),
     requestedAt: request.requestedAt,

@@ -36,53 +36,11 @@ not merely a prompt to write code. A signal becomes researched intent, an approv
 contract, independently verified engineering work, product evidence, and finally a human-controlled
 release decision.
 
-```mermaid
-flowchart LR
-    H["🙋 Human product owner<br/>direction · trade-offs · acceptance"]
-    CT["🗼 Control Tower<br/>shows state · routes work · asks decisions"]
-
-    subgraph POS ["PRODUCT OPERATIONS OS — meaning and acceptance"]
-      direction LR
-      S["Signal<br/>idea · feedback · incident"] --> D["Discovery<br/>evidence · unknowns"]
-      D --> I["Product intent<br/>journey · issue · priority"]
-      I --> C["Delivery contract<br/>testable acceptance criteria"]
-    end
-
-    G1{"Human gate<br/>send to engineering?"}
-    B1["🔐 Sealed request<br/>schema · revision · SHA-256"]
-
-    subgraph DOS ["DEVELOPMENT OPERATIONS OS — implementation and technical proof"]
-      direction LR
-      P["Engineering plan<br/>dependencies · workstreams · gates"] --> W["Implementation<br/>code · data · infrastructure · docs"]
-      W --> V["Independent verification<br/>reproduce claims · change nothing"]
-    end
-
-    B2["🔐 Sealed result<br/>revision · evidence · SHA-256"]
-    Q["Product QA & readiness<br/>validate outcome · preserve evidence"]
-    G2{"Human gate<br/>accept / release / deploy?"}
-
-    H <--> CT
-    CT --> S
-    C --> G1
-    G1 -->|approved| B1 --> P
-    V --> B2 --> Q --> G2
-    G2 -->|decision recorded| CT
-    G2 -.->|corrective loop| I
-
-    classDef human fill:#FFF1C7,stroke:#B7791F,color:#34230A,stroke-width:2px;
-    classDef tower fill:#F1E8FF,stroke:#7C3AED,color:#2E1065,stroke-width:2px;
-    classDef product fill:#E8F1FF,stroke:#3973B7,color:#102A43;
-    classDef engineering fill:#F4F0E5,stroke:#8A7442,color:#332B1B;
-    classDef contract fill:#E7F7EF,stroke:#27845A,color:#123E2C,stroke-width:2px;
-    classDef gate fill:#FFF4E5,stroke:#D97706,color:#4A2B08,stroke-width:2px;
-
-    class H human;
-    class CT tower;
-    class S,D,I,C,Q product;
-    class P,W,V engineering;
-    class B1,B2 contract;
-    class G1,G2 gate;
-```
+<div align="center">
+  <img src=".github/assets/diagrams/system-overview.svg" alt="The complete Product Operations and Development Operations lifecycle" width="100%">
+  <br>
+  <sub><a href=".github/diagrams/system-overview.mmd">Mermaid source</a></sub>
+</div>
 
 The loop is deliberately split:
 
@@ -132,26 +90,11 @@ lifecycle. Steps only open when their dependencies and required gates are satisf
 | 12 | Product QA, controlled write, independent verification, and readiness run | Product evidence and readiness record | Product owners and verifier |
 | 13 | Release, production, or corrective-loop decisions are recorded | Human acceptance or a new corrective event | Human product owner |
 
-```mermaid
-stateDiagram-v2
-    [*] --> Intake
-    Intake --> Discovery
-    Discovery --> ProductDecision
-    ProductDecision --> Contract: approved
-    ProductDecision --> Discovery: revise / reject
-    Contract --> EngineeringGate
-    EngineeringGate --> Engineering: approved
-    EngineeringGate --> Contract: conditions / reject
-    Engineering --> TechnicalVerification
-    TechnicalVerification --> ProductQA: pass + sealed result
-    TechnicalVerification --> Engineering: evidence gap / control failure
-    ProductQA --> ProductVerification
-    ProductVerification --> Readiness: pass
-    ProductVerification --> Contract: corrective task
-    Readiness --> ReleaseDecision
-    ReleaseDecision --> [*]: accepted / released
-    ReleaseDecision --> Contract: hold / revise
-```
+<div align="center">
+  <img src=".github/assets/diagrams/event-lifecycle.svg" alt="State transitions for one governed product event" width="88%">
+  <br>
+  <sub><a href=".github/diagrams/event-lifecycle.mmd">Mermaid source</a></sub>
+</div>
 
 ---
 
@@ -161,30 +104,11 @@ The product side owns **meaning**. It turns uncertain input into a product decis
 that another organisation can implement without guessing. After engineering returns, it validates
 the user-visible outcome without rewriting engineering's factual claims.
 
-```mermaid
-flowchart TB
-    A["1 · Intake & triage<br/>What happened, and where did it come from?"]
-    B["2 · Discovery<br/>What do we know, assume, and still need to learn?"]
-    C["3 · Direction<br/>Which option does the owner choose, and why?"]
-    D["4 · Product definition<br/>Topology · journeys · issue · priority"]
-    E["5 · Delivery contract<br/>Scope · acceptance · write boundary"]
-    F["6 · Pre-build controls<br/>Validation design · risk & logic audit"]
-    G{"7 · Human crossing gate"}
-    H["8 · Engineering hand-off<br/>Sealed request and receipt"]
-    I["9 · Return path<br/>QA · controlled write · independent verification"]
-    J["10 · Readiness & release<br/>Human acceptance where required"]
-
-    A --> B --> C --> D --> E --> F --> G --> H
-    H -.->|verified engineering result| I --> J
-    I -.->|evidence gap| E
-
-    classDef product fill:#E8F1FF,stroke:#3973B7,color:#102A43;
-    classDef gate fill:#FFF1C7,stroke:#B7791F,color:#34230A,stroke-width:2px;
-    classDef return fill:#E7F7EF,stroke:#27845A,color:#123E2C;
-    class A,B,C,D,E,F product;
-    class G gate;
-    class H,I,J return;
-```
+<div align="center">
+  <img src=".github/assets/diagrams/product-operations.svg" alt="Product Operations OS from intake through readiness" width="76%">
+  <br>
+  <sub><a href=".github/diagrams/product-operations.mmd">Mermaid source</a></sub>
+</div>
 
 ### What the product side produces
 
@@ -231,36 +155,11 @@ repository**. The application keeps its own Git history and remains the source o
 Development OS adds a namespaced engineering model; it does not copy the product workbook into the
 application or take over product authority.
 
-```mermaid
-flowchart LR
-    R["Sealed product request"] --> C["Engineering coordination"]
-    C --> A["Architecture & mandatory gates"]
-    A --> X{"Impact-aware plan"}
-
-    X --> FE["Frontend / clients"]
-    X --> BE["Backend / API"]
-    X --> DB["Data / database / AI"]
-    X --> PL["Platform / security / SRE"]
-    X --> DX["Delivery / SEO / docs"]
-
-    FE --> QE["Quality engineering"]
-    BE --> QE
-    DB --> QE
-    PL --> QE
-    DX --> QE
-
-    QE --> IV["Independent engineering verification"]
-    IV --> RS["Sealed engineering result"]
-
-    classDef contract fill:#E7F7EF,stroke:#27845A,color:#123E2C,stroke-width:2px;
-    classDef core fill:#F4F0E5,stroke:#8A7442,color:#332B1B;
-    classDef specialist fill:#F8F5EC,stroke:#AA8F55,color:#332B1B;
-    classDef verify fill:#F1E8FF,stroke:#7C3AED,color:#2E1065,stroke-width:2px;
-    class R,RS contract;
-    class C,A,X,QE core;
-    class FE,BE,DB,PL,DX specialist;
-    class IV verify;
-```
+<div align="center">
+  <img src=".github/assets/diagrams/development-operations.svg" alt="Development Operations OS engineering workstreams and verification" width="100%">
+  <br>
+  <sub><a href=".github/diagrams/development-operations.mmd">Mermaid source</a></sub>
+</div>
 
 The planner always includes coordination, architecture, security, quality engineering,
 documentation, and independent verification. It adds specialist workstreams and gates from the
@@ -332,30 +231,11 @@ immutable, schema-validated, content-addressed contracts.
 Both crossings emit durable receipts. Replaying the same contract is idempotent; changing content
 under an existing identity is rejected rather than silently rewriting history.
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Owner as Human owner
-    participant Tower as Control Tower
-    participant Product as Product OS
-    participant Bridge as Contract boundary
-    participant Dev as Development OS
-    participant Verify as Independent verifier
-
-    Owner->>Tower: Idea, feedback, finding, or incident
-    Tower->>Product: Route role-owned product work
-    Product-->>Owner: Decision brief with options and consequences
-    Owner->>Product: Attributed disposition and conditions
-    Product->>Bridge: Approved request + revision + digest
-    Bridge->>Dev: Validate and import exact request
-    Dev->>Dev: Plan and execute bounded workstreams
-    Dev->>Verify: Exact revision + evidence
-    Verify-->>Dev: Reproduced verdict; no edits
-    Dev->>Bridge: Sealed result + evidence + digest
-    Bridge->>Product: Validate, store, and route downstream QA
-    Product-->>Owner: Readiness, risks, and release choice
-    Owner->>Product: Accept, hold, reject, or add conditions
-```
+<div align="center">
+  <img src=".github/assets/diagrams/contract-boundary.svg" alt="Contract exchange sequence between the human owner, Product OS, and Development OS" width="100%">
+  <br>
+  <sub><a href=".github/diagrams/contract-boundary.mmd">Mermaid source</a></sub>
+</div>
 
 ## Human gates: where the system must stop
 
@@ -382,25 +262,11 @@ to the in-conversation panel/composer and records only what the owner actually s
 
 Completion is a chain of proofs, not a status label.
 
-```mermaid
-flowchart LR
-    M["Owner-authored manifest"] --> W["Bounded mechanical write"]
-    W --> R["Complete read-back receipt"]
-    R --> E["Reproducible evidence"]
-    E --> V["Independent verifier"]
-    V -->|PASS| N["Readiness recalculated"]
-    V -->|EVIDENCE GAP| F["Owner-scoped corrective task"]
-    V -->|CONTROL FAILURE| F
-
-    classDef author fill:#E8F1FF,stroke:#3973B7,color:#102A43;
-    classDef write fill:#FFF4E5,stroke:#D97706,color:#4A2B08;
-    classDef proof fill:#E7F7EF,stroke:#27845A,color:#123E2C;
-    classDef verify fill:#F1E8FF,stroke:#7C3AED,color:#2E1065;
-    class M author;
-    class W,F write;
-    class R,E,N proof;
-    class V verify;
-```
+<div align="center">
+  <img src=".github/assets/diagrams/evidence-chain.svg" alt="Evidence, controlled write, and independent verification chain" width="100%">
+  <br>
+  <sub><a href=".github/diagrams/evidence-chain.mmd">Mermaid source</a></sub>
+</div>
 
 Six invariants hold the chain together:
 

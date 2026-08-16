@@ -74,7 +74,7 @@ test("a product owner can go from an empty workspace to a decided gate", async (
 
   const live = connect(root, ["--allow-writes"], {
     onElicit: () => ({ action: "accept", content: {
-      decision: "approved",
+      decision: "تأیید — ادامه طبق گزینه انتخاب‌شده",
       actorId: "human-product-owner",
       rationale: "Coordinators asked for it directly, and the migration is bounded."
     } })

@@ -153,6 +153,8 @@ async function controlTowerCycle(
           context: proposal?.context ?? task.title,
           options: proposal?.options ?? ["approved", "rejected"],
           recommendedOption: proposal?.recommendedOption ?? null,
+          recommendationRationale: proposal?.recommendationRationale ?? "",
+          optionImpacts: proposal?.optionImpacts ?? {},
           evidenceRefs: task.evidence_refs ? task.evidence_refs.split("|").filter(Boolean) : [],
           risks: task.blocked_reason ? [task.blocked_reason] : []
         }, { dryRun: false, now });
@@ -190,6 +192,11 @@ async function controlTowerCycle(
           ].join(" "),
           options: ["approved", "rejected"],
           recommendedOption: "approved",
+          recommendationRationale: "This is the bounded route that creates the missing engineering boundary without authorising implementation or production writes.",
+          optionImpacts: {
+            approved: "Create and connect the separate application repository; implementation remains separately gated.",
+            rejected: `Leave ${task.task_id} waiting before engineering.`
+          },
           risks: [
             "An application repository someone already relies on gains a new namespace; on a fresh repository this is inert.",
             "No code is written and no agent is authorised by this decision alone."

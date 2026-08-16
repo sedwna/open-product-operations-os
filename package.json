@@ -40,6 +40,7 @@
     "START-HERE.md"
   ],
   "scripts": {
+    "docs:diagrams": "node scripts/render-readme-diagrams.mjs",
     "prepack": "node scripts/pack-lifecycle.mjs prepare",
     "postpack": "node scripts/pack-lifecycle.mjs restore",
     "test": "node --test",

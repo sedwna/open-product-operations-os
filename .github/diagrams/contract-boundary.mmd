@@ -1,0 +1,22 @@
+sequenceDiagram
+    autonumber
+    actor Owner as Human owner
+    participant Tower as Control Tower
+    participant Product as Product OS
+    participant Bridge as Contract boundary
+    participant Dev as Development OS
+    participant Verify as Independent verifier
+
+    Owner->>Tower: Idea, feedback, finding, or incident
+    Tower->>Product: Route role-owned product work
+    Product-->>Owner: Decision brief with options and consequences
+    Owner->>Product: Attributed disposition and conditions
+    Product->>Bridge: Approved request + revision + digest
+    Bridge->>Dev: Validate and import exact request
+    Dev->>Dev: Plan and execute bounded workstreams
+    Dev->>Verify: Exact revision + evidence
+    Verify-->>Dev: Reproduced verdict without edits
+    Dev->>Bridge: Sealed result + evidence + digest
+    Bridge->>Product: Validate, store, and route downstream QA
+    Product-->>Owner: Readiness, risks, and release choice
+    Owner->>Product: Accept, hold, reject, or add conditions

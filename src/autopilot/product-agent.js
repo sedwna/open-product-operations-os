@@ -91,6 +91,11 @@ export function validateSubmittedProductResult(result, task, role) {
         && !result.decisionProposal.options.includes(result.decisionProposal.recommendedOption)) {
       throw new Error("decisionProposal.recommendedOption must be one of decisionProposal.options.");
     }
+    const unknownImpactOptions = Object.keys(result.decisionProposal.optionImpacts ?? {})
+      .filter((option) => !result.decisionProposal.options.includes(option));
+    if (unknownImpactOptions.length > 0) {
+      throw new Error(`decisionProposal.optionImpacts names options that were not offered: ${unknownImpactOptions.join(", ")}.`);
+    }
   }
   assertNoCredentialMaterial("Product agent result", result);
 }
@@ -156,7 +161,7 @@ export function buildProductAgentRequest(
         ? { writeBoundaryRule: "Set writeBoundary.allowedPaths to the directories this delivery actually needs. It may only narrow what the application already allows, never widen it, and naming a path outside that policy is refused rather than ignored. Leaving it unset hands the whole policy to engineering." }
         : {}),
       ...(role.id === "RB-02"
-        ? { decisionProposalRule: "When the owner must choose a product direction, return decisionProposal with the exact question and mutually exclusive options they should see. A recommendation may name one of those options, but this role never records the owner's choice." }
+        ? { decisionProposalRule: "When the owner must choose a product direction, return decisionProposal with the exact question and mutually exclusive options they should see. Include optionImpacts for every option; if recommending one, include recommendationRationale. This role prepares the choice and never records the owner's decision." }
         : {}),
       // Analysis that never reaches the record is analysis nobody can find later. A role that owns
       // a tab is the only role that can put rows in it, and its card is the moment to do so.

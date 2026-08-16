@@ -1,0 +1,23 @@
+flowchart TB
+    A["1 · Intake and triage<br/>What happened, and where did it come from?"]
+    B["2 · Discovery<br/>What do we know, assume, and still need to learn?"]
+    C["3 · Direction<br/>Which option does the owner choose, and why?"]
+    D["4 · Product definition<br/>Topology · journeys · issue · priority"]
+    E["5 · Delivery contract<br/>Scope · acceptance · write boundary"]
+    F["6 · Pre-build controls<br/>Validation design · risk and logic audit"]
+    G{"7 · Human crossing gate"}
+    H["8 · Engineering hand-off<br/>Sealed request and receipt"]
+    I["9 · Return path<br/>QA · controlled write · independent verification"]
+    J["10 · Readiness and release<br/>Human acceptance where required"]
+
+    A --> B --> C --> D --> E --> F --> G --> H
+    H -.->|verified engineering result| I
+    I --> J
+    I -.->|evidence gap| E
+
+    classDef product fill:#E8F1FF,stroke:#3973B7,color:#102A43;
+    classDef gate fill:#FFF1C7,stroke:#B7791F,color:#34230A,stroke-width:2px;
+    classDef return fill:#E7F7EF,stroke:#27845A,color:#123E2C;
+    class A,B,C,D,E,F product;
+    class G gate;
+    class H,I,J return;

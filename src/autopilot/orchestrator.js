@@ -338,6 +338,8 @@ async function refreshCycleRouting(root, now) {
       context: proposal?.context ?? task.title,
       options: proposal?.options ?? ["approved", "rejected"],
       recommendedOption: proposal?.recommendedOption ?? null,
+      recommendationRationale: proposal?.recommendationRationale ?? "",
+      optionImpacts: proposal?.optionImpacts ?? {},
       evidenceRefs: task.evidence_refs ? task.evidence_refs.split("|").filter(Boolean) : [],
       risks: task.blocked_reason ? [task.blocked_reason] : []
     }, { dryRun: false, now });

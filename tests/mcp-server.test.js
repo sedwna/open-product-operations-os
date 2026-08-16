@@ -582,13 +582,13 @@ test("decide plans without opening a dialog and without recording anything", asy
   assert.equal(stored.status, "pending", "planning must not record a disposition");
 });
 
-test("decide records what the person entered, not what the model supplied", async (t) => {
+test("a caller cannot prefill a decision and have the dialog silently override it", async (t) => {
   let seen = null;
   const { root, handlers } = await handlersFor(t, {
     allowWrites: true,
     elicit: async (params) => {
       seen = params;
-      return { action: "accept", content: { decision: "rejected", actorId: "human-product-owner", rationale: "Not before the migration story is written." } };
+      return { action: "accept", content: { decision: "رد — هیچ‌کدام از گزینه‌ها مناسب نیست", actorId: "human-product-owner", rationale: "Not before the migration story is written." } };
     }
   });
   const gate = await openGate(root, handlers);
@@ -605,20 +605,51 @@ test("decide records what the person entered, not what the model supplied", asyn
       rationale: "Looks fine to me."
     }
   });
-  assert.equal(result.isError, false, result.content[0].text);
-  assert.equal(result.structuredContent.decision, "rejected", "the dialog answer wins over the tool arguments");
-  assert.equal(result.structuredContent.attribution, "human_entered");
-  assert.match(result.structuredContent.rationale, /migration story/);
-  assert.doesNotMatch(result.structuredContent.rationale, /Looks fine to me/);
-
-  assert.deepEqual(seen.requestedSchema.required, ["decision", "actorId", "rationale"]);
-  assert.deepEqual(seen.requestedSchema.properties.decision.enum, ["approved", "rejected"]);
-  assert.match(seen.message, /product_direction_or_priority/);
+  assert.equal(result.isError, true);
+  assert.equal(result.structuredContent.code, "DECISION_SOURCE_CONFLICT");
+  assert.equal(seen, null, "an ambiguous call must fail before putting a second answer in front of the owner");
 
   const stored = (await loadApprovals(root)).requests.find((item) => item.requestId === gate.requestId);
-  assert.equal(stored.status, "rejected");
-  assert.equal(stored.decidedByActorId, "human-product-owner");
-  assert.equal(stored.attribution, "human_entered", "the canonical record must preserve how the owner's words arrived");
+  assert.equal(stored.status, "pending");
+});
+
+test("the dialog explains the decision in Persian and records only what the owner enters there", async (t) => {
+  let seen = null;
+  const { root, handlers } = await handlersFor(t, {
+    allowWrites: true,
+    elicit: async (params) => {
+      seen = params;
+      return { action: "accept", content: {
+        decision: "رد — هیچ‌کدام از گزینه‌ها مناسب نیست",
+        actorId: "human-product-owner",
+        rationale: "پیش از تصمیم، داستان مهاجرت باید نوشته شود."
+      } };
+    }
+  });
+  const gate = await openGate(root, handlers, {
+    context: "این انتخاب زمان‌بندی همهٔ خلاصه‌های بعدی را تعیین می‌کند.",
+    recommendedOption: "approved",
+    recommendationRationale: "این مسیر کمترین تغییر را برای کاربران فعلی دارد.",
+    optionImpacts: { approved: "کار ادامه پیدا می‌کند.", rejected: "تسک در این دروازه می‌ماند." }
+  });
+  const result = await handlers["tools/call"]({
+    name: "product_ops_decide",
+    arguments: { requestId: gate.requestId, decisionToken: gate.decisionToken, apply: true }
+  });
+  assert.equal(result.isError, false, result.content[0].text);
+  assert.equal(result.structuredContent.decision, "rejected");
+  assert.equal(result.structuredContent.attribution, "human_entered");
+  assert.deepEqual(seen.requestedSchema.required, ["decision", "actorId", "rationale"]);
+  assert.deepEqual(seen.requestedSchema.properties.decision.enum, [
+    "تأیید — ادامه طبق گزینه انتخاب‌شده",
+    "رد — هیچ‌کدام از گزینه‌ها مناسب نیست",
+    "تعویق — فعلاً تصمیم نمی‌گیرم"
+  ]);
+  assert.match(seen.message, /چرا این پنجره باز شده/);
+  assert.match(seen.message, /پیشنهاد سیستم: approved/);
+  assert.match(seen.message, /کمترین تغییر/);
+  assert.match(seen.message, /اثر انتخاب/);
+  assert.match(seen.message, /I agree/);
 });
 
 /**
@@ -635,7 +666,7 @@ test("a gate that offered real options refuses a bare yes", async (t) => {
       return {
         action: "accept",
         content: {
-          decision: "approved",
+          decision: "تأیید — ادامه طبق گزینه انتخاب‌شده",
           selectedOption: "per_workspace",
           actorId: "human-product-owner",
           rationale: "Teams in different timezones already asked for it.",
@@ -654,7 +685,7 @@ test("a gate that offered real options refuses a bare yes", async (t) => {
     arguments: { requestId: gate.requestId, decisionToken: gate.decisionToken, apply: true }
   });
   assert.equal(result.isError, false, result.content[0].text);
-  assert.deepEqual(seen.requestedSchema.required, ["decision", "selectedOption", "actorId", "rationale"]);
+  assert.deepEqual(seen.requestedSchema.required, ["decision", "actorId", "rationale"]);
   assert.deepEqual(seen.requestedSchema.properties.selectedOption.enum, ["per_workspace", "one_global_default", "rejected"]);
 
   const stored = (await loadApprovals(root)).requests.find((item) => item.requestId === gate.requestId);
@@ -670,7 +701,7 @@ test("an option the gate never offered is not recordable", async (t) => {
     allowWrites: true,
     elicit: async () => ({
       action: "accept",
-      content: { decision: "approved", selectedOption: "something_else", actorId: "human-product-owner", rationale: "Because." }
+      content: { decision: "تأیید — ادامه طبق گزینه انتخاب‌شده", selectedOption: "something_else", actorId: "human-product-owner", rationale: "Because this is required." }
     })
   });
   const gate = await openGate(root, handlers, { options: ["per_workspace", "one_global_default", "rejected"] });
@@ -689,7 +720,7 @@ test("a plain approve-or-reject gate still takes a plain answer", async (t) => {
     allowWrites: true,
     elicit: async () => ({
       action: "accept",
-      content: { decision: "approved", actorId: "human-product-owner", rationale: "Go." }
+      content: { decision: "تأیید — ادامه طبق گزینه انتخاب‌شده", actorId: "human-product-owner", rationale: "The bounded plan is ready." }
     })
   });
   const gate = await openGate(root, handlers);
@@ -700,6 +731,43 @@ test("a plain approve-or-reject gate still takes a plain answer", async (t) => {
   assert.equal(result.isError, false, result.content[0].text);
   assert.equal(result.structuredContent.selectedOption, null);
   assert.deepEqual(result.structuredContent.conditions, []);
+});
+
+test("deferring or typing a generic acknowledgement never records approval", async (t) => {
+  await t.test("defer", async (inner) => {
+    const { root, handlers } = await handlersFor(inner, {
+      allowWrites: true,
+      elicit: async () => ({ action: "accept", content: {
+        decision: "تعویق — فعلاً تصمیم نمی‌گیرم",
+        actorId: "human-product-owner",
+        rationale: "بعداً با داده‌های بیشتر تصمیم می‌گیرم."
+      } })
+    });
+    const gate = await openGate(root, handlers);
+    const result = await handlers["tools/call"]({ name: "product_ops_decide", arguments: {
+      requestId: gate.requestId, decisionToken: gate.decisionToken, apply: true
+    } });
+    assert.equal(result.isError, false);
+    assert.equal(result.structuredContent.deferred, true);
+    assert.equal((await loadApprovals(root)).requests[0].status, "pending");
+  });
+
+  await t.test("generic rationale", async (inner) => {
+    const { root, handlers } = await handlersFor(inner, {
+      allowWrites: true,
+      elicit: async () => ({ action: "accept", content: {
+        decision: "تأیید — ادامه طبق گزینه انتخاب‌شده",
+        actorId: "human-product-owner",
+        rationale: "I agree"
+      } })
+    });
+    const gate = await openGate(root, handlers);
+    const result = await handlers["tools/call"]({ name: "product_ops_decide", arguments: {
+      requestId: gate.requestId, decisionToken: gate.decisionToken, apply: true
+    } });
+    assert.equal(result.isError, true);
+    assert.equal((await loadApprovals(root)).requests[0].status, "pending");
+  });
 });
 
 /**
@@ -725,7 +793,10 @@ test("a declared dialog that never appears does not trap the owner's decision", 
   };
 
   // Supplying the words is not enough on its own: a dialog is tried, and a refusal is an answer.
-  const refused = await handlers["tools/call"]({ name: "product_ops_decide", arguments: owned });
+  const refused = await handlers["tools/call"]({
+    name: "product_ops_decide",
+    arguments: { requestId: gate.requestId, decisionToken: gate.decisionToken, apply: true }
+  });
   assert.equal(refused.isError, true);
   assert.equal(asked, 1, "the dialog must actually be attempted before it is written off");
   assert.match(refused.content[0].text, /that is their answer and it stands/i);
@@ -772,13 +843,12 @@ test("the dialog bypass carries the owner's words and never supplies them", asyn
   }
 });
 
-test("a working dialog still wins over anything the caller supplied", async (t) => {
-  // The fallback exists for a dialog that cannot run, not for one whose answer is inconvenient.
+test("a working dialog rejects a second answer supplied by the caller", async (t) => {
   const { root, handlers } = await handlersFor(t, {
     allowWrites: true,
     elicit: async () => ({
       action: "accept",
-      content: { decision: "rejected", actorId: "human-product-owner", rationale: "Not until the migration story is written." }
+      content: { decision: "رد — هیچ‌کدام از گزینه‌ها مناسب نیست", actorId: "human-product-owner", rationale: "Not until the migration story is written." }
     })
   });
   const gate = await openGate(root, handlers);
@@ -794,12 +864,12 @@ test("a working dialog still wins over anything the caller supplied", async (t) 
       rationale: "Looks fine to me."
     }
   });
-  assert.equal(result.structuredContent.decision, "rejected");
-  assert.equal(result.structuredContent.attribution, "human_entered");
+  assert.equal(result.isError, true);
+  assert.equal(result.structuredContent.code, "DECISION_SOURCE_CONFLICT");
 });
 
 test("declining, cancelling, or answering incompletely records nothing", async (t) => {
-  for (const response of [{ action: "decline" }, { action: "cancel" }, { action: "accept", content: { decision: "approved" } }]) {
+  for (const response of [{ action: "decline" }, { action: "cancel" }, { action: "accept", content: { decision: "تأیید — ادامه طبق گزینه انتخاب‌شده" } }]) {
     await t.test(`response ${JSON.stringify(response)}`, async (inner) => {
       const { root, handlers } = await handlersFor(inner, { allowWrites: true, elicit: async () => response });
       const gate = await openGate(root, handlers);
@@ -901,7 +971,7 @@ test("the server-side authority check survives every host path", async (t) => {
 });
 
 test("a decision needs the issued token and an open gate", async (t) => {
-  const accept = async () => ({ action: "accept", content: { decision: "approved", actorId: "human-product-owner", rationale: "Agreed." } });
+  const accept = async () => ({ action: "accept", content: { decision: "تأیید — ادامه طبق گزینه انتخاب‌شده", actorId: "human-product-owner", rationale: "The bounded plan can continue." } });
   const { root, handlers } = await handlersFor(t, { allowWrites: true, elicit: accept });
   const gate = await openGate(root, handlers);
   const call = (args) => handlers["tools/call"]({ name: "product_ops_decide", arguments: args });
