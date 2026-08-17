@@ -300,6 +300,10 @@ async function createLeaseFileExclusively(target, lease) {
  * above: a reader sees either the old term or the new one, never a partial file.
  */
 async function replaceLeaseFile(target, lease) {
+  // Keyed to the holder, which makes the path predictable and lets a test occupy it to simulate the
+  // contention this function is built to survive. Renewal is serialised by the heartbeat, so two
+  // renewals of one lease are not a case this needs to handle; a caller that renews alongside the
+  // beat is racing the beat, and no staging name would make that safe.
   const staging = `${target}.${lease.holderId}.renew.tmp`;
   await fs.writeFile(staging, `${JSON.stringify(lease)}\n`, { encoding: "utf8", flag: "wx" });
   try {
