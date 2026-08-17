@@ -460,14 +460,21 @@ function narrowedAllowedPaths(contract, developmentConfig, approval) {
   });
   const requested = unique([...declared, ...additions]);
   if (requested.length === 0) return policy;
-  const outside = requested.filter((candidate) => !policy.includes(candidate));
+  // Nesting matters in one direction only. A delivery asking for `src/admin` where the policy allows
+  // `src` is narrowing, which is the whole point of letting it declare a boundary — exact string
+  // matching refused that. One asking for `prisma` where the policy allows `prisma/schema.prisma` is
+  // widening, and is still refused. The test is whether each requested path sits inside something
+  // the policy already permits.
+  const within = (candidate) => policy.some((allowed) => candidate === allowed || candidate.startsWith(`${allowed}/`));
+  const outside = requested.filter((candidate) => !within(candidate));
   if (outside.length > 0) {
     throw new Error(
       `The delivery contract asks to write in ${outside.join(", ")}, which the application's own write policy does not allow. `
-      + "A delivery may narrow that policy and never widen it; change the application policy deliberately, or drop the paths."
+      + `The policy permits ${policy.join(", ")}. A delivery may narrow that policy and never widen it; `
+      + "name the narrower paths it actually needs, or change the application policy deliberately."
     );
   }
-  return policy.filter((candidate) => requested.includes(candidate));
+  return requested;
 }
 
 const MINIMUM_IMPACTS = ["architecture", "documentation"];
@@ -725,9 +732,21 @@ async function commitCycle(root, cycleId) {
   return gitRevision(root);
 }
 
+/**
+ * The application's own files must be clean before a cycle branches. Its own files, not the whole
+ * worktree: a product workspace that shares a Git root with the application — which the setup allows
+ * even though the two are meant to have separate histories — writes a control-plane receipt on every
+ * scheduling pass, so a whole-worktree check could never pass. It failed on files that engineering
+ * will never touch, and reported it as the application being dirty.
+ */
 async function assertCleanGit(root) {
-  const status = (await runGit(root, ["status", "--porcelain"])).stdout.trim();
-  if (status) throw new Error("Autopilot requires a clean application Git worktree before starting a cycle.");
+  const status = (await runGit(root, ["status", "--porcelain", "--", "."])).stdout.trim();
+  if (!status) return;
+  const files = status.split("\n").map((line) => line.slice(3)).filter(Boolean);
+  throw new Error(
+    `The application repository has uncommitted changes in ${files.length} file(s) and a cycle branches from a clean tree: ${files.slice(0, 5).join(", ")}`
+    + (files.length > 5 ? `, and ${files.length - 5} more.` : ".")
+  );
 }
 
 async function gitRevision(root) {
