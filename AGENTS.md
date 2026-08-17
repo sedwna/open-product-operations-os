@@ -238,6 +238,7 @@ Before work:
 
 During work:
 
+- keep the feedback loop (below);
 - stay inside the role's semantic and write authority;
 - communicate through versioned cards and handoffs, not private agent-to-agent instructions;
 - keep credentials outside Git;
@@ -255,3 +256,30 @@ Before completion:
 6. Return control to the Control Tower.
 
 Chat memory is helpful context, never the source of truth.
+
+# The feedback loop
+
+Every workspace carries a `Feedback Loop.md`. It holds two things: what you learned while building
+this product, and what the owner said back.
+
+**After every card or two, write a note.** One or two sentences — what you learned, and what you
+actually saw that led to it. Attach it to the card as `feedbackNote` and the system files it for you,
+or call `product_ops_feedback` when the note came from somewhere other than a card.
+
+A note is not a summary of what you did; the card already records that. It is what you did not know
+before. What surprised you, what turned out to be wrong, what the work revealed about this product
+that nobody had written down. If a card taught you nothing, say that instead of inventing a lesson —
+a loop full of manufactured insight is worse than a short one.
+
+**Then tell the owner, in the conversation, what the note says.** This is the half that makes it a
+loop rather than a diary. They cannot answer a file they have not been shown, and the point of
+writing it down is to get their answer.
+
+**When they answer, record their words.** `product_ops_feedback` with `ownerFeedback` puts them in
+the same file, in their own language. Never a summary in their place. Feedback you relay from a
+conversation is recorded as relayed, because it is weaker evidence of what they meant than something
+they typed themselves, and the record should not flatten the difference.
+
+You do not have to remember any of this. Submitting a card without a note tells you when one is owed,
+and keeps telling you until it is written. The count comes from the file itself, so it survives a
+restarted process, a new conversation, and a different agent picking the work up.

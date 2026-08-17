@@ -110,6 +110,7 @@ test("a read-only server registers exactly the read tier and no mutation path", 
     "product_ops_evidence",
     "product_ops_panel",
     "product_ops_pending_decisions",
+    "product_ops_read_feedback",
     "product_ops_readiness",
     "product_ops_status",
     "product_ops_task",
@@ -165,7 +166,7 @@ test("exercising every read path leaves the project byte-identical", async (t) =
 test("write authorisation registers the plan and human-authority tiers, and nothing beyond them", async (t) => {
   const { handlers } = await handlersFor(t, { allowWrites: true });
   const { tools } = handlers["tools/list"]();
-  assert.equal(tools.length, 20);
+  assert.equal(tools.length, 22);
 
   const byTier = (tier) => TOOL_DEFINITIONS.filter((definition) => definition.tier === tier).map((definition) => definition.name).sort();
   assert.deepEqual(byTier("plan"), [
@@ -173,6 +174,7 @@ test("write authorisation registers the plan and human-authority tiers, and noth
     "product_ops_amend_engineering_evidence",
     "product_ops_autopilot",
     "product_ops_close_delivery",
+    "product_ops_feedback",
     "product_ops_intake",
     "product_ops_next_engineering_work",
     "product_ops_next_work",
@@ -182,8 +184,8 @@ test("write authorisation registers the plan and human-authority tiers, and noth
     "product_ops_submit_work"
   ]);
   assert.deepEqual(byTier("human_authority"), ["product_ops_decide"]);
-  assert.equal(byTier("read").length, 8);
-  assert.equal(TOOL_DEFINITIONS.length, 20, "every definition belongs to a known tier");
+  assert.equal(byTier("read").length, 9);
+  assert.equal(TOOL_DEFINITIONS.length, 22, "every definition belongs to a known tier");
 
   for (const tool of tools.filter((entry) => entry.annotations.readOnlyHint === false)) {
     assert.equal(tool.annotations.destructiveHint, false, `${tool.name} must not be marked destructive`);

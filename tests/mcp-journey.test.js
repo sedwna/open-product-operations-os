@@ -67,7 +67,7 @@ test("a product owner can go from an empty workspace to a decided gate", async (
   t.after(() => readOnly.close());
   await readOnly.call("initialize", { protocolVersion: "2026-07-28", capabilities: {} });
   const readTools = (await readOnly.call("tools/list")).result.tools;
-  assert.equal(readTools.length, 8);
+  assert.equal(readTools.length, 9);
   assert.equal(readTools.some((tool) => /intake|operate|autopilot|decide/.test(tool.name)), false,
     "a read-only session must not even be offered a write");
   readOnly.close();

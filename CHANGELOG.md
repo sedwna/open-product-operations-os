@@ -4,6 +4,17 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+- Added the feedback loop. Every workspace now carries a `Feedback Loop.md` holding what the system
+  learned while building the product and what its owner said back, newest first. A role attaches a
+  note to its result as `feedbackNote` and the system files it; `product_ops_feedback` records a note
+  or the owner's own words outside a card, and `product_ops_read_feedback` reads the loop back with
+  whether a note is currently owed. The owing is counted from the record itself — each note carries
+  the completed-card count at the time it was written — so an agent that submits a card without a
+  note is told one is owed, and keeps being told until it is written. That count survives a restarted
+  process, a new conversation and a different agent picking the work up, which is the difference
+  between a habit and a mechanism. Owner feedback relayed from a conversation is recorded as relayed
+  rather than as something the owner typed, because the two are not equally strong evidence of what
+  they meant.
 - Made retained MCP processes fail closed after the package source changes. `product_ops_status`
   now reports a path-free startup/current source fingerprint and `restartRequired`; read tools stay
   available for diagnosis, while every planning or write tool returns

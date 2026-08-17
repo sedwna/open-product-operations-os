@@ -8,6 +8,7 @@ import {
 } from "./constants.js";
 import { getCanonicalWorkbookSheets, readPackagedFile, readPackagedTemplate } from "./catalog.js";
 import { parseCsv, stringifyCsv } from "./csv.js";
+import { FEEDBACK_FILE, buildFeedbackLoopFile } from "./runtime/feedback-loop.js";
 
 const GOVERNANCE_TEMPLATES = [
   ["governance/governance.md", "governance/governance.md"],
@@ -75,6 +76,10 @@ export function buildProjectFiles(config, { includeConfig = false } = {}) {
     "events/EVT-00000000-001-first-discovery.md",
     buildFirstDiscoveryEvent(config)
   );
+
+  // Created empty at init so the loop has somewhere to go from the first card, rather than being
+  // created by whichever role happens to reflect first.
+  files.set(FEEDBACK_FILE, buildFeedbackLoopFile());
 
   for (const [file, content] of buildWorkbookFiles(config)) {
     files.set(file, content);

@@ -3,6 +3,7 @@ import * as read from "./tools/read.js";
 import * as write from "./tools/write.js";
 import * as work from "./tools/work.js";
 import * as engineering from "./tools/engineering.js";
+import * as feedback from "./tools/feedback.js";
 import { adopt } from "./tools/adopt.js";
 import { decide } from "./tools/decide.js";
 import { PANEL_URI } from "./app/panel.js";
@@ -374,6 +375,58 @@ export const TOOL_DEFINITIONS = Object.freeze([
       additionalProperties: false
     },
     handler: decide
+  },
+  {
+    name: "product_ops_read_feedback",
+    title: "Read the feedback loop",
+    description:
+      "Read what this workspace has learned and what its owner said back, newest first, and whether a note is currently owed.",
+    tier: TIERS.READ,
+    annotations: READ_ONLY_ANNOTATIONS,
+    inputSchema: {
+      type: "object",
+      properties: {
+        limit: { type: "integer", minimum: 1, maximum: 20, default: 3, description: "How many recent entries to return." }
+      },
+      additionalProperties: false
+    },
+    handler: feedback.readFeedback
+  },
+  {
+    name: "product_ops_feedback",
+    title: "Record a feedback-loop entry",
+    description:
+      "Append what you learned to the feedback loop, or record the owner's feedback in their own words. Write a note after every card or two, then tell the owner what it says in the conversation — a note filed and not said is half a loop.",
+    tier: TIERS.PLAN,
+    annotations: PLAN_ANNOTATIONS,
+    inputSchema: {
+      type: "object",
+      properties: {
+        learned: {
+          type: "string",
+          minLength: 3,
+          maxLength: 500,
+          description:
+            "One or two sentences on what you learned. What surprised you, what turned out to be wrong, what the work revealed about this product — not a summary of what you did."
+        },
+        saw: {
+          type: "string",
+          maxLength: 500,
+          description: "What you actually observed that led to it. Concrete, and only what you saw rather than what you infer."
+        },
+        ownerFeedback: {
+          type: "string",
+          maxLength: 2000,
+          description:
+            "What the owner said, in their own words. Never a summary in their place; it is recorded as relayed from the conversation, which is weaker evidence than something they typed themselves."
+        },
+        taskId: { type: "string", maxLength: 40, description: "The card this came out of, when it came out of one." },
+        roleId: { type: "string", maxLength: 40, description: "The role whose work produced it." },
+        apply: { type: "boolean", default: false, description: "Write the entry. Omitted or false returns the plan only." }
+      },
+      additionalProperties: false
+    },
+    handler: feedback.recordFeedback
   }
 ]);
 

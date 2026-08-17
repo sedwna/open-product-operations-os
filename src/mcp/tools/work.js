@@ -11,6 +11,7 @@ import { loadProductRuns, persistCycleReport, writeCycleReport } from "../../aut
 import { materializeCycleWorkbook } from "../../autopilot/workbook.js";
 import { withControlPlaneLease } from "../../runtime/control-plane-lease.js";
 import { commitRoleRecords, validateRoleRecords } from "../../runtime/coordination-record.js";
+import { describeOwedNote, noteStatus, recordNote } from "../../runtime/feedback-loop.js";
 import { readAutomationLink } from "../../autopilot/state.js";
 import { synchronizeDecisionApprovals } from "../../runtime/decision-projection.js";
 import { describeTeam } from "../app/teams.js";
@@ -168,6 +169,35 @@ function ownerDecisions(requests, task, tasks) {
     }));
 }
 
+/**
+ * File the note a role attached to its result, or report that one is owed.
+ *
+ * Never fatal. A card is sealed and its rows are committed by the time this runs, and losing a
+ * reflection is not worth undoing accepted work — so a failure here degrades to silence about the
+ * loop rather than to a failed submission.
+ */
+async function recordSubmittedNote(root, task, role, result) {
+  const note = result?.feedbackNote;
+  try {
+    const board = await loadTaskboard(root);
+    const completed = board.records.filter((record) => record.status === "done").length;
+    if (note?.learned) {
+      const filed = await recordNote(root, {
+        taskId: task.task_id,
+        roleId: role.id,
+        roleName: describeTeam(role.id, "product").name,
+        learned: note.learned,
+        saw: note.saw,
+        cardsDone: completed
+      });
+      return { recorded: true, file: filed.file, owedMessage: null };
+    }
+    return { recorded: false, owedMessage: describeOwedNote(await noteStatus(root, completed)) };
+  } catch {
+    return { recorded: false, owedMessage: null };
+  }
+}
+
 export async function submitWork(context, args = {}) {
   if (args.apply === true && context.allowWrites !== true) {
     throw new ToolFailure("APPLY_NOT_AUTHORIZED", "This server was started without write authorisation.");
@@ -302,6 +332,17 @@ export async function submitWork(context, args = {}) {
     lines.push("The setup discovery sample is done. It is an orientation card, not a product event, so no cycle report was created.");
   } else {
     lines.push(`Every card for ${task.event_id} is done. The cycle report is written and the canonical workbook now carries this event's record: ${closure.workbook.written} row(s) across ${closure.workbook.sheets} tab(s).`);
+  }
+
+  // The feedback loop, kept by the record rather than by an agent's memory. A note supplied with the
+  // result is filed here; when none was supplied and enough cards have finished, the response says so
+  // on every submission until one is written. An agent that forgets is reminded by the system it is
+  // driving, not by the owner noticing the silence.
+  const feedback = await recordSubmittedNote(context.root, task, role, recorded.result);
+  if (feedback.recorded) {
+    lines.push(`Filed a feedback-loop note for this card in ${feedback.file}. Tell the owner what it says in this conversation so they can answer it.`);
+  } else if (feedback.owedMessage) {
+    lines.push(feedback.owedMessage);
   }
 
   return {

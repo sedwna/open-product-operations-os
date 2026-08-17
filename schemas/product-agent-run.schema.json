@@ -51,6 +51,25 @@
     },
     "evidence": { "$ref": "#/$defs/strings" },
     "knownRisks": { "$ref": "#/$defs/strings" },
+    "feedbackNote": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "One or two sentences on what this card taught, filed into the workspace feedback loop and reported to the product owner. Optional per card; the control surface says so when one is owed.",
+      "required": ["learned"],
+      "properties": {
+        "learned": {
+          "type": "string",
+          "minLength": 3,
+          "maxLength": 500,
+          "description": "What you learned. What surprised you, what turned out to be wrong, what this revealed about the product — not a summary of what you did."
+        },
+        "saw": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "What you actually observed that led to it, rather than what you infer from it."
+        }
+      }
+    },
     "decisionProposal": {
       "type": "object",
       "additionalProperties": false,
