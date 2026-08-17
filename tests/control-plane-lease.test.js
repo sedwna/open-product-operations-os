@@ -17,6 +17,7 @@ import {
   controlPlaneSurface,
   readControlPlaneLease,
   releaseControlPlaneLease,
+  renewControlPlaneLease,
   setControlPlaneSurface,
   withControlPlaneLease
 } from "../src/runtime/control-plane-lease.js";
@@ -269,19 +270,21 @@ test("a holder whose work outlives the term keeps the lease", async (t) => {
   const root = await makeProject(t);
   let contender = null;
 
-  // This one needs real time, which makes it the only lease test that can be pushed around by the
-  // machine. Expiry is wall-clock but the beat is a timer, so under load the two drift apart: with
-  // the rest of the suite running, a six-second sleep here has been measured taking fifteen, and a
-  // term that a stall can outrun measures the scheduler rather than the lease. The term is
-  // therefore long in absolute terms, and the hold is still more than two of them. The mechanism
-  // underneath — a late beat that cannot write — is pinned deterministically by the test below,
-  // with no waiting at all.
-  await withControlPlaneLease(root, async () => {
-    await new Promise((resolve) => { setTimeout(resolve, 12_000); });
+  // Sleeping through several terms and hoping the timer keeps up measures the machine, not the
+  // lease: expiry is wall-clock while the beat is a timer, so under the full suite the two drift
+  // apart and this failed while passing alone. Widening the term twice did not fix that, because
+  // nothing bounds the drift. Renewal is therefore driven here the way a healthy beat drives it —
+  // explicitly, once per term — so the property under test is what renewal does, not whether a
+  // loaded event loop got to it in time.
+  await withControlPlaneLease(root, async (lease) => {
+    const term = 300;
+    for (let beat = 0; beat < 4; beat += 1) {
+      assert.equal(await renewControlPlaneLease(lease, { ttlMs: term }), "renewed", `beat ${beat + 1} must extend the term`);
+    }
     contender = await acquireControlPlaneLease(root, { waitMs: 0 })
-      .then((lease) => releaseControlPlaneLease(lease).then(() => "acquired"))
+      .then((taken) => releaseControlPlaneLease(taken).then(() => "acquired"))
       .catch((error) => error.code);
-  }, { ttlMs: 5_000 });
+  }, { ttlMs: 300 });
 
   assert.equal(contender, "WRITE_LEASE_HELD", "a beating holder must not be displaced mid-write");
   assert.equal(await readControlPlaneLease(root), null, "the holder must still release its own lease");

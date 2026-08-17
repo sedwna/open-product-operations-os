@@ -6,6 +6,7 @@ import { readPackagedFile } from "../catalog.js";
 import { validatePublishedSchema } from "../schema-validation.js";
 import { assertNoCredentialMaterial } from "../runtime/security.js";
 import { canonicalRecordKeys } from "../workbook-contract.js";
+import { RECORD_ID_PATTERNS } from "../validation.js";
 
 const PRODUCT_RUN_ROOT = ".product-ops/runtime/autopilot/product-runs";
 const PRODUCT_AGENT_RESULT_CONTRACT = JSON.parse(readPackagedFile("schemas/product-agent-run.schema.json"));
@@ -167,8 +168,16 @@ export function buildProductAgentRequest(
       // a tab is the only role that can put rows in it, and its card is the moment to do so.
       ...(ownedSheets.length > 0
         ? {
-            canonicalRecordRule: `This role owns ${ownedSheets.map((sheet) => sheet.key).join(", ")}. Put what you produced into canonicalRecords as rows on those tabs — one entry per row, with the tab's own key field in "key" and the rest in "fields". Writing a tab you do not own, a column that does not exist, or a protected field is refused, and the card does not complete.`,
-            ownedRecords: ownedSheets.map((sheet) => ({ sheet: sheet.key, keyFields: canonicalRecordKeys(sheet.key), columns: sheet.columns }))
+            canonicalRecordRule: `This role owns ${ownedSheets.map((sheet) => sheet.key).join(", ")}. Put what you produced into canonicalRecords as rows on those tabs — one entry per row, with the tab's own key field in "key" and the rest in "fields". Writing a tab you do not own, a column that does not exist, a protected field, or an identifier that does not match the tab's pattern is refused, and the card does not complete.`,
+            // The identifier pattern travels with the tab. Leaving it out meant a producer learned it
+            // by having a finished record rejected, which spends a whole round trip teaching
+            // something the brief already knew.
+            ownedRecords: ownedSheets.map((sheet) => ({
+              sheet: sheet.key,
+              keyFields: canonicalRecordKeys(sheet.key),
+              identifierPattern: RECORD_ID_PATTERNS[sheet.key]?.source ?? null,
+              columns: sheet.columns
+            }))
           }
         : {})
     }

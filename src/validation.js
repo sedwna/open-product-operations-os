@@ -41,7 +41,7 @@ const PRIVATE_PATH_PATTERNS = [
   /\/home\/[^/\s]+\//
 ];
 
-const RECORD_ID_PATTERNS = {
+export const RECORD_ID_PATTERNS = {
   events: /^EVT-[0-9]{8}-[0-9]{3}$/,
   idea_inbox: /^IDEA-[0-9]{8}-[0-9]{3}$/,
   discovery: /^DSC-[0-9]{8}-[0-9]{3}$/,
