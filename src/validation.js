@@ -306,6 +306,11 @@ function validateCrossWorkbookRelationships(contents, config, errors) {
   }
   for (const [kind, rows] of [["issue", sheetRecords("issues")], ["delivery ticket", sheetRecords("delivery_tickets")]]) {
     for (const row of rows) {
+      // `needs_decision` explicitly means product direction is unresolved. It is the waiting state,
+      // not an advanced claim, so requiring a decision_id here makes the only honest pre-decision
+      // representation invalid. Every later issue state, and every delivery ticket, still fails
+      // closed without an approved attributed decision.
+      if (kind === "issue" && row.status === "needs_decision") continue;
       const decision = decisions.get(row.decision_id);
       if (!row.decision_id || !decision || decision.status !== "approved" || !decision.decision_maker_actor_id) {
         errors.push(`Workbook ${kind} "${row.issue_id ?? row.ticket_id}" advanced without an approved attributed decision.`);

@@ -26,18 +26,15 @@ export async function materializeCycleWorkbook(root, config, { cycleId, intake, 
   const risk = intake.priority === "P0" ? "critical" : intake.priority === "P1" ? "high" : "medium";
   const timestamp = now.toISOString();
   const approvals = await loadApprovals(root);
-  const directionTask = tasks.find((task) => task.human_gate === "product_direction_or_priority");
-  const directionApproval = approvals.requests.find((item) =>
-    item.taskId === directionTask?.task_id && item.gate === "product_direction_or_priority" && item.status === "approved"
-  );
-  if (!directionApproval?.decidedByActorId || !directionApproval.decidedAt) {
-    throw new Error("Cycle workbook cannot advance to issue and delivery records without an attributed product-direction decision.");
+  const cycleApproval = selectCycleApproval(config, tasks, approvals.requests);
+  if (!cycleApproval) {
+    throw new Error("Cycle workbook cannot advance to issue and delivery records without an attributed product-direction decision, or an attributed development-export approval when the event route has no product-direction gate.");
   }
   const approvalBytes = await fs.readFile(path.join(root, APPROVAL_STORE_FILE));
   const humanAuthorityEvidence = [{
     kind: "human_approval",
     reference: APPROVAL_STORE_FILE,
-    recordId: directionApproval.requestId,
+    recordId: cycleApproval.requestId,
     sha256: sha256(approvalBytes)
   }];
   const acceptance = unique(runs.flatMap((candidate) => candidate.acceptanceCriteria ?? []).map((item) => item.statement)).join(" | ");
@@ -69,17 +66,17 @@ export async function materializeCycleWorkbook(root, config, { cycleId, intake, 
     }),
     record("decision_log", { decision_id: ids.decision }, {
       event_id: intake.eventId,
-      title: directionApproval.question,
+      title: cycleApproval.question,
       status: "approved",
-      selected_option: directionApproval.selectedOption ?? directionApproval.status,
-      decision_maker_actor_id: directionApproval.decidedByActorId,
-      decided_at: directionApproval.decidedAt,
+      selected_option: cycleApproval.selectedOption ?? cycleApproval.status,
+      decision_maker_actor_id: cycleApproval.decidedByActorId,
+      decided_at: cycleApproval.decidedAt,
       brief_reference: APPROVAL_STORE_FILE,
-      evidence_refs: directionApproval.requestId,
+      evidence_refs: cycleApproval.requestId,
       risk_acceptance: "none",
       conditions: unique([
-        directionApproval.rationale,
-        ...(directionApproval.conditions ?? [])
+        cycleApproval.rationale,
+        ...(cycleApproval.conditions ?? [])
       ]).join(" | ") || "Bounded local autonomous delivery only; production remains separately gated.",
       resulting_task_ids: tasks.map((task) => task.task_id).join("|")
     }, { authorityEvidence: humanAuthorityEvidence }),
@@ -209,6 +206,29 @@ export async function materializeCycleWorkbook(root, config, { cycleId, intake, 
     receipts,
     existing
   };
+}
+
+/**
+ * Pick the human approval that authorizes this event's canonical issue and delivery lineage.
+ *
+ * A route that asks for product direction must use that decision. Finding and incident routes
+ * deliberately omit that gate; for those routes only, the attributed approval that crossed the
+ * same event's development card is the bounded fallback. No approval from another event, another
+ * kind of gate, or another actor can be borrowed to make closure look authorized.
+ */
+export function selectCycleApproval(config, tasks, requests) {
+  const attributedApprovalFor = (task, gate) => requests.find((request) =>
+    request.taskId === task?.task_id
+      && request.gate === gate
+      && request.status === "approved"
+      && request.decidedByActorId === config.project.humanAuthorityActorId
+      && request.decidedAt
+  );
+  const directionTask = tasks.find((task) => task.human_gate === "product_direction_or_priority");
+  if (directionTask) return attributedApprovalFor(directionTask, "product_direction_or_priority") ?? null;
+
+  const developmentTask = tasks.find((task) => task.owner_role === config.separation.developmentRole);
+  return attributedApprovalFor(developmentTask, "development-export") ?? null;
 }
 
 async function canonicalRecordExists(root, config, item) {

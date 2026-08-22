@@ -279,6 +279,34 @@ test("validate rejects undefined status transitions", async (t) => {
   );
 });
 
+test("an issue waiting on a decision is valid until it advances", async (t) => {
+  const { target, output } = await initializedProject(t, "issue-needs-decision");
+  const config = await readJson(path.join(target, CONFIG_FILE));
+  const issueFile = path.join(target, "workbook", "10-issues.csv");
+  const rows = parseCsv(await fs.readFile(issueFile, "utf8"));
+  const issue = rows[0].map(() => "");
+  const set = (field, value) => { issue[rows[0].indexOf(field)] = value; };
+  set("issue_id", "ISS-20260823-901");
+  set("event_id", "EVT-20260823-901");
+  set("title", "Waiting for product direction");
+  set("status", "needs_decision");
+  set("priority", "P2");
+  set("risk", "medium");
+  set("owner_role", "RB-05");
+  set("owner_actor_id", config.agents.find((agent) => agent.id === "RB-05").actorId);
+  set("updated_at", "2026-08-23T10:00:00.000Z");
+  rows.push(issue);
+  await fs.writeFile(issueFile, stringifyCsv(rows), "utf8");
+
+  assert.equal(await run(["validate", target], output.io), 0, output.stderr.join("\n"));
+
+  const advancedIssue = [...issue];
+  advancedIssue[rows[0].indexOf("status")] = "validated";
+  await fs.writeFile(issueFile, stringifyCsv([...rows.slice(0, -1), advancedIssue]), "utf8");
+  assert.equal(await run(["validate", target], output.io), 1);
+  assert.match(output.stderr.at(-1), /Workbook issue "ISS-20260823-901" advanced without an approved attributed decision/);
+});
+
 test("validate rejects generated paths that escape the project", async (t) => {
   const { target, output } = await initializedProject(t, "unsafe-path");
   const configPath = path.join(target, CONFIG_FILE);
