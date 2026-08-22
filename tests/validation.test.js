@@ -279,6 +279,18 @@ test("validate rejects undefined status transitions", async (t) => {
   );
 });
 
+test("validate rejects a delivery-contract route without prior product direction", async (t) => {
+  const { target, output } = await initializedProject(t, "ungated-delivery-route");
+  const configPath = path.join(target, CONFIG_FILE);
+  const config = await readJson(configPath);
+  const finding = config.routing.find((route) => route.event === "user_finding");
+  finding.steps.find((step) => step.role === "RB-06").humanGate = "";
+  await writeJson(configPath, config);
+
+  assert.equal(await run(["validate", target], output.io), 1);
+  assert.match(output.stderr.at(-1), /reaches RB-06 without a product_direction_or_priority gate/);
+});
+
 test("an issue waiting on a decision is valid until it advances", async (t) => {
   const { target, output } = await initializedProject(t, "issue-needs-decision");
   const config = await readJson(path.join(target, CONFIG_FILE));

@@ -158,6 +158,11 @@ test("a step that waits on more than one predecessor opens only when all of them
   await runControlTower(target, config, { dryRun: false, now: new Date("2026-08-01T10:02:00Z") });
 
   await complete("Triage finding");
+  const directionRequests = (await loadApprovals(target)).requests.filter((request) =>
+    request.gate === "product_direction_or_priority");
+  assert.equal(directionRequests.length, 1, "a finding asks for product direction before RB-06 can run");
+  const waiting = await runControlTower(target, config, { dryRun: true, now: new Date("2026-08-01T10:03:30Z") });
+  assert.ok(!waiting.actions.some((action) => action.type === "dispatch_task" && action.ownerRole === "RB-06"));
   await complete("Author delivery contract");
   assert.equal(await statusOf("Design validation"), "ready");
   assert.equal(await statusOf("Implement approved delivery"), "ready");
@@ -352,8 +357,8 @@ test("migration upgrades a legacy generated project with a recoverable configura
   legacy.adapters.git.type = "placeholder";
   await writeJson(configPath, legacy);
   const result = await migrateProject(target, legacy, { dryRun: false, now: new Date("2026-08-01T15:00:00Z") });
-  assert.equal(result.toVersion, 3);
-  assert.equal((await readJson(configPath)).operations.modelVersion, 3);
+  assert.equal(result.toVersion, 4);
+  assert.equal((await readJson(configPath)).operations.modelVersion, 4);
   assert.equal((await readJson(configPath)).separation.verificationOfVerifierRole, "RB-08");
   assert.ok((await readJson(configPath)).routing.every((route) => route.steps.length > 0));
   // A route restored from the version-1 gap arrives at the current shape, keys and all.
@@ -396,6 +401,28 @@ test("migration parallelises untouched routes and leaves an edited one exactly a
   assert.equal(await run(["validate", target], output.io), 0);
 });
 
+test("migration adds the required delivery decision to an existing version-3 finding route", async (t) => {
+  const { target, output } = await initializedProject(t, "finding-gate-migration");
+  const configPath = path.join(target, CONFIG_FILE);
+  const legacy = await readJson(configPath);
+  legacy.operations.modelVersion = 3;
+  for (const route of legacy.routing) {
+    for (const step of route.steps ?? []) {
+      if (step.role === "RB-06" && route.event !== "new_idea") step.humanGate = "";
+    }
+  }
+  await writeJson(configPath, legacy);
+
+  const result = await migrateProject(target, legacy, { dryRun: false, now: new Date("2026-08-01T15:10:00Z") });
+  const migrated = await readJson(configPath);
+  assert.ok(result.changes.includes("delivery_contract_direction_gates_added:2"));
+  for (const event of ["user_finding", "delivery_ready_issue"]) {
+    const contract = migrated.routing.find((route) => route.event === event).steps.find((step) => step.role === "RB-06");
+    assert.equal(contract.humanGate, "product_direction_or_priority");
+  }
+  assert.equal(await run(["validate", target], output.io), 0);
+});
+
 test("metrics still produce their local artifact", async (t) => {
   // Covered only by the dashboard test until the dashboard went; the feature outlived it.
   const { target } = await initializedProject(t, "artifacts-product");
@@ -422,13 +449,17 @@ test("an incident is routed as something wrong, not as a new idea", async (t) =>
 
   const rows = parseCsv(await fs.readFile(path.join(target, TASKBOARD_FILE), "utf8"));
   const header = rows[0];
-  const titles = rows.slice(1)
+  const eventTasks = rows.slice(1)
     .filter((row) => row[header.indexOf("event_id")] === "EVT-20260801-001")
-    .map((row) => row[header.indexOf("title")]);
+    .map((row) => Object.fromEntries(header.map((name, index) => [name, row[index]])));
+  const titles = eventTasks.map((task) => task.title);
 
   assert.ok(titles.includes("Triage finding"), `an incident takes the finding route: ${titles.join(", ")}`);
   assert.ok(!titles.includes("Complete discovery"), "and does not go through discovery research first");
   assert.ok(!titles.includes("Prepare decision brief"), "or wait on a decision brief");
+  const contract = eventTasks.find((task) => task.owner_role === "RB-06");
+  assert.equal(contract.human_gate, "product_direction_or_priority", "the incident cannot become a delivery contract without owner direction");
+  assert.equal(eventTasks.filter((task) => task.human_gate === "product_direction_or_priority").length, 1);
 });
 
 test("sealed workstream results override a stale engineering taskboard projection", async (t) => {

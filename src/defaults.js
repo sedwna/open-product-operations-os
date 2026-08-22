@@ -39,7 +39,9 @@ const ROUTES = [
     event: "user_finding", owner: "RB-05", reviewers: ["RB-06", "RB-12"], output: "issues",
     steps: [
       step("RB-05", "Triage finding", { key: "triage", after: [] }),
-      step("RB-06", "Author delivery contract", { key: "contract", after: ["triage"] }),
+      // Triage may conclude that a finding needs product direction. RB-06 cannot turn that
+      // unresolved issue into a canonical delivery ticket until the owner chooses what proceeds.
+      step("RB-06", "Author delivery contract", { key: "contract", after: ["triage"], humanGate: "product_direction_or_priority" }),
       step("RB-07", "Design validation", { key: "validation-design", after: ["contract"] }),
       step("RB-08", "Audit assumptions and edges", { key: "risk", after: ["contract"] }),
       step("RB-13", "Implement approved delivery", { key: "implement", after: ["contract"] }),
@@ -55,7 +57,7 @@ const ROUTES = [
     reviewers: ["RB-07", "RB-13", "RB-12"],
     output: "delivery_tickets",
     steps: [
-      step("RB-06", "Confirm delivery contract", { key: "contract", after: [] }),
+      step("RB-06", "Confirm delivery contract", { key: "contract", after: [], humanGate: "product_direction_or_priority" }),
       step("RB-07", "Design validation", { key: "validation-design", after: ["contract"] }),
       step("RB-08", "Audit assumptions and edges", { key: "risk", after: ["contract"] }),
       step("RB-13", "Implement approved delivery", { key: "implement", after: ["contract"] }),

@@ -4,6 +4,11 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+- Required an attributed product-direction decision before a finding, incident, or delivery-ready
+  issue can reach RB-06 and become a canonical delivery ticket. Finding triage can now prepare the
+  exact owner-facing options and recommendation; engineering-export approval is no longer reused as
+  product direction after the fact. Operating model version 4 upgrades persisted routes through the
+  existing recoverable migration path — see `docs/migration/operating-model-v4.md`.
 - Added the feedback loop. Every workspace now carries a `Feedback Loop.md` holding what the system
   learned while building the product and what its owner said back, newest first. A role attaches a
   note to its result as `feedbackNote` and the system files it; `product_ops_feedback` records a note

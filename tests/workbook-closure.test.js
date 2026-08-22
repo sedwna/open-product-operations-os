@@ -53,21 +53,27 @@ test("cycle closure prefers its product-direction decision over development expo
   );
 });
 
-test("incident closure uses the same event's attributed development-export approval", async (t) => {
+test("incident closure requires its attributed product-direction approval", async (t) => {
   const eventId = "EVT-20260823-102";
   const fixture = await closureFixture(t, "incident-development-export", eventId);
-  const developmentExport = approval(fixture.config, {
-    requestId: "APR-DEVELOPMENT-102",
-    taskId: fixture.tasks[0].task_id,
-    gate: "development-export",
-    question: "Authorize this incident fix to cross into engineering?"
+  const directionTask = {
+    task_id: "WCT-1021",
+    event_id: eventId,
+    owner_role: "RB-06",
+    human_gate: "product_direction_or_priority"
+  };
+  const direction = approval(fixture.config, {
+    requestId: "APR-DIRECTION-102",
+    taskId: directionTask.task_id,
+    gate: "product_direction_or_priority",
+    question: "Which incident repair should proceed?"
   });
-  await writeApprovalStore(fixture.root, [developmentExport]);
+  await writeApprovalStore(fixture.root, [direction]);
 
   const result = await materializeCycleWorkbook(fixture.root, fixture.config, {
     cycleId: `CYCLE-${eventId}`,
     intake: fixture.intake,
-    tasks: fixture.tasks,
+    tasks: [directionTask, ...fixture.tasks],
     runs: fixture.runs,
     now: new Date("2026-08-23T10:10:00.000Z")
   });
@@ -77,7 +83,7 @@ test("incident closure uses the same event's attributed development-export appro
   const decisionRows = rowsToObjects(parseCsv(await fs.readFile(path.join(fixture.root, decisionSheet.file), "utf8"))).records;
   const decision = decisionRows.find((row) => row.event_id === eventId);
   assert.equal(decision.status, "approved");
-  assert.equal(decision.evidence_refs, developmentExport.requestId);
+  assert.equal(decision.evidence_refs, direction.requestId);
   assert.equal(decision.decision_maker_actor_id, fixture.config.project.humanAuthorityActorId);
   const readiness = await workbookRecords(fixture, "readiness");
   const releases = await workbookRecords(fixture, "releases");
@@ -88,13 +94,19 @@ test("incident closure uses the same event's attributed development-export appro
 test("an explicit not-ready assessment remains the only readiness state and creates no release", async (t) => {
   const eventId = "EVT-20260823-104";
   const fixture = await closureFixture(t, "owned-not-ready", eventId);
-  const developmentExport = approval(fixture.config, {
-    requestId: "APR-DEVELOPMENT-104",
-    taskId: fixture.tasks[0].task_id,
-    gate: "development-export",
-    question: "Authorize this incident fix to cross into engineering?"
+  const directionTask = {
+    task_id: "WCT-1040",
+    event_id: eventId,
+    owner_role: "RB-06",
+    human_gate: "product_direction_or_priority"
+  };
+  const direction = approval(fixture.config, {
+    requestId: "APR-DIRECTION-104",
+    taskId: directionTask.task_id,
+    gate: "product_direction_or_priority",
+    question: "Which incident repair should proceed?"
   });
-  await writeApprovalStore(fixture.root, [developmentExport]);
+  await writeApprovalStore(fixture.root, [direction]);
 
   const readinessRun = {
     roleId: "RB-11",
@@ -125,7 +137,7 @@ test("an explicit not-ready assessment remains the only readiness state and crea
   const result = await materializeCycleWorkbook(fixture.root, fixture.config, {
     cycleId: `CYCLE-${eventId}`,
     intake: fixture.intake,
-    tasks: [...fixture.tasks, { task_id: readinessRun.taskId, event_id: eventId, owner_role: "RB-11", human_gate: "" }],
+    tasks: [directionTask, ...fixture.tasks, { task_id: readinessRun.taskId, event_id: eventId, owner_role: "RB-11", human_gate: "" }],
     runs: [...fixture.runs, readinessRun],
     now: new Date("2026-08-23T10:10:00.000Z")
   });
@@ -157,7 +169,7 @@ test("cycle closure still fails closed without an attributed same-event approval
       runs: fixture.runs,
       now: new Date("2026-08-23T10:10:00.000Z")
     }),
-    /without an attributed product-direction decision, or an attributed development-export approval/
+    /without an attributed product-direction decision/
   );
 });
 

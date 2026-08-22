@@ -103,8 +103,8 @@ export function validateSubmittedProductResult(result, task, role) {
   if (result.producerActorId !== role.actorId) mismatches.push("producerActorId");
   if (mismatches.length) throw new Error(`Product agent result mismatches dispatched ${mismatches.join(", ")}.`);
   if (result.decisionProposal) {
-    if (role.id !== "RB-02") {
-      throw new Error("Only the product decision-brief role may prepare a decisionProposal for the product owner.");
+    if (!new Set(["RB-02", "RB-05"]).has(role.id)) {
+      throw new Error("Only the product decision-brief or issue-lifecycle role may prepare a decisionProposal for the product owner.");
     }
     if (result.decisionProposal.recommendedOption
         && !result.decisionProposal.options.includes(result.decisionProposal.recommendedOption)) {
@@ -184,8 +184,8 @@ export function buildProductAgentRequest(
       ...(role.id === "RB-06"
         ? { writeBoundaryRule: "Set writeBoundary.allowedPaths to the directories this delivery actually needs. It may only narrow what the application already allows, never widen it, and naming a path outside that policy is refused rather than ignored. Leaving it unset hands the whole policy to engineering." }
         : {}),
-      ...(role.id === "RB-02"
-        ? { decisionProposalRule: "When the owner must choose a product direction, return decisionProposal with the exact question and mutually exclusive options they should see. Include optionImpacts for every option; if recommending one, include recommendationRationale. This role prepares the choice and never records the owner's decision." }
+      ...(["RB-02", "RB-05"].includes(role.id)
+        ? { decisionProposalRule: `${role.id === "RB-05" ? "When an issue is left at needs_decision" : "When the owner must choose a product direction"}, return decisionProposal with the exact question and mutually exclusive options they should see. Include optionImpacts for every option; if recommending one, include recommendationRationale. This role prepares the choice and never records the owner's decision.` }
         : {}),
       // Analysis that never reaches the record is analysis nobody can find later. A role that owns
       // a tab is the only role that can put rows in it, and its card is the moment to do so.

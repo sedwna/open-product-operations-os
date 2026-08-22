@@ -5,7 +5,7 @@ import { validatePublishedSchema } from "../schema-validation.js";
 const PRODUCT_RUN_ROOT = ".product-ops/runtime/autopilot/product-runs";
 
 /**
- * Recover the exact product-direction question prepared by RB-02.
+ * Recover the exact product-direction question prepared by the preceding product role.
  *
  * The gate sits on the next card, while the options were produced by the completed decision brief.
  * Keeping this lookup at the control-plane boundary prevents a generic approve/reject dialog from
@@ -20,7 +20,7 @@ export async function decisionProposalForGate(root, tasks, gateTask) {
   // actually carries a proposal is the one that prepared it.
   const briefTasks = tasks.filter((candidate) =>
     candidate.event_id === gateTask.event_id
-      && candidate.owner_role === "RB-02"
+      && ["RB-02", "RB-05"].includes(candidate.owner_role)
       && candidate.status === "done").reverse();
 
   for (const briefTask of briefTasks) {

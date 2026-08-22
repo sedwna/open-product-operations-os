@@ -28,7 +28,7 @@ export async function materializeCycleWorkbook(root, config, { cycleId, intake, 
   const approvals = await loadApprovals(root);
   const cycleApproval = selectCycleApproval(config, tasks, approvals.requests);
   if (!cycleApproval) {
-    throw new Error("Cycle workbook cannot advance to issue and delivery records without an attributed product-direction decision, or an attributed development-export approval when the event route has no product-direction gate.");
+    throw new Error("Cycle workbook cannot advance to issue and delivery records without an attributed product-direction decision.");
   }
   const approvalBytes = await fs.readFile(path.join(root, APPROVAL_STORE_FILE));
   const humanAuthorityEvidence = [{
@@ -220,10 +220,9 @@ export async function materializeCycleWorkbook(root, config, { cycleId, intake, 
 /**
  * Pick the human approval that authorizes this event's canonical issue and delivery lineage.
  *
- * A route that asks for product direction must use that decision. Finding and incident routes
- * deliberately omit that gate; for those routes only, the attributed approval that crossed the
- * same event's development card is the bounded fallback. No approval from another event, another
- * kind of gate, or another actor can be borrowed to make closure look authorized.
+ * A canonical delivery ticket must use the product-direction decision from its own event. An
+ * engineering-export approval authorizes a repository crossing; it cannot be borrowed as product
+ * direction after the fact.
  */
 export function selectCycleApproval(config, tasks, requests) {
   const attributedApprovalFor = (task, gate) => requests.find((request) =>
@@ -234,10 +233,7 @@ export function selectCycleApproval(config, tasks, requests) {
       && request.decidedAt
   );
   const directionTask = tasks.find((task) => task.human_gate === "product_direction_or_priority");
-  if (directionTask) return attributedApprovalFor(directionTask, "product_direction_or_priority") ?? null;
-
-  const developmentTask = tasks.find((task) => task.owner_role === config.separation.developmentRole);
-  return attributedApprovalFor(developmentTask, "development-export") ?? null;
+  return attributedApprovalFor(directionTask, "product_direction_or_priority") ?? null;
 }
 
 async function canonicalRecordExists(root, config, item) {

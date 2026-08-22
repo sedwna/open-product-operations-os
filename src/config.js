@@ -167,6 +167,7 @@ export function validateConfigRelationships(config) {
     // A forward or self reference would silently collapse to "wait for the previous step", which
     // routes the work but not the way the route says it does.
     const seenStepKeys = new Set();
+    let hasProductDirection = false;
     for (const [index, step] of (route.steps ?? []).entries()) {
       if (!agentIds.has(step.role)) {
         errors.push(`Route "${route.event}" step ${index + 1} references unknown role "${step.role}".`);
@@ -176,6 +177,10 @@ export function validateConfigRelationships(config) {
         !(canonicalCatalog.human_gates ?? []).includes(step.humanGate)
       ) {
         errors.push(`Route "${route.event}" step ${index + 1} references unknown human gate "${step.humanGate}".`);
+      }
+      if (step.humanGate === "product_direction_or_priority") hasProductDirection = true;
+      if (step.role === "RB-06" && !hasProductDirection) {
+        errors.push(`Route "${route.event}" reaches RB-06 without a product_direction_or_priority gate; a canonical delivery ticket requires an attributed product decision.`);
       }
       for (const dependency of step.after ?? []) {
         if (!seenStepKeys.has(dependency)) {

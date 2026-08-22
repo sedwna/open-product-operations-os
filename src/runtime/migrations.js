@@ -64,6 +64,30 @@ export function migrateConfig(config, defaults = null) {
     }
     changes.push("operating_model_v2_to_v3");
   }
+  if (current < 4) {
+    updated.operations.modelVersion = 4;
+    // A delivery ticket is an assertion of approved product intent. Earlier finding routes could
+    // reach RB-06 with an issue explicitly marked `needs_decision`, then ask only when crossing
+    // into engineering. Put the product decision at the first delivery-contract boundary. This is
+    // an authority invariant, so it also applies to customised routes; their order and content are
+    // otherwise preserved.
+    let gated = 0;
+    updated.routing = updated.routing.map((route) => {
+      let hasProductDirection = false;
+      let changed = false;
+      const steps = (route.steps ?? []).map((step) => {
+        if (step.humanGate === "product_direction_or_priority") hasProductDirection = true;
+        if (step.role !== "RB-06" || hasProductDirection) return step;
+        hasProductDirection = true;
+        changed = true;
+        gated += 1;
+        return { ...step, humanGate: "product_direction_or_priority" };
+      });
+      return changed ? { ...route, steps } : route;
+    });
+    if (gated > 0) changes.push(`delivery_contract_direction_gates_added:${gated}`);
+    changes.push("operating_model_v3_to_v4");
+  }
   const schemaErrors = validateConfig(updated);
   const errors = [...schemaErrors, ...(schemaErrors.length === 0 ? validateConfigRelationships(updated) : [])];
   if (errors.length > 0) throw new Error(`Migrated project configuration is invalid:\n- ${errors.join("\n- ")}`);

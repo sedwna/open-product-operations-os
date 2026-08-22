@@ -5,6 +5,7 @@ import test from "node:test";
 import { initCommand } from "../src/commands/init.js";
 import { loadConfig } from "../src/config.js";
 import { loadTaskboard } from "../src/runtime/taskboard.js";
+import { loadApprovals } from "../src/runtime/approvals.js";
 import { createHandlers, createServerContext } from "../src/mcp/server.js";
 import { TOOL_DEFINITIONS } from "../src/mcp/registry.js";
 import { makeTempDirectory } from "./helpers.js";
@@ -125,7 +126,7 @@ test("the decision-brief role returns the exact options that a later human gate 
   assert.equal(approval.question, "Which historical import route should ProductYab take?");
 });
 
-test("only RB-02 may prepare a decision proposal and its recommendation must be offered", async (t) => {
+test("decision-preparing product roles must offer a valid recommendation", async (t) => {
   const { root, handlers } = await workspace(t);
   const { ingestRecord } = await import("../src/runtime/intake.js");
   await ingestRecord(root, {
@@ -150,6 +151,44 @@ test("only RB-02 may prepare a decision proposal and its recommendation must be 
   });
   assert.equal(invalid.isError, true);
   assert.match(JSON.stringify(invalid), /recommendedOption/);
+});
+
+test("finding triage may prepare the exact owner choice used by its delivery gate", async (t) => {
+  const { root, handlers } = await workspace(t);
+  const { ingestRecord } = await import("../src/runtime/intake.js");
+  await ingestRecord(root, {
+    type: "user_finding",
+    title: "A shared test setting drifted",
+    description: "The finding has a narrow patch and a root-cause repair with different consequences.",
+    source: "local regression"
+  }, { dryRun: false });
+  await call(handlers, "product_ops_operate", { apply: true });
+  const claim = await cardFor(handlers, "RB-05", root, { preserveHumanGates: true });
+  assert.match(claim.brief.reporting.decisionProposalRule, /needs_decision/);
+
+  const submitted = await call(handlers, "product_ops_submit_work", {
+    taskId: claim.taskId,
+    claimToken: claim.claimToken,
+    result: resultFor(claim, {
+      decisionProposal: {
+        question: "Which repair scope should proceed?",
+        options: ["root_cause", "narrow_patch", "defer"],
+        recommendedOption: "root_cause",
+        recommendationRationale: "It removes the observed drift mechanism with bounded local changes.",
+        optionImpacts: {
+          root_cause: "Remove the duplicated setting and repair the failure.",
+          narrow_patch: "Repair only today's value and retain the drift mechanism.",
+          defer: "Make no delivery ticket and retain the current failure."
+        }
+      }
+    }),
+    apply: true
+  });
+  assert.equal(submitted.isError, false, JSON.stringify(submitted));
+  await call(handlers, "product_ops_operate", { apply: true });
+  const approval = (await loadApprovals(root)).requests.find((item) => item.gate === "product_direction_or_priority");
+  assert.equal(approval.question, "Which repair scope should proceed?");
+  assert.equal(approval.recommendedOption, "root_cause");
 });
 
 test("work is returned through the same contract a provider would have to satisfy", async (t) => {
@@ -579,7 +618,7 @@ test("the last card of an event writes the canonical record", async (t) => {
  * showed an empty workbook, and looked — correctly — like a system that was not recording anything.
  * A role can now commit its own rows as its card completes, under three rules.
  */
-async function cardFor(handlers, roleId, root) {
+async function cardFor(handlers, roleId, root, { preserveHumanGates = false } = {}) {
   const { loadTaskboard: load, replaceTaskboard } = await import("../src/runtime/taskboard.js");
   const { headers, records } = await load(root);
   const target = records.find((task) => task.owner_role === roleId);
@@ -589,7 +628,7 @@ async function cardFor(handlers, roleId, root) {
   await replaceTaskboard(root, headers, records.map((task, position) => ({
     ...task,
     status: position < index ? "done" : (task.task_id === target.task_id ? "ready" : "backlog"),
-    human_gate: ""
+    human_gate: preserveHumanGates ? task.human_gate : ""
   })), { dryRun: false });
   const claim = (await call(handlers, "product_ops_next_work")).structuredContent;
   assert.equal(claim.roleId, roleId, `expected the ${roleId} card: ${JSON.stringify(claim)}`);
