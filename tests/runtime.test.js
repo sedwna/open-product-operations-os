@@ -15,6 +15,7 @@ import { exportMetrics, loadEngineeringProgress } from "../src/runtime/snapshot.
 import { runDevelopmentTask } from "../src/runtime/development-runner.js";
 import { ingestRecord } from "../src/runtime/intake.js";
 import { migrateProject } from "../src/runtime/migrations.js";
+import { FEEDBACK_FILE, recordNote, recordOwnerFeedback } from "../src/runtime/feedback-loop.js";
 import { captureIo, makeTempDirectory, readJson, writeJson } from "./helpers.js";
 
 async function initializedProject(t, name = "runtime-product") {
@@ -412,6 +413,21 @@ test("migration adds the required delivery decision to an existing version-3 fin
     }
   }
   await writeJson(configPath, legacy);
+  await recordNote(target, {
+    taskId: "PY-0080",
+    roleId: "RB-05",
+    learned: "Finding triage needs a product decision before a delivery contract exists.",
+    saw: "Three needs_decision issues were followed by an ungated RB-06 card.",
+    cardsDone: 80,
+    at: new Date("2026-08-22T21:40:00Z")
+  });
+  await recordOwnerFeedback(target, {
+    text: "مسیر اصلاح ریشه‌ای را پیشنهاد بده، اما تصمیم را از من بگیر.",
+    about: "PY-0080",
+    attribution: "human_entered",
+    at: new Date("2026-08-22T21:41:00Z")
+  });
+  const feedbackBefore = await fs.readFile(path.join(target, FEEDBACK_FILE));
 
   const result = await migrateProject(target, legacy, { dryRun: false, now: new Date("2026-08-01T15:10:00Z") });
   const migrated = await readJson(configPath);
@@ -420,6 +436,9 @@ test("migration adds the required delivery decision to an existing version-3 fin
     const contract = migrated.routing.find((route) => route.event === event).steps.find((step) => step.role === "RB-06");
     assert.equal(contract.humanGate, "product_direction_or_priority");
   }
+  assert.deepEqual(await fs.readFile(path.join(target, FEEDBACK_FILE)), feedbackBefore);
+  assert.ok(result.operations.some((operation) =>
+    operation.relativePath === FEEDBACK_FILE && operation.action === "preserved"));
   assert.equal(await run(["validate", target], output.io), 0);
 });
 

@@ -7,6 +7,7 @@ import {
   removeFileIfUnchanged
 } from "./atomic-move.js";
 import { parseCsv, stringifyCsv } from "./csv.js";
+import { FEEDBACK_FILE } from "./runtime/feedback-loop.js";
 import {
   assertNoHardLinkedFile,
   assertNoLinkTraversal,
@@ -59,6 +60,17 @@ export async function planWrites(
         relativePath,
         destination,
         content: merged,
+        expectedCurrent: existing
+      });
+    } else if (existing !== undefined && relativePath === FEEDBACK_FILE) {
+      // This is a product record, not refreshable scaffold. `init` creates its empty shell, then
+      // product notes and the owner's own words accumulate in it for the workspace's lifetime.
+      // A force refresh or migration must therefore leave its exact bytes alone.
+      operations.push({
+        action: "preserved",
+        relativePath,
+        destination,
+        content: existing,
         expectedCurrent: existing
       });
     } else if (existing !== undefined && isOperationalCsv(relativePath)) {
