@@ -318,8 +318,14 @@ export const TOOL_DEFINITIONS = Object.freeze([
             type: "object", additionalProperties: false,
             properties: {
               field: { type: "string", pattern: "^/" },
-              priorValue: { type: ["string", "number", "boolean", "null"] },
-              correctedValue: { type: ["string", "number", "boolean", "null"] }
+              priorValue: { oneOf: [
+                { type: ["string", "number", "boolean", "null"] },
+                { type: "array", minItems: 1, uniqueItems: true, items: { type: "string", minLength: 1, maxLength: 500 } }
+              ] },
+              correctedValue: { oneOf: [
+                { type: ["string", "number", "boolean", "null"] },
+                { type: "array", minItems: 1, uniqueItems: true, items: { type: "string", minLength: 1, maxLength: 500 } }
+              ] }
             },
             required: ["field", "priorValue", "correctedValue"]
           }

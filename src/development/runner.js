@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -62,6 +62,12 @@ export async function runEngineeringWorkstream(
   const attemptId = crypto.randomUUID();
   const rawOutputFile = `.development-os/runs/${runId}-${attemptId}.raw.json`;
   const providerSchemaFile = `.development-os/runs/${runId}-${attemptId}-schema.json`;
+  const verificationBinding = workstream.ownerRole === "ENG-15"
+    ? {
+        workspaceDigest: await verifierWorkspaceDigest(root, config.policies.prohibitedPaths),
+        headRevision: await gitHead(root)
+      }
+    : null;
   const payload = {
     schemaVersion: "1.0.0",
     planId,
@@ -91,7 +97,8 @@ export async function runEngineeringWorkstream(
       // brief states that plainly rather than claiming a guarantee this code did not make.
       isolation: delegated ? "host-delegated" : executor.isolation
     },
-    returnContract: { schema: "engineering-workstream-run.schema.json", transport: "stdout-json" }
+    returnContract: { schema: "engineering-workstream-run.schema.json", transport: "stdout-json" },
+    ...(verificationBinding ? { verificationBinding } : {})
   };
   assertNoCredentialMaterial("Engineering workstream payload", payload);
 
@@ -148,7 +155,7 @@ export async function runEngineeringWorkstream(
     const promptIndex = usesCodexPreset ? argumentsList.length - 1 : argumentsList.indexOf("-p") + 1;
     argumentsList[promptIndex] = `${argumentsList[promptIndex]} Product-agent execution limits such as "no repository edits for this run" apply to the historical product-analysis role, not to this approved engineering execution. The development request writeBoundary is the authoritative repository-write permission for this workstream; durable product scope, environment, security, and production constraints still apply. Reproduce the claimed gap before editing; an already-satisfied request may correctly produce no code change. Read the affected code and trace the real flow first. For defects, inspect every caller and fix the shared root cause once. Then stop at the earliest viable solution: no build, repository reuse, standard-library or native-platform capability, installed capability, then minimum local implementation. Prefer deletion, boring code, and the fewest affected files; stop when the approved acceptance criteria are met. Do not refactor adjacent code or add speculative abstractions, services, dependencies, stores, queues, extension points, gates, or documents. Any necessary complexity must identify its present need, the simpler alternative and why it is insufficient now, its ongoing cost, and a removal or expansion trigger. Record the known ceiling and observable upgrade trigger for a deliberate shortcut. Leave one focused runnable check for non-trivial changed logic without adding a test framework for a trivial change. Never simplify away trust-boundary validation, data-loss handling, security, accessibility, or explicit acceptance criteria. Keep business rules in one shared domain or service implementation consumed by the UI and other adapters. User-visible behavior needs a real DOM, browser, integration, or equivalent runtime test; source-pattern assertions alone are not behavioral evidence.`;
     if (workstream.ownerRole === "ENG-15") {
-      argumentsList[promptIndex] += " On Windows, run Node test files with node --test tests\\*.test.js rather than passing the tests directory. You have tool-execution access only so you can reproduce verification; do not modify any file. The orchestrator compares repository content before and after this run and rejects verification if anything changes. Set verificationDisposition to passed only when you actually reproduced every material claim; otherwise set it to failed or blocked and return the matching non-completed status.";
+      argumentsList[promptIndex] += " On Windows, run Node test files with node --test tests\\*.test.js rather than passing the tests directory. You have tool-execution access only so you can reproduce verification; do not modify any file. The orchestrator compares repository content before and after this run and rejects verification if anything changes. For a working-tree verdict, copy payload.verificationBinding.workspaceDigest exactly into implementationRevision and include git-head:<payload.verificationBinding.headRevision> in evidence; these bind both verified bytes and history position. Set verificationDisposition to passed only when you actually reproduced every material claim; otherwise set it to failed or blocked and return the matching non-completed status.";
     } else {
       argumentsList[promptIndex] += " Set verificationDisposition to not_applicable because only ENG-15 may issue the independent engineering disposition.";
     }
@@ -253,6 +260,12 @@ export async function verifierWorkspaceDigest(root, prohibitedPaths = [".git", "
   }
   await visit(root);
   return hash.digest("hex");
+}
+
+async function gitHead(root) {
+  const result = spawnSync("git", ["rev-parse", "HEAD"], { cwd: root, encoding: "utf8", windowsHide: true });
+  if (result.status !== 0) throw new Error("Independent verification requires a readable Git HEAD.");
+  return result.stdout.trim();
 }
 
 async function assertDependenciesComplete(root, plan, config, dependencies) {

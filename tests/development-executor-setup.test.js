@@ -66,6 +66,10 @@ test("Claude preset is schema-bound, non-persistent, and separates implementatio
   assert.match(implementation.arguments[implementation.arguments.indexOf("--allowedTools") + 1], /Edit/);
   assert.equal(verification.arguments[verification.arguments.indexOf("--permission-mode") + 1], "dontAsk");
   assert.doesNotMatch(verification.arguments[verification.arguments.indexOf("--allowedTools") + 1], /\b(?:Edit|Write)\b/);
+  const verificationPrompt = verification.arguments[verification.arguments.indexOf("-p") + 1];
+  assert.match(verificationPrompt, /verificationBinding\.workspaceDigest/);
+  assert.match(verificationPrompt, /verificationBinding\.headRevision/);
+  assert.doesNotMatch(verificationPrompt, /implementationRevision to pending/);
   assert.deepEqual(implementation.environmentAllowlist, [
     "APPDATA", "CLAUDE_CONFIG_DIR", "HOME", "LOCALAPPDATA", "USERPROFILE"
   ]);

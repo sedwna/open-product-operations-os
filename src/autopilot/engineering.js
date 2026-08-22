@@ -5,10 +5,12 @@ import { parseCsv, stringifyCsv } from "../csv.js";
 import { planDevelopmentRequest } from "../development/planner.js";
 import { exportDevelopmentRequest, importEngineeringResult } from "../development/product-sync.js";
 import { completeDevelopmentResult } from "../development/result.js";
-import { runEngineeringWorkstream } from "../development/runner.js";
-import { contractDigest } from "../development/contracts.js";
+import { runEngineeringWorkstream, verifierWorkspaceDigest } from "../development/runner.js";
+import { canonicalJson, contractDigest } from "../development/contracts.js";
 import { loadDevelopmentConfig } from "../development/config.js";
-import { loadEngineeringEvidenceAmendments } from "../development/amendment.js";
+import {
+  loadEngineeringEvidenceAmendments, resolveEffectiveEngineeringRuns
+} from "../development/amendment.js";
 import { decideApproval, loadApprovals, requestApproval } from "../runtime/approvals.js";
 import { validatePublishedSchema } from "../schema-validation.js";
 import { QUALITY_GATES } from "../development/catalog.js";
@@ -157,7 +159,13 @@ export async function closeEngineeringDelivery(
   }
 ) {
   const proof = implementationProof ?? await preflightEngineeringDelivery(
-    applicationRoot, plan, runs, developmentConfig.policies
+    applicationRoot,
+    plan,
+    runs,
+    developmentConfig.policies,
+    request.writeBoundary,
+    request.source.applicationBaseRevision ?? null,
+    request.requestId
   );
   const { changedComponents, implementationRevision } = proof;
   // The original autonomous runner leaves implementation changes in the working tree until close,
@@ -167,7 +175,15 @@ export async function closeEngineeringDelivery(
   const sealedRuns = proof.source === "working_tree"
     ? await sealWorkstreamRuns(applicationRoot, plan, runs, implementationRevision)
     : runs;
-  const evidence = await createGateEvidence(applicationRoot, plan, sealedRuns, implementationRevision, now);
+  const gateEvidence = await createGateEvidence(applicationRoot, plan, sealedRuns, implementationRevision, now);
+  const amendmentEvidence = (proof.appliedAmendments ?? []).map((record) => ({
+    path: record.storedAt,
+    kind: "other",
+    sha256: record.sha256,
+    sourceRevision: implementationRevision,
+    relevantWorkstreamIds: [record.workstreamId]
+  }));
+  const evidence = [...gateEvidence, ...amendmentEvidence];
   const result = buildEngineeringResult({
     request,
     plan,
@@ -207,46 +223,137 @@ export async function closeEngineeringDelivery(
  * tree is valid only when immutable completed runs name changed components and ENG-15 binds its
  * passing verdict to a real commit reachable from the current application revision.
  */
-export async function preflightEngineeringDelivery(root, plan, runs, policies) {
+export async function preflightEngineeringDelivery(
+  root,
+  plan,
+  runs,
+  policies,
+  requestBoundary = null,
+  applicationBaseRevision = null,
+  requestId = null
+) {
   const verifierWorkstream = plan.workstreams.find((workstream) => workstream.ownerRole === "ENG-15");
   const verifierRun = verifierWorkstream ? runs.get(verifierWorkstream.id) : null;
   const amendments = await loadEngineeringEvidenceAmendments(root, plan.planId);
+  const amendmentBindings = [];
+  for (const { amendment, storedAt } of amendments) {
+    const bytes = await fs.readFile(path.join(root, storedAt));
+    const digest = crypto.createHash("sha256").update(bytes).digest("hex");
+    amendmentBindings.push({
+      amendment,
+      storedAt,
+      sha256: digest,
+      verificationReference: `${storedAt}#sha256=${digest}`
+    });
+  }
   if (amendments.length > 0) {
     if (!verifierRun || verifierRun.status !== "completed" || verifierRun.verificationDisposition !== "passed") {
       throw new Error("Engineering amendments require a completed passing ENG-15 run.");
     }
-    const missingAmendments = amendments
-      .filter(({ storedAt }) => !(verifierRun.evidence ?? []).includes(storedAt))
+    const missingAmendments = amendmentBindings
+      .filter(({ verificationReference }) => !(verifierRun.evidence ?? []).includes(verificationReference))
       .map(({ amendment }) => amendment.amendmentId);
     if (missingAmendments.length > 0) {
-      throw new Error(`The passing ENG-15 run does not verify engineering amendment(s): ${missingAmendments.join(", ")}.`);
+      throw new Error(
+        `The passing ENG-15 run does not verify the content digest of engineering amendment(s): ${missingAmendments.join(", ")}.`
+      );
     }
   }
+  const { runs: effectiveRuns, applied } = resolveEffectiveEngineeringRuns(runs, amendments);
+  const effectivePolicies = narrowDeliveryPolicies(policies, requestBoundary);
   const workingTreeComponents = await changedImplementationComponents(root);
   if (workingTreeComponents.length > 0) {
-    await assertImplementationBoundary(root, workingTreeComponents, policies);
+    if (amendments.length > 0) {
+      throw new Error("Engineering amendments cannot close over an uncommitted working tree.");
+    }
+    if (!verifierRun || verifierRun.status !== "completed" || verifierRun.verificationDisposition !== "passed") {
+      throw new Error("Uncommitted engineering work requires a completed passing ENG-15 run.");
+    }
+    const [workingTreeRevision, workingTreeHead] = await Promise.all([
+      verifierWorkspaceDigest(root, policies.prohibitedPaths),
+      runGit(root, ["rev-parse", "HEAD"]).then(({ stdout }) => stdout.trim())
+    ]);
+    if (verifierRun.implementationRevision !== workingTreeRevision) {
+      throw new Error("The passing ENG-15 run does not bind the current workspace digest.");
+    }
+    if (!(verifierRun.evidence ?? []).includes(`git-head:${workingTreeHead}`)) {
+      throw new Error("The passing ENG-15 run does not bind the current Git HEAD for working-tree verification.");
+    }
+    await assertImplementationBoundary(root, workingTreeComponents, effectivePolicies);
     return {
       source: "working_tree",
       changedComponents: workingTreeComponents,
-      implementationRevision: await implementationDigest(root, workingTreeComponents)
+      implementationRevision: workingTreeRevision,
+      appliedAmendments: []
     };
   }
 
   const changedComponents = unique(
-    [...runs.values()].flatMap((run) => Array.isArray(run.changedComponents) ? run.changedComponents : [])
+    [...effectiveRuns.values()].flatMap((run) => Array.isArray(run.changedComponents) ? run.changedComponents : [])
   ).filter((file) => !file.startsWith(".development-os/") && !file.startsWith("engineering/taskboard/"));
   if (changedComponents.length === 0) {
     throw new Error("Engineering completed every workstream without producing implementation changes.");
   }
-  await assertImplementationBoundary(root, changedComponents, policies);
+
+  const canonicalRevisions = new Map();
+  for (const [workstreamId, run] of effectiveRuns) {
+    let canonical;
+    try {
+      canonical = (await runGit(root, ["rev-parse", "--verify", `${run.implementationRevision}^{commit}`])).stdout.trim();
+    } catch {
+      throw new Error(`Engineering workstream ${workstreamId} implementationRevision is not a Git commit.`);
+    }
+    if (run.implementationRevision !== canonical || !/^[a-f0-9]{40,64}$/.test(canonical)) {
+      throw new Error(`Engineering workstream ${workstreamId} must name the full immutable commit object ID.`);
+    }
+    canonicalRevisions.set(workstreamId, canonical);
+  }
 
   if (!verifierRun || verifierRun.status !== "completed" || verifierRun.verificationDisposition !== "passed") {
     throw new Error("Committed engineering work requires a completed passing ENG-15 run.");
   }
-  const implementationRevision = String(verifierRun.implementationRevision ?? "").trim();
-  if (!implementationRevision) {
-    throw new Error("The passing ENG-15 run does not identify the commit it verified.");
+  const implementationRevision = canonicalRevisions.get(verifierWorkstream.id);
+  for (const [workstreamId, revision] of canonicalRevisions) {
+    try {
+      await runGit(root, ["merge-base", "--is-ancestor", revision, implementationRevision]);
+    } catch {
+      throw new Error(
+        `Engineering workstream ${workstreamId} revision is not an ancestor of the independently verified revision.`
+      );
+    }
   }
+
+  const baseRevision = applicationBaseRevision
+    ? await requireCanonicalAncestor(root, applicationBaseRevision, implementationRevision, "Application base revision")
+    : await deriveOpeningReceiptBase(root, plan, requestId, implementationRevision);
+  const actualChangedComponents = unique(
+    (await runGit(root, [
+      "diff", "--relative", "--name-only", "--no-renames", "-z", `${baseRevision}..${implementationRevision}`, "--", "."
+    ])).stdout.split("\0").filter(Boolean)
+  ).filter((file) => !file.startsWith(".development-os/") && !file.startsWith("engineering/taskboard/"));
+  if (actualChangedComponents.length === 0) {
+    throw new Error("The verified Git range contains no implementation changes.");
+  }
+  await assertImplementationBoundary(root, actualChangedComponents, effectivePolicies);
+  const unreported = actualChangedComponents.filter((file) =>
+    !changedComponents.some((component) => pathMatches(file, component))
+  );
+  if (unreported.length > 0) {
+    throw new Error(`Engineering runs omit changed Git path(s): ${unreported.join(", ")}.`);
+  }
+
+  for (const [workstreamId, run] of effectiveRuns) {
+    for (const component of run.changedComponents ?? []) {
+      try {
+        await runGit(root, ["cat-file", "-e", `${canonicalRevisions.get(workstreamId)}:${component}`]);
+      } catch {
+        throw new Error(
+          `Engineering workstream ${run.workstreamId} names a changed component that does not exist at its implementation revision: ${component}.`
+        );
+      }
+    }
+  }
+
   try {
     await runGit(root, ["cat-file", "-e", `${implementationRevision}^{commit}`]);
     await runGit(root, ["merge-base", "--is-ancestor", implementationRevision, "HEAD"]);
@@ -255,7 +362,147 @@ export async function preflightEngineeringDelivery(root, plan, runs, policies) {
       `The passing ENG-15 revision ${implementationRevision} is not a commit reachable from the current application revision.`
     );
   }
-  return { source: "sealed_runs", changedComponents, implementationRevision };
+  const postVerificationPaths = unique(
+    (await runGit(root, [
+      "diff", "--relative", "--name-only", "--no-renames", "-z", `${implementationRevision}..HEAD`, "--", "."
+    ])).stdout.split("\0").filter(Boolean)
+  );
+  const postVerificationImplementation = postVerificationPaths.filter((file) =>
+    !file.startsWith(".development-os/") && !file.startsWith("engineering/taskboard/")
+  );
+  if (postVerificationImplementation.length > 0) {
+    throw new Error(
+      `Application paths changed after independent verification: ${postVerificationImplementation.join(", ")}.`
+    );
+  }
+  const appliedAmendments = [];
+  for (const { amendment, storedAt } of applied) {
+    const binding = amendmentBindings.find((candidate) => candidate.storedAt === storedAt);
+    appliedAmendments.push({
+      amendmentId: amendment.amendmentId,
+      storedAt,
+      sha256: binding.sha256,
+      workstreamId: amendment.workstreamId
+    });
+  }
+  return {
+    source: "sealed_runs",
+    changedComponents: actualChangedComponents,
+    implementationRevision,
+    applicationBaseRevision: baseRevision,
+    appliedAmendments
+  };
+}
+
+async function requireCanonicalAncestor(root, value, targetRevision, label) {
+  let canonical;
+  try { canonical = (await runGit(root, ["rev-parse", "--verify", `${value}^{commit}`])).stdout.trim(); }
+  catch { throw new Error(`${label} is not a Git commit.`); }
+  if (value !== canonical || !/^[a-f0-9]{40,64}$/.test(canonical)) {
+    throw new Error(`${label} must name the full immutable commit object ID.`);
+  }
+  try { await runGit(root, ["merge-base", "--is-ancestor", canonical, targetRevision]); }
+  catch { throw new Error(`${label} is not an ancestor of the independently verified revision.`); }
+  return canonical;
+}
+
+async function deriveOpeningReceiptBase(root, plan, requestId, targetRevision) {
+  if (!requestId) {
+    throw new Error("Legacy delivery has no recorded application base revision or trusted opening receipt.");
+  }
+  const matches = [];
+  let additions;
+  try {
+    const repositoryPrefix = (await runGit(root, ["rev-parse", "--show-prefix"]))
+      .stdout.trim().replaceAll("\\", "/");
+    const output = (await runGit(root, [
+      "log", "--full-history", "--no-renames", "--format=COMMIT:%H", "--name-only", "--diff-filter=A", "--", ".development-os/receipts"
+    ])).stdout;
+    additions = parseAddedPathsByCommit(output, repositoryPrefix);
+  } catch {
+    throw new Error("Legacy delivery has no recorded application base revision or trusted opening receipt.");
+  }
+  for (const { revision, storedAt, gitPath } of additions) {
+    if (!storedAt.endsWith(".json")) continue;
+    let receipt;
+    try { receipt = JSON.parse((await runGit(root, ["show", `${revision}:${gitPath}`])).stdout); }
+    catch { continue; }
+    if (receipt.direction === "product_to_development"
+      && receipt.contractType === "development_request"
+      && receipt.contractId === requestId
+      && receipt.contractDigest === plan.sourceDigest
+      && receipt.storedAt === `.development-os/inbox/${requestId}.json`) {
+      matches.push({ receipt, storedAt, gitPath, openingRevision: revision });
+    }
+  }
+  if (matches.length !== 1) {
+    throw new Error("Legacy delivery has no unique trusted opening receipt for its sealed request.");
+  }
+  const { receipt, storedAt, gitPath, openingRevision } = matches[0];
+  let committedReceipt;
+  let committedRequest;
+  let parents;
+  try {
+    committedReceipt = JSON.parse((await runGit(root, ["show", `${openingRevision}:${gitPath}`])).stdout);
+    committedRequest = JSON.parse((await runGit(root, [
+      "show", `${openingRevision}:${repositoryPath(receipt.storedAt, gitPath, storedAt)}`
+    ])).stdout);
+    parents = (await runGit(root, ["show", "-s", "--format=%P", openingRevision])).stdout.trim().split(/\s+/).filter(Boolean);
+  } catch {
+    throw new Error("The trusted opening receipt cannot be read back with its sealed request.");
+  }
+  if (canonicalJson(committedReceipt) !== canonicalJson(receipt)
+    || contractDigest(committedRequest) !== plan.sourceDigest
+    || committedReceipt.contractDigest !== plan.sourceDigest
+    || parents.length !== 1) {
+    throw new Error("The trusted opening receipt does not bind one immutable request and one pre-engineering parent.");
+  }
+  await requireCanonicalAncestor(root, openingRevision, targetRevision, "Opening receipt revision");
+  return requireCanonicalAncestor(root, parents[0], targetRevision, "Opening receipt application base revision");
+}
+
+function parseAddedPathsByCommit(output, repositoryPrefix = "") {
+  const additions = [];
+  let revision = null;
+  for (const rawLine of String(output).split(/\r?\n/)) {
+    const line = rawLine.trim();
+    if (!line) continue;
+    if (line.startsWith("COMMIT:")) {
+      revision = line.slice("COMMIT:".length);
+      continue;
+    }
+    if (revision) {
+      const gitPath = line.replaceAll("\\", "/");
+      if (repositoryPrefix && !gitPath.startsWith(repositoryPrefix)) continue;
+      additions.push({
+        revision,
+        gitPath,
+        storedAt: repositoryPrefix ? gitPath.slice(repositoryPrefix.length) : gitPath
+      });
+    }
+  }
+  return additions;
+}
+
+function repositoryPath(relativePath, gitPath, storedAt) {
+  return `${gitPath.slice(0, gitPath.length - storedAt.length)}${relativePath}`;
+}
+
+function narrowDeliveryPolicies(policies, requestBoundary) {
+  if (!requestBoundary) return policies;
+  const outerAllowed = policies.allowedPaths ?? [];
+  for (const requested of requestBoundary.allowedPaths ?? []) {
+    if (!outerAllowed.some((allowed) => pathMatches(requested, allowed))) {
+      throw new Error(`The sealed request path ${requested} exceeds the application write policy.`);
+    }
+  }
+  return {
+    allowedPaths: [...(requestBoundary.allowedPaths ?? [])],
+    prohibitedPaths: unique([
+      ...(policies.prohibitedPaths ?? []),
+      ...(requestBoundary.prohibitedPaths ?? [])
+    ])
+  };
 }
 
 export function dependencyOrderedWorkstreams(workstreams) {
@@ -520,7 +767,10 @@ async function buildDevelopmentRequest(productRoot, developmentConfig, productCo
     { domain: "reliability", requirement: "Failures are observable, recoverable, and bounded.", verification: "Verify telemetry, retry, timeout, and recovery behavior." },
     { domain: "seo", requirement: "Public web surfaces preserve crawlability, metadata, structured data, and web-vitals hygiene.", verification: "Run a technical SEO audit when applicable." }
   ], (item) => `${item.domain}\0${item.requirement}`).slice(0, 30);
-  const revision = await gitRevision(productRoot);
+  const [revision, applicationBaseRevision] = await Promise.all([
+    gitRevision(productRoot),
+    gitRevision(applicationRoot)
+  ]);
   return {
     schemaVersion: "1.0.0",
     requestId: `DEVREQ-${safeId(cycleId)}`,
@@ -554,7 +804,7 @@ async function buildDevelopmentRequest(productRoot, developmentConfig, productCo
       decidedAt: approval.decidedAt,
       reference: approval.requestId
     },
-    source: { productOperationsRevision: revision, exportedAt: now.toISOString() }
+    source: { productOperationsRevision: revision, applicationBaseRevision, exportedAt: now.toISOString() }
   };
 }
 
@@ -687,18 +937,6 @@ async function assertImplementationBoundary(root, files, policies) {
 function pathMatches(file, boundary) {
   const normalized = String(boundary).replaceAll("\\", "/").replace(/^\.\//, "").replace(/\/$/, "");
   return file === normalized || file.startsWith(`${normalized}/`);
-}
-
-async function implementationDigest(root, files) {
-  const hash = crypto.createHash("sha256");
-  for (const relative of [...files].sort()) {
-    const file = path.join(root, relative);
-    const stat = await fs.lstat(file).catch(() => null);
-    hash.update(relative).update("\0");
-    if (stat?.isFile() && !stat.isSymbolicLink()) hash.update(await fs.readFile(file));
-    hash.update("\0");
-  }
-  return hash.digest("hex");
 }
 
 /**

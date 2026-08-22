@@ -235,7 +235,9 @@ function codexPreset(actorId, roleId) {
     `Set producerActorId exactly to ${JSON.stringify(actorId)}; copy planId, workstreamId, and ownerRole from the input.`,
     "Report only commands and evidence you actually produced.",
     "Do not create or switch Git branches and do not create commits; the orchestrator owns Git history.",
-    "Set implementationRevision to pending; the orchestrator seals it to the verified content digest after all workstreams finish.",
+    verifier
+      ? "Copy input.verificationBinding.workspaceDigest exactly to implementationRevision and include git-head:<input.verificationBinding.headRevision> in evidence; these bind the read-only verdict to both workspace bytes and Git HEAD."
+      : "Set implementationRevision to pending; the orchestrator seals it to the verified content digest after all workstreams finish.",
     verifier ? "Act as an independent read-only verifier: do not edit files, reproduce relevant checks, inspect tracked and untracked implementation files, and return blocked or failed if material claims are not supported. On Windows, run Node test files with node --test tests\\*.test.js rather than passing the tests directory." : "Make only changes that are necessary for the assigned engineering boundary.",
     "Do not deploy to production, use production credentials, or perform destructive database operations."
   ].join(" ");
@@ -267,7 +269,9 @@ function claudePreset(actorId, roleId) {
     `Set producerActorId exactly to ${JSON.stringify(actorId)}; copy planId, workstreamId, and ownerRole from the input.`,
     "Report only commands and evidence you actually produced.",
     "Do not create or switch Git branches and do not create commits; the orchestrator owns Git history.",
-    "Set implementationRevision to pending; the orchestrator seals it to the verified content digest after all workstreams finish.",
+    verifier
+      ? "Copy input.verificationBinding.workspaceDigest exactly to implementationRevision and include git-head:<input.verificationBinding.headRevision> in evidence; these bind the read-only verdict to both workspace bytes and Git HEAD."
+      : "Set implementationRevision to pending; the orchestrator seals it to the verified content digest after all workstreams finish.",
     verifier ? "Act as an independent read-only verifier: do not edit files, reproduce relevant checks, inspect tracked and untracked implementation files, and return blocked or failed if material claims are not supported. On Windows, run Node test files with node --test tests\\*.test.js rather than passing the tests directory." : "Make only changes that are necessary for the assigned engineering boundary.",
     "Do not deploy to production, use production credentials, or perform destructive database operations."
   ].join(" ");

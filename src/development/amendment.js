@@ -2,7 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { applyWrites, planWrites } from "../file-writer.js";
-import { assertNoLinkTraversal, resolveInside } from "../paths.js";
+import { assertNoLinkTraversal, assertSafeRelativePath, resolveInside } from "../paths.js";
 import { loadDevelopmentConfig } from "./config.js";
 import { assertContract, canonicalJson, json, readContract, safeContractId } from "./contracts.js";
 
@@ -39,15 +39,29 @@ export async function recordEngineeringEvidenceAmendment(root, input, { dryRun =
     throw new Error("Engineering amendment target digest changed; re-read the immutable artifact before correcting it.");
   }
 
-  const corrections = (input.corrections ?? []).map((correction) => ({
-    field: String(correction.field ?? ""),
-    priorValue: correction.priorValue ?? null,
-    correctedValue: correction.correctedValue ?? null
-  }));
+  const corrections = (input.corrections ?? []).map((correction) => {
+    const field = String(correction.field ?? "");
+    if (field.startsWith("/changedComponents/") || field === "/changedComponents/-") {
+      throw new Error("changedComponents corrections must replace the whole array atomically.");
+    }
+    return {
+      field,
+      priorValue: normalizeCorrectionValue(field, correction.priorValue ?? null, "priorValue"),
+      correctedValue: normalizeCorrectionValue(field, correction.correctedValue ?? null, "correctedValue")
+    };
+  });
   if (corrections.some((item) => canonicalJson(item.priorValue) === canonicalJson(item.correctedValue))) {
     throw new Error("An engineering amendment must change every corrected claim.");
   }
   const targetValue = await readJsonTarget(artifact);
+  if (corrections.some((correction) => correction.field === "/changedComponents")) {
+    const expectedTarget = `.development-os/runs/${input.planId}-${input.workstreamId}-result.json`;
+    if (artifactPath !== expectedTarget
+      || targetValue.planId !== input.planId
+      || targetValue.workstreamId !== input.workstreamId) {
+      throw new Error("A changedComponents correction must target the matching immutable workstream result.");
+    }
+  }
   for (const correction of corrections) {
     const actual = valueAtJsonPointer(targetValue, correction.field);
     if (canonicalJson(actual) !== canonicalJson(correction.priorValue)) {
@@ -95,9 +109,18 @@ export async function recordEngineeringEvidenceAmendment(root, input, { dryRun =
     }
     amendment.createdAt = existing.createdAt;
   }
-  const operations = await planWrites(absoluteRoot, new Map([[storedAt, json(amendment)]]), {});
+  const content = json(amendment);
+  const amendmentSha256 = crypto.createHash("sha256").update(content).digest("hex");
+  const operations = await planWrites(absoluteRoot, new Map([[storedAt, content]]), {});
   if (!dryRun) await applyWrites(absoluteRoot, operations);
-  return { dryRun, amendment, storedAt, operations };
+  return {
+    dryRun,
+    amendment,
+    storedAt,
+    amendmentSha256,
+    verificationReference: `${storedAt}#sha256=${amendmentSha256}`,
+    operations
+  };
 }
 
 export async function loadEngineeringEvidenceAmendments(root, planId = null) {
@@ -120,7 +143,37 @@ export async function loadEngineeringEvidenceAmendments(root, planId = null) {
     await assertEngineeringEvidenceAmendmentTarget(root, amendment, storedAt);
     amendments.push({ amendment, storedAt });
   }
+  assertNoConflictingCorrections(amendments);
   return amendments;
+}
+
+/**
+ * Project append-only corrections over immutable run bytes without rewriting the original result.
+ * Only whole-array changedComponents corrections affect delivery scope; every applied amendment
+ * must have been named by the passing ENG-15 run before this function is called.
+ */
+export function resolveEffectiveEngineeringRuns(runs, amendments) {
+  assertNoConflictingCorrections(amendments);
+  const effective = new Map([...runs].map(([id, run]) => [id, structuredClone(run)]));
+  const applied = [];
+  for (const record of amendments) {
+    const { amendment, storedAt } = record;
+    const run = effective.get(amendment.workstreamId);
+    if (!run) throw new Error(`Engineering amendment ${amendment.amendmentId} has no sealed workstream run.`);
+    const expectedTarget = `.development-os/runs/${amendment.planId}-${amendment.workstreamId}-result.json`;
+    for (const correction of amendment.corrections) {
+      if (correction.field !== "/changedComponents") continue;
+      if (amendment.target.artifactPath !== expectedTarget) {
+        throw new Error(`Engineering amendment ${amendment.amendmentId} targets the wrong workstream result.`);
+      }
+      if (canonicalJson(run.changedComponents) !== canonicalJson(correction.priorValue)) {
+        throw new Error(`Engineering amendment ${amendment.amendmentId} prior changedComponents no longer match the sealed run.`);
+      }
+      run.changedComponents = [...correction.correctedValue];
+      applied.push({ amendment, storedAt });
+    }
+  }
+  return { runs: effective, applied };
 }
 
 export async function assertEngineeringEvidenceAmendmentTarget(root, amendment, storedAt) {
@@ -174,10 +227,45 @@ function valueAtJsonPointer(value, pointer) {
     }
     current = current[token];
   }
-  if (current !== null && typeof current === "object") {
+  if (text !== "/changedComponents" && current !== null && typeof current === "object") {
     throw new Error(`Engineering amendment field must identify a scalar claim: ${text}.`);
   }
   return current;
+}
+
+function normalizeCorrectionValue(field, value, label) {
+  if (field !== "/changedComponents") return value;
+  if (!Array.isArray(value) || value.length === 0) {
+    throw new Error(`changedComponents ${label} must be a non-empty array.`);
+  }
+  const normalized = value.map((component, index) => {
+    const safe = assertSafeRelativePath(component, `changedComponents ${label}[${index}]`);
+    if (safe.startsWith(".development-os/") || safe.startsWith("engineering/taskboard/")) {
+      throw new Error(`changedComponents ${label}[${index}] is a managed control-plane path.`);
+    }
+    return safe;
+  });
+  if (new Set(normalized).size !== normalized.length) {
+    throw new Error(`changedComponents ${label} must not contain duplicates.`);
+  }
+  return normalized;
+}
+
+function assertNoConflictingCorrections(records) {
+  const claims = new Map();
+  for (const { amendment } of records) {
+    for (const correction of amendment.corrections) {
+      if (correction.field !== "/changedComponents") continue;
+      const key = `${amendment.target.artifactPath}\0${correction.field}`;
+      const previous = claims.get(key);
+      if (previous && canonicalJson(previous.correctedValue) !== canonicalJson(correction.correctedValue)) {
+        throw new Error(
+          `Conflicting changedComponents amendments ${previous.amendmentId} and ${amendment.amendmentId}.`
+        );
+      }
+      claims.set(key, { amendmentId: amendment.amendmentId, correctedValue: correction.correctedValue });
+    }
+  }
 }
 
 async function readExistingAmendment(file) {

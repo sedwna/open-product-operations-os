@@ -185,6 +185,8 @@ export async function amendEngineeringEvidence(context, args = {}) {
       ownerRole: recorded.amendment.ownerRole,
       target: recorded.amendment.target,
       storedAt: recorded.storedAt,
+      amendmentSha256: recorded.amendmentSha256,
+      verificationReference: recorded.verificationReference,
       status: recorded.amendment.status
     },
     text: recorded.dryRun
@@ -415,7 +417,13 @@ export async function closeDelivery(context, args = {}) {
   let implementationProof;
   try {
     implementationProof = await preflightEngineeringDelivery(
-      application, plan, runs, developmentConfig.policies
+      application,
+      plan,
+      runs,
+      developmentConfig.policies,
+      request.writeBoundary,
+      request.source.applicationBaseRevision ?? null,
+      request.requestId
     );
   } catch (error) {
     throw new ToolFailure("DELIVERY_NOT_CLOSEABLE", `The delivery could not be closed: ${error.message}`);
@@ -430,7 +438,8 @@ export async function closeDelivery(context, args = {}) {
         workstreams: plan.workstreams.length,
         implementationRevision: implementationProof.implementationRevision,
         changedComponents: implementationProof.changedComponents,
-        proofSource: implementationProof.source
+        proofSource: implementationProof.source,
+        appliedAmendmentIds: (implementationProof.appliedAmendments ?? []).map((item) => item.amendmentId)
       },
       text: `Planned: would close ${plan.workstreams.length} completed workstream(s) in ${planId} from ${implementationProof.source} proof, produce quality-gate evidence, and return the result to ${task.task_id}. Nothing has been written.`
     };

@@ -178,6 +178,30 @@ product-ops development-import ./my-product-ops --file ./engineering-result.json
 Importing a result records engineering evidence. It does not grant product acceptance or
 production authorization. Product QA and human acceptance remain separate downstream gates.
 
+### Correct a sealed engineering claim
+
+Sealed workstream results are never rewritten. `development-os amend` appends a digest-guarded
+correction owned by the original workstream and routes it to `ENG-15`. A semantic
+`changedComponents` manifest can be replaced only as one complete array of concrete, unique,
+repository-relative paths; partial index patches are refused. The correction affects delivery
+preflight only after the passing independent-verification run references its exact path and SHA-256,
+and the original run bytes and digest remain in the final evidence chain.
+
+Committed-delivery preflight checks those effective components against the approved request's
+narrow write boundary as well as the application's outer prohibitions. A broad application policy
+is not an implicit exception to a narrower delivery contract. New crossings record the application's
+base commit; close recomputes the real base-to-verifier Git delta, refuses unreported paths, and
+requires every producer and verifier revision to be a full immutable commit object ID in the verified
+ancestry. A legacy crossing may recover its base only from the unique committed inbound receipt that
+digest-binds the sealed request; producer claims never choose that base. After the verifier commit,
+only Development OS control-plane evidence may be added—any later application path invalidates the
+verdict and must be independently verified again.
+
+For the legacy autonomous path that verifies an uncommitted working tree, the ENG-15 input carries
+a precomputed binding for both the full allowed workspace digest and the canonical Git `HEAD`.
+The verifier must return both unchanged; a partial commit, a new dirty path, or any byte change after
+verification invalidates closure.
+
 ## Quality and safety model
 
 The canonical gates cover architecture, review, automated tests, security, supply chain, database,

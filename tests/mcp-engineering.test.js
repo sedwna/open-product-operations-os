@@ -15,6 +15,9 @@ import { parseCsv, stringifyCsv } from "../src/csv.js";
 import { ingestRecord } from "../src/runtime/intake.js";
 import { runControlTower } from "../src/runtime/control-tower.js";
 import { runGit } from "../src/autopilot/shared.js";
+import { preflightEngineeringDelivery } from "../src/autopilot/engineering.js";
+import { contractDigest } from "../src/development/contracts.js";
+import { verifierWorkspaceDigest } from "../src/development/runner.js";
 import { createHandlers, createServerContext } from "../src/mcp/server.js";
 import { makeTempDirectory } from "./helpers.js";
 
@@ -295,6 +298,7 @@ test("a delivery crosses into engineering and comes back, entirely through the s
 
   let performed = 0;
   let verifiedRevision = null;
+  const componentAmendments = [];
   for (;;) {
     const claim = (await call(handlers, "product_ops_next_engineering_work")).structuredContent;
     if (!claim.available) {
@@ -309,15 +313,24 @@ test("a delivery crosses into engineering and comes back, entirely through the s
         `export const ${claim.workstreamId.replace("-", "_").toLowerCase()} = true;\n`,
         "utf8"
       );
-    } else {
       await runGit(application, ["add", "-A"]);
       await runGit(application, [
-        "-c", "user.name=T", "-c", "user.email=t@t.test", "commit", "--quiet", "-m", "sealed producer work"
+        "-c", "user.name=T", "-c", "user.email=t@t.test", "commit", "--quiet", "-m", `producer ${claim.workstreamId}`
       ]);
+      verifiedRevision = (await runGit(application, ["rev-parse", "HEAD"])).stdout.trim();
+    } else {
       verifiedRevision = (await runGit(application, ["rev-parse", "HEAD"])).stdout.trim();
     }
     const result = workstreamResult(claim, verifiedRevision);
-    if (claim.ownerRole === "ENG-15") result.evidence.push(amended.structuredContent.storedAt);
+    if (claim.ownerRole !== "ENG-15" && componentAmendments.length === 0) {
+      result.changedComponents = ["frontend"];
+    }
+    if (claim.ownerRole === "ENG-15") {
+      result.evidence.push(
+        amended.structuredContent.verificationReference,
+        componentAmendments[0].structuredContent.verificationReference
+      );
+    }
     const submitted = await call(handlers, "product_ops_submit_engineering_work", {
       workstreamId: claim.workstreamId,
       claimToken: claim.claimToken,
@@ -325,6 +338,22 @@ test("a delivery crosses into engineering and comes back, entirely through the s
       result
     });
     assert.equal(submitted.isError, false, JSON.stringify(submitted.structuredContent));
+    if (claim.ownerRole !== "ENG-15" && componentAmendments.length === 0) {
+      const runPath = `.development-os/runs/${crossed.planId}-${claim.workstreamId}-result.json`;
+      const runBytes = await fs.readFile(path.join(application, runPath));
+      const componentAmendment = await call(handlers, "product_ops_amend_engineering_evidence", {
+        planId: crossed.planId,
+        workstreamId: claim.workstreamId,
+        artifactPath: runPath,
+        expectedSha256: crypto.createHash("sha256").update(runBytes).digest("hex"),
+        corrections: [{ field: "/changedComponents", priorValue: ["frontend"], correctedValue: ["src"] }],
+        reason: "The sealed result used a semantic label instead of the concrete repository path.",
+        evidence: [{ reference: `git tree ${verifiedRevision}:src` }],
+        apply: true
+      });
+      assert.equal(componentAmendment.isError, false, JSON.stringify(componentAmendment.structuredContent));
+      componentAmendments.push(componentAmendment);
+    }
     performed += 1;
     assert.ok(performed <= crossed.workstreams + 1, "the hand-out loop must terminate");
   }
@@ -335,16 +364,371 @@ test("a delivery crosses into engineering and comes back, entirely through the s
   assert.equal(preview.proofSource, "sealed_runs");
   assert.equal(preview.implementationRevision, verifiedRevision);
   assert.ok(preview.changedComponents.length > 0);
+  assert.ok(!preview.changedComponents.includes("frontend"));
+  assert.ok(preview.appliedAmendmentIds.includes(componentAmendments[0].structuredContent.amendmentId));
 
   const closure = await call(handlers, "product_ops_close_delivery", { apply: true });
   assert.equal(closure.isError, false, JSON.stringify(closure.structuredContent));
   const closed = closure.structuredContent;
   assert.equal(closed.applied, true);
   assert.ok(closed.changedComponents.length > 0, "a delivery that changed nothing is not a delivery");
+  const returned = JSON.parse(await fs.readFile(
+    path.join(application, ".development-os", "outbox", `ENGRESULT-${crossed.requestId.replace(/^DEVREQ-/, "")}.json`),
+    "utf8"
+  ));
+  assert.ok(returned.evidence.some((item) => item.path === componentAmendments[0].structuredContent.storedAt));
 
   const { records } = await loadTaskboard(product);
   const handoff = records.find((task) => task.task_id === closed.taskId);
   assert.equal(handoff.status, "done", "the board moved because the work came back, not because it was asked to");
+});
+
+test("committed-delivery preflight enforces the sealed request boundary, not the wider application policy", async (t) => {
+  const application = await makeTempDirectory("product-ops-request-boundary-");
+  t.after(() => fs.rm(application, { recursive: true, force: true }));
+  await initializeDevelopmentOs(application, { dryRun: false });
+  await fs.mkdir(path.join(application, "src"), { recursive: true });
+  await fs.writeFile(path.join(application, "src", "index.js"), "export const ok = true;\n", "utf8");
+  await runGit(application, ["init", "--quiet"]);
+  await runGit(application, ["add", "-A"]);
+  await runGit(application, ["-c", "user.name=T", "-c", "user.email=t@t.test", "commit", "--quiet", "-m", "base"]);
+  const baseRevision = (await runGit(application, ["rev-parse", "HEAD"])).stdout.trim();
+  await fs.mkdir(path.join(application, "docs"), { recursive: true });
+  await fs.writeFile(path.join(application, "docs", "scope.md"), "outside this delivery\n", "utf8");
+  await runGit(application, ["add", "-A"]);
+  await runGit(application, ["-c", "user.name=T", "-c", "user.email=t@t.test", "commit", "--quiet", "-m", "out of scope"]);
+  const revision = (await runGit(application, ["rev-parse", "HEAD"])).stdout.trim();
+  const plan = {
+    planId: "ENGPLAN-BOUNDARY-001",
+    workstreams: [
+      { id: "WS-01", ownerRole: "ENG-01" },
+      { id: "WS-02", ownerRole: "ENG-15" }
+    ]
+  };
+  const runs = new Map([
+    ["WS-01", { workstreamId: "WS-01", status: "completed", verificationDisposition: "not_applicable", implementationRevision: revision, changedComponents: ["src/index.js"], evidence: [] }],
+    ["WS-02", { workstreamId: "WS-02", status: "completed", verificationDisposition: "passed", implementationRevision: revision, changedComponents: [], evidence: [] }]
+  ]);
+  await assert.rejects(
+    preflightEngineeringDelivery(
+      application,
+      plan,
+      runs,
+      { allowedPaths: ["src", "docs"], prohibitedPaths: [] },
+      { allowedPaths: ["src"], prohibitedPaths: [] },
+      baseRevision
+    ),
+    /escaped the approved write boundary: docs\/scope\.md/
+  );
+  await assert.rejects(
+    preflightEngineeringDelivery(
+      application,
+      plan,
+      runs,
+      { allowedPaths: ["src", "docs"], prohibitedPaths: [] },
+      { allowedPaths: ["src", "docs"], prohibitedPaths: [] },
+      baseRevision
+    ),
+    /omit changed Git path\(s\): docs\/scope\.md/
+  );
+  const symbolicRuns = new Map(runs);
+  symbolicRuns.set("WS-01", { ...runs.get("WS-01"), implementationRevision: "HEAD~0^{commit}" });
+  await assert.rejects(
+    preflightEngineeringDelivery(
+      application,
+      plan,
+      symbolicRuns,
+      { allowedPaths: ["src", "docs"], prohibitedPaths: [] },
+      { allowedPaths: ["src", "docs"], prohibitedPaths: [] },
+      baseRevision
+    ),
+    /must name the full immutable commit object ID/
+  );
+  const completeRuns = new Map(runs);
+  completeRuns.set("WS-01", { ...runs.get("WS-01"), changedComponents: ["src/index.js", "docs/scope.md"] });
+  await fs.writeFile(path.join(application, "src", "index.js"), "export const changedAfterVerification = true;\n", "utf8");
+  await assert.rejects(
+    preflightEngineeringDelivery(
+      application,
+      plan,
+      completeRuns,
+      { allowedPaths: ["src", "docs"], prohibitedPaths: [] },
+      { allowedPaths: ["src", "docs"], prohibitedPaths: [] },
+      baseRevision
+    ),
+    /does not bind the current workspace digest/
+  );
+  const boundDigest = await verifierWorkspaceDigest(application, []);
+  const boundRuns = new Map(completeRuns);
+  boundRuns.set("WS-02", {
+    ...runs.get("WS-02"),
+    implementationRevision: boundDigest,
+    evidence: [`git-head:${revision}`]
+  });
+  await fs.writeFile(path.join(application, "docs", "hidden.md"), "committed after dirty verification\n", "utf8");
+  await runGit(application, ["add", "docs/hidden.md"]);
+  await runGit(application, ["-c", "user.name=T", "-c", "user.email=t@t.test", "commit", "--quiet", "-m", "partial post-verification commit"]);
+  await assert.rejects(
+    preflightEngineeringDelivery(
+      application,
+      plan,
+      boundRuns,
+      { allowedPaths: ["src", "docs"], prohibitedPaths: [] },
+      { allowedPaths: ["src", "docs"], prohibitedPaths: [] },
+      baseRevision
+    ),
+    /does not bind the current workspace digest|does not bind the current Git HEAD/
+  );
+  await fs.writeFile(path.join(application, "src", "index.js"), "export const ok = true;\n", "utf8");
+  await fs.rm(path.join(application, "docs", "hidden.md"));
+  await runGit(application, ["add", "docs/hidden.md"]);
+  await runGit(application, ["-c", "user.name=T", "-c", "user.email=t@t.test", "commit", "--quiet", "-m", "remove partial test path"]);
+  await fs.writeFile(path.join(application, "README.md"), "changed after verification\n", "utf8");
+  await runGit(application, ["add", "-A"]);
+  await runGit(application, ["-c", "user.name=T", "-c", "user.email=t@t.test", "commit", "--quiet", "-m", "late application change"]);
+  await assert.rejects(
+    preflightEngineeringDelivery(
+      application,
+      plan,
+      completeRuns,
+      { allowedPaths: ["src", "docs", "README.md"], prohibitedPaths: [] },
+      { allowedPaths: ["src", "docs", "README.md"], prohibitedPaths: [] },
+      baseRevision
+    ),
+    /changed after independent verification: README\.md/
+  );
+});
+
+test("legacy delivery base comes from the committed opening receipt, never producer revisions", async (t) => {
+  const application = await makeTempDirectory("product-ops-opening-receipt-");
+  t.after(() => fs.rm(application, { recursive: true, force: true }));
+  await initializeDevelopmentOs(application, { dryRun: false });
+  await fs.mkdir(path.join(application, "src"), { recursive: true });
+  await fs.writeFile(path.join(application, "src", "index.js"), "export const base = true;\n", "utf8");
+  await runGit(application, ["init", "--quiet"]);
+  await runGit(application, ["add", "-A"]);
+  await runGit(application, ["-c", "user.name=T", "-c", "user.email=t@t.test", "commit", "--quiet", "-m", "base"]);
+  const baseRevision = (await runGit(application, ["rev-parse", "HEAD"])).stdout.trim();
+  const requestId = "DEVREQ-LEGACY-001";
+  const request = { schemaVersion: "1.0.0", requestId, title: "legacy receipt fixture" };
+  const sourceDigest = contractDigest(request);
+  const receipt = {
+    schemaVersion: "1.0.0",
+    receiptId: "SYNC-IN-LEGACY-001",
+    direction: "product_to_development",
+    contractType: "development_request",
+    contractId: requestId,
+    contractDigest: sourceDigest,
+    sourceRevision: "a".repeat(40),
+    storedAt: `.development-os/inbox/${requestId}.json`,
+    createdAt: "2026-08-22T00:00:00.000Z"
+  };
+  await fs.writeFile(path.join(application, receipt.storedAt), `${JSON.stringify(request, null, 2)}\n`, "utf8");
+  await fs.writeFile(
+    path.join(application, ".development-os", "receipts", `${receipt.receiptId}.json`),
+    `${JSON.stringify(receipt, null, 2)}\n`,
+    "utf8"
+  );
+  await runGit(application, ["add", "-A"]);
+  await runGit(application, ["-c", "user.name=T", "-c", "user.email=t@t.test", "commit", "--quiet", "-m", "open delivery"]);
+  await fs.writeFile(path.join(application, "src", "index.js"), "export const delivered = true;\n", "utf8");
+  await runGit(application, ["add", "-A"]);
+  await runGit(application, ["-c", "user.name=T", "-c", "user.email=t@t.test", "commit", "--quiet", "-m", "delivery"]);
+  const revision = (await runGit(application, ["rev-parse", "HEAD"])).stdout.trim();
+  const plan = {
+    planId: "ENGPLAN-LEGACY-001",
+    sourceDigest,
+    workstreams: [
+      { id: "WS-01", ownerRole: "ENG-01" },
+      { id: "WS-02", ownerRole: "ENG-15" }
+    ]
+  };
+  const runs = new Map([
+    ["WS-01", { workstreamId: "WS-01", status: "completed", verificationDisposition: "not_applicable", implementationRevision: revision, changedComponents: ["src/index.js"], evidence: [] }],
+    ["WS-02", { workstreamId: "WS-02", status: "completed", verificationDisposition: "passed", implementationRevision: revision, changedComponents: [], evidence: [] }]
+  ]);
+  const proof = await preflightEngineeringDelivery(
+    application,
+    plan,
+    runs,
+    { allowedPaths: ["src"], prohibitedPaths: [] },
+    { allowedPaths: ["src"], prohibitedPaths: [] },
+    null,
+    requestId
+  );
+  assert.equal(proof.applicationBaseRevision, baseRevision);
+  assert.deepEqual(proof.changedComponents, ["src/index.js"]);
+
+  await fs.mkdir(path.join(application, "docs"), { recursive: true });
+  await fs.writeFile(path.join(application, "docs", "hidden.md"), "must not be hidden by a later receipt\n", "utf8");
+  await runGit(application, ["add", "-A"]);
+  await runGit(application, ["-c", "user.name=T", "-c", "user.email=t@t.test", "commit", "--quiet", "-m", "out of scope before replacement"]);
+  await fs.rm(path.join(application, ".development-os", "receipts", `${receipt.receiptId}.json`));
+  const replacement = {
+    ...receipt,
+    receiptId: "SYNC-IN-LEGACY-002",
+    createdAt: "2026-08-22T00:01:00.000Z"
+  };
+  await fs.writeFile(
+    path.join(application, ".development-os", "receipts", `${replacement.receiptId}.json`),
+    `${JSON.stringify(replacement, null, 2)}\n`,
+    "utf8"
+  );
+  await runGit(application, ["add", "-A"]);
+  await runGit(application, ["-c", "user.name=T", "-c", "user.email=t@t.test", "commit", "--quiet", "-m", "replace receipt"]);
+  await fs.writeFile(path.join(application, "src", "index.js"), "export const deliveredAgain = true;\n", "utf8");
+  await runGit(application, ["add", "-A"]);
+  await runGit(application, ["-c", "user.name=T", "-c", "user.email=t@t.test", "commit", "--quiet", "-m", "second delivery"]);
+  const replacementRevision = (await runGit(application, ["rev-parse", "HEAD"])).stdout.trim();
+  const replacementRuns = new Map([
+    ["WS-01", { ...runs.get("WS-01"), implementationRevision: replacementRevision }],
+    ["WS-02", { ...runs.get("WS-02"), implementationRevision: replacementRevision }]
+  ]);
+  await assert.rejects(
+    preflightEngineeringDelivery(
+      application,
+      plan,
+      replacementRuns,
+      { allowedPaths: ["src", "docs"], prohibitedPaths: [] },
+      { allowedPaths: ["src"], prohibitedPaths: [] },
+      null,
+      requestId
+    ),
+    /no unique trusted opening receipt/
+  );
+});
+
+test("working-tree verification closes only with the full workspace digest and exact Git HEAD", async (t) => {
+  const application = await makeTempDirectory("product-ops-working-binding-");
+  t.after(() => fs.rm(application, { recursive: true, force: true }));
+  await initializeDevelopmentOs(application, { dryRun: false });
+  await fs.mkdir(path.join(application, "src"), { recursive: true });
+  await fs.writeFile(path.join(application, "src", "index.js"), "export const base = true;\n", "utf8");
+  await runGit(application, ["init", "--quiet"]);
+  await runGit(application, ["add", "-A"]);
+  await runGit(application, ["-c", "user.name=T", "-c", "user.email=t@t.test", "commit", "--quiet", "-m", "base"]);
+  const headRevision = (await runGit(application, ["rev-parse", "HEAD"])).stdout.trim();
+  await fs.writeFile(path.join(application, "src", "index.js"), "export const delivered = true;\n", "utf8");
+  const workspaceDigest = await verifierWorkspaceDigest(application, []);
+  const plan = {
+    planId: "ENGPLAN-WORKING-BIND-001",
+    workstreams: [
+      { id: "WS-01", ownerRole: "ENG-01" },
+      { id: "WS-02", ownerRole: "ENG-15" }
+    ]
+  };
+  const runs = new Map([
+    ["WS-01", { workstreamId: "WS-01", status: "completed", verificationDisposition: "not_applicable", implementationRevision: "pending", changedComponents: ["src/index.js"], evidence: [] }],
+    ["WS-02", { workstreamId: "WS-02", status: "completed", verificationDisposition: "passed", implementationRevision: workspaceDigest, changedComponents: [], evidence: [`git-head:${headRevision}`] }]
+  ]);
+  const proof = await preflightEngineeringDelivery(
+    application,
+    plan,
+    runs,
+    { allowedPaths: ["src"], prohibitedPaths: [] },
+    { allowedPaths: ["src"], prohibitedPaths: [] }
+  );
+  assert.equal(proof.source, "working_tree");
+  assert.equal(proof.implementationRevision, workspaceDigest);
+  assert.deepEqual(proof.changedComponents, ["src/index.js"]);
+});
+
+test("ENG-15 must bind an amendment's content digest rather than naming its predictable path", async (t) => {
+  const application = await makeTempDirectory("product-ops-amendment-binding-");
+  t.after(() => fs.rm(application, { recursive: true, force: true }));
+  await initializeDevelopmentOs(application, { dryRun: false });
+  await fs.mkdir(path.join(application, "src"), { recursive: true });
+  await fs.writeFile(path.join(application, "src", "index.js"), "export const base = true;\n", "utf8");
+  await runGit(application, ["init", "--quiet"]);
+  await runGit(application, ["add", "-A"]);
+  await runGit(application, ["-c", "user.name=T", "-c", "user.email=t@t.test", "commit", "--quiet", "-m", "base"]);
+  const baseRevision = (await runGit(application, ["rev-parse", "HEAD"])).stdout.trim();
+  await fs.mkdir(path.join(application, "docs"), { recursive: true });
+  await fs.writeFile(path.join(application, "docs", "scope.md"), "verified correction\n", "utf8");
+  await runGit(application, ["add", "-A"]);
+  await runGit(application, ["-c", "user.name=T", "-c", "user.email=t@t.test", "commit", "--quiet", "-m", "delivery"]);
+  const revision = (await runGit(application, ["rev-parse", "HEAD"])).stdout.trim();
+  const plan = {
+    planId: "ENGPLAN-AMEND-BIND-001",
+    workstreams: [
+      { id: "WS-01", ownerRole: "ENG-01" },
+      { id: "WS-02", ownerRole: "ENG-15" }
+    ]
+  };
+  const producerRun = {
+    schemaVersion: "1.0.0",
+    planId: plan.planId,
+    workstreamId: "WS-01",
+    ownerRole: "ENG-01",
+    producerActorId: "actor-eng-01",
+    status: "completed",
+    verificationDisposition: "not_applicable",
+    implementationRevision: revision,
+    changedComponents: ["documentation"],
+    commands: ["node --test"],
+    evidence: ["producer evidence"],
+    knownRisks: [],
+    completedAt: "2026-08-22T01:00:00.000Z"
+  };
+  const targetPath = `.development-os/runs/${plan.planId}-WS-01-result.json`;
+  const targetBytes = Buffer.from(`${JSON.stringify(producerRun, null, 2)}\n`);
+  await fs.writeFile(path.join(application, targetPath), targetBytes);
+  const amendment = {
+    schemaVersion: "1.0.0",
+    amendmentId: "AMEND-A1B2C3D4E5F6",
+    planId: plan.planId,
+    workstreamId: "WS-01",
+    ownerRole: "ENG-01",
+    ownerActorId: "actor-eng-01",
+    recordedByRole: "ENG-01",
+    recordedByActorId: "actor-eng-01",
+    target: {
+      artifactPath: targetPath,
+      artifactSha256: crypto.createHash("sha256").update(targetBytes).digest("hex")
+    },
+    corrections: [{
+      field: "/changedComponents",
+      priorValue: ["documentation"],
+      correctedValue: ["docs/scope.md"]
+    }],
+    reason: "The sealed run used a semantic label instead of the exact verified documentation path.",
+    evidence: [{ reference: `git tree ${revision}:docs/scope.md` }],
+    status: "pending_independent_verification",
+    verificationRequiredByRole: "ENG-15",
+    createdAt: "2026-08-22T03:00:00.000Z"
+  };
+  const amendmentPath = `.development-os/evidence/${amendment.amendmentId}.amendment.json`;
+  const amendmentBytes = Buffer.from(`${JSON.stringify(amendment, null, 2)}\n`);
+  await fs.writeFile(path.join(application, amendmentPath), amendmentBytes);
+  const verifierRun = {
+    workstreamId: "WS-02",
+    status: "completed",
+    verificationDisposition: "passed",
+    implementationRevision: revision,
+    changedComponents: [],
+    evidence: [amendmentPath]
+  };
+  const runs = new Map([["WS-01", producerRun], ["WS-02", verifierRun]]);
+  await assert.rejects(
+    preflightEngineeringDelivery(
+      application, plan, runs,
+      { allowedPaths: ["src", "docs"], prohibitedPaths: [] },
+      { allowedPaths: ["docs"], prohibitedPaths: [] },
+      baseRevision
+    ),
+    /does not verify the content digest/
+  );
+  verifierRun.evidence = [
+    `${amendmentPath}#sha256=${crypto.createHash("sha256").update(amendmentBytes).digest("hex")}`
+  ];
+  const proof = await preflightEngineeringDelivery(
+    application, plan, runs,
+    { allowedPaths: ["src", "docs"], prohibitedPaths: [] },
+    { allowedPaths: ["docs"], prohibitedPaths: [] },
+    baseRevision
+  );
+  assert.deepEqual(proof.changedComponents, ["docs/scope.md"]);
+  assert.deepEqual(proof.appliedAmendments.map((item) => item.amendmentId), [amendment.amendmentId]);
 });
 
 /**

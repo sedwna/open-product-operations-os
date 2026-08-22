@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parseCsv } from "../csv.js";
@@ -102,7 +103,9 @@ async function readAmendments(root, plans, config, errors, warnings) {
     if (verifier) {
       try {
         const run = JSON.parse(await fs.readFile(path.join(root, ".development-os", "runs", `${plan.planId}-${verifier.id}-result.json`), "utf8"));
-        if (run.status !== "completed" || run.verificationDisposition !== "passed" || !(run.evidence ?? []).includes(storedAt)) {
+        const bytes = await fs.readFile(path.join(root, storedAt));
+        const reference = `${storedAt}#sha256=${crypto.createHash("sha256").update(bytes).digest("hex")}`;
+        if (run.status !== "completed" || run.verificationDisposition !== "passed" || !(run.evidence ?? []).includes(reference)) {
           warnings.push(`Engineering amendment ${amendment.amendmentId} is awaiting explicit ENG-15 evidence.`);
         }
       } catch (error) {

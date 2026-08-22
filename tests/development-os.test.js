@@ -110,6 +110,60 @@ test("engineering evidence amendments are append-only, digest-guarded, idempoten
   assert.ok((await validateDevelopmentOs(root)).errors.some((error) => error.includes("target digest changed")));
 });
 
+test("changed-component amendments replace the complete semantic manifest without rewriting the sealed run", async (t) => {
+  const root = await temporaryRoot(t, "development-component-amendment-");
+  await initializeDevelopmentOs(root, { dryRun: false });
+  const requestFile = path.join(root, "request.json");
+  await writeJson(requestFile, developmentRequest("COMPONENT-AMENDMENT-001"));
+  const { plan } = await planDevelopmentRequest(root, requestFile, { dryRun: false });
+  const workstream = plan.workstreams[0];
+  const runPath = `.development-os/runs/${plan.planId}-${workstream.id}-result.json`;
+  const run = {
+    schemaVersion: "1.0.0",
+    planId: plan.planId,
+    workstreamId: workstream.id,
+    ownerRole: workstream.ownerRole,
+    producerActorId: "actor-eng-01",
+    status: "completed",
+    verificationDisposition: "not_applicable",
+    implementationRevision: "abcdef1234567890",
+    changedComponents: ["frontend", "tests"],
+    commands: ["node --test"],
+    evidence: ["producer evidence"],
+    knownRisks: [],
+    completedAt: "2026-08-01T03:00:00.000Z"
+  };
+  await writeJson(path.join(root, runPath), run);
+  const originalBytes = await fs.readFile(path.join(root, runPath));
+  const input = {
+    planId: plan.planId,
+    workstreamId: workstream.id,
+    artifactPath: runPath,
+    expectedSha256: crypto.createHash("sha256").update(originalBytes).digest("hex"),
+    corrections: [{
+      field: "/changedComponents",
+      priorValue: ["frontend", "tests"],
+      correctedValue: ["src/app", "tests/unit"]
+    }],
+    reason: "The sealed run used semantic labels instead of concrete repository-relative paths.",
+    evidence: [{ reference: "immutable producer revision tree inspection" }]
+  };
+  const inputFile = path.join(root, "component-amendment.json");
+  await writeJson(inputFile, input);
+  assert.equal(await developmentMain(["amend", root, "--amendment", inputFile, "--apply"], captureIo().io), 0);
+  assert.deepEqual(await fs.readFile(path.join(root, runPath)), originalBytes, "the sealed run remains byte-identical");
+
+  const partialFile = path.join(root, "partial-component-amendment.json");
+  await writeJson(partialFile, {
+    ...input,
+    corrections: [{ field: "/changedComponents/0", priorValue: "frontend", correctedValue: "src/app" }]
+  });
+  await assert.rejects(
+    developmentMain(["amend", root, "--amendment", partialFile, "--apply"], captureIo().io),
+    /replace the whole array atomically/
+  );
+});
+
 test("planner activates database, frontend, SEO, security, QA, docs, and independent verification", async (t) => {
   const root = await temporaryRoot(t, "development-plan-");
   await initializeDevelopmentOs(root, { dryRun: false });
