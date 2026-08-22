@@ -598,6 +598,47 @@ test("legacy delivery base comes from the committed opening receipt, never produ
   );
 });
 
+test("committed-delivery preflight resolves sealed components relative to a nested application root", async (t) => {
+  const repository = await makeTempDirectory("product-ops-nested-application-");
+  const application = path.join(repository, "development");
+  t.after(() => fs.rm(repository, { recursive: true, force: true }));
+  await fs.mkdir(application, { recursive: true });
+  await initializeDevelopmentOs(application, { dryRun: false });
+  await fs.mkdir(path.join(application, "docs"), { recursive: true });
+  await fs.writeFile(path.join(application, "docs", "base.md"), "base\n", "utf8");
+  await runGit(repository, ["init", "--quiet"]);
+  await runGit(repository, ["add", "-A"]);
+  await runGit(repository, ["-c", "user.name=T", "-c", "user.email=t@t.test", "commit", "--quiet", "-m", "base"]);
+  const baseRevision = (await runGit(repository, ["rev-parse", "HEAD"])).stdout.trim();
+  await fs.writeFile(path.join(application, "docs", "scope.md"), "nested application proof\n", "utf8");
+  await runGit(repository, ["add", "-A"]);
+  await runGit(repository, ["-c", "user.name=T", "-c", "user.email=t@t.test", "commit", "--quiet", "-m", "delivery"]);
+  const revision = (await runGit(repository, ["rev-parse", "HEAD"])).stdout.trim();
+  const plan = {
+    planId: "ENGPLAN-NESTED-001",
+    workstreams: [
+      { id: "WS-01", ownerRole: "ENG-01" },
+      { id: "WS-02", ownerRole: "ENG-15" }
+    ]
+  };
+  const runs = new Map([
+    ["WS-01", { workstreamId: "WS-01", status: "completed", verificationDisposition: "not_applicable", implementationRevision: revision, changedComponents: ["docs/scope.md"], evidence: [] }],
+    ["WS-02", { workstreamId: "WS-02", status: "completed", verificationDisposition: "passed", implementationRevision: revision, changedComponents: [], evidence: [] }]
+  ]);
+
+  const proof = await preflightEngineeringDelivery(
+    application,
+    plan,
+    runs,
+    { allowedPaths: ["docs"], prohibitedPaths: [] },
+    { allowedPaths: ["docs"], prohibitedPaths: [] },
+    baseRevision
+  );
+
+  assert.equal(proof.source, "sealed_runs");
+  assert.deepEqual(proof.changedComponents, ["docs/scope.md"]);
+});
+
 test("working-tree verification closes only with the full workspace digest and exact Git HEAD", async (t) => {
   const application = await makeTempDirectory("product-ops-working-binding-");
   t.after(() => fs.rm(application, { recursive: true, force: true }));

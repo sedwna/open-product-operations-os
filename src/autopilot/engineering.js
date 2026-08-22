@@ -342,10 +342,17 @@ export async function preflightEngineeringDelivery(
     throw new Error(`Engineering runs omit changed Git path(s): ${unreported.join(", ")}.`);
   }
 
+  // `changedComponents` are application-root-relative because plans may target an application
+  // nested inside a larger repository. Git object paths, unlike `git diff --relative`, are always
+  // repository-root-relative, so preserve that prefix when proving a component existed at the
+  // producer revision.
+  const repositoryPrefix = (await runGit(root, ["rev-parse", "--show-prefix"]))
+    .stdout.trim().replaceAll("\\", "/");
   for (const [workstreamId, run] of effectiveRuns) {
     for (const component of run.changedComponents ?? []) {
+      const gitObjectPath = `${repositoryPrefix}${component}`;
       try {
-        await runGit(root, ["cat-file", "-e", `${canonicalRevisions.get(workstreamId)}:${component}`]);
+        await runGit(root, ["cat-file", "-e", `${canonicalRevisions.get(workstreamId)}:${gitObjectPath}`]);
       } catch {
         throw new Error(
           `Engineering workstream ${run.workstreamId} names a changed component that does not exist at its implementation revision: ${component}.`
