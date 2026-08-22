@@ -39,6 +39,9 @@ export async function materializeCycleWorkbook(root, config, { cycleId, intake, 
   }];
   const acceptance = unique(runs.flatMap((candidate) => candidate.acceptanceCriteria ?? []).map((item) => item.statement)).join(" | ");
   const risks = unique(runs.flatMap((candidate) => candidate.knownRisks ?? [])).join(" | ") || "none recorded";
+  const readinessRun = run("RB-11");
+  const hasCanonicalReadinessState = readinessRun?.status === "completed"
+    && readinessRun.canonicalRecords?.some((item) => item.sheet === "readiness" || item.sheet === "releases");
   const records = [
     record("events", { event_id: intake.eventId }, {
       event_type: intake.type, title: intake.title, status: "closed", priority: intake.priority, risk,
@@ -145,23 +148,29 @@ export async function materializeCycleWorkbook(root, config, { cycleId, intake, 
       canonical_revision: cycleId, development_reference: evidencePath, evidence_refs: evidencePath,
       gap_or_failure: "none recorded", verified_at: timestamp
     }),
-    record("releases", { release_id: ids.release }, {
-      readiness_id: ids.readiness, event_id: intake.eventId, status: "planned", target_environment: "local",
-      ticket_ids: ids.ticket, implementation_refs: evidencePath,
-      rollback_reference: "Application Git cycle branch and content-addressed controlled-write backups",
-      writer_receipt_ids: "pending audit projection", health_check_refs: evidencePath,
-      residual_risks: risks, follow_up_task_ids: run("RB-11")?.taskId ?? "none",
-      owner_role: "RB-11", owner_actor_id: actor("RB-11")
-    }),
-    record("readiness", { readiness_id: ids.readiness }, {
-      event_id: intake.eventId, ticket_ids: ids.ticket, status: "conditionally_ready", target_environment: "local",
-      required_gate_ids: "product-analysis|engineering-quality|independent-verification",
-      satisfied_gate_ids: "product-analysis|engineering-quality|independent-verification", blocking_ids: "human-risk-acceptance|manual-browser-validation|release-authorization",
-      residual_risks: risks, rollback_reference: "Git cycle branches and controlled workbook backups",
-      release_id: ids.release,
-      owner_role: "RB-11", owner_actor_id: actor("RB-11"), producer_actor_id: actor("RB-11"),
-      verifier_actor_id: actor("RB-12"), qc_record_id: ids.qc, assessed_at: timestamp
-    }),
+    // RB-11 is the semantic owner of readiness and release. Its explicit canonical output wins as
+    // a unit: a readiness-only `not_ready` assessment intentionally has no release, so closure must
+    // not fill that absence with a competing planned release. Older runs without either canonical
+    // record retain the legacy fallback projection.
+    ...(hasCanonicalReadinessState ? [] : [
+      record("releases", { release_id: ids.release }, {
+        readiness_id: ids.readiness, event_id: intake.eventId, status: "planned", target_environment: "local",
+        ticket_ids: ids.ticket, implementation_refs: evidencePath,
+        rollback_reference: "Application Git cycle branch and content-addressed controlled-write backups",
+        writer_receipt_ids: "pending audit projection", health_check_refs: evidencePath,
+        residual_risks: risks, follow_up_task_ids: readinessRun?.taskId ?? "none",
+        owner_role: "RB-11", owner_actor_id: actor("RB-11")
+      }),
+      record("readiness", { readiness_id: ids.readiness }, {
+        event_id: intake.eventId, ticket_ids: ids.ticket, status: "conditionally_ready", target_environment: "local",
+        required_gate_ids: "product-analysis|engineering-quality|independent-verification",
+        satisfied_gate_ids: "product-analysis|engineering-quality|independent-verification", blocking_ids: "human-risk-acceptance|manual-browser-validation|release-authorization",
+        residual_risks: risks, rollback_reference: "Git cycle branches and controlled workbook backups",
+        release_id: ids.release,
+        owner_role: "RB-11", owner_actor_id: actor("RB-11"), producer_actor_id: actor("RB-11"),
+        verifier_actor_id: actor("RB-12"), qc_record_id: ids.qc, assessed_at: timestamp
+      })
+    ]),
     record("lineage", { lineage_edge_id: ids.lineage }, {
       event_id: intake.eventId, from_id: ids.idea, from_type: "idea", relationship: "delivered_as",
       to_id: ids.ticket, to_type: "delivery_ticket", canonical_reference: evidencePath,

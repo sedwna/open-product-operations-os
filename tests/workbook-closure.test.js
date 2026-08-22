@@ -8,6 +8,7 @@ import { APPROVAL_STORE_FILE } from "../src/constants.js";
 import { parseCsv, rowsToObjects } from "../src/csv.js";
 import { run } from "../src/cli.js";
 import { loadConfig } from "../src/config.js";
+import { commitRoleRecords } from "../src/runtime/coordination-record.js";
 import { captureIo, makeTempDirectory } from "./helpers.js";
 
 function approval(config, { requestId, taskId, gate, question }) {
@@ -78,6 +79,60 @@ test("incident closure uses the same event's attributed development-export appro
   assert.equal(decision.status, "approved");
   assert.equal(decision.evidence_refs, developmentExport.requestId);
   assert.equal(decision.decision_maker_actor_id, fixture.config.project.humanAuthorityActorId);
+  const readiness = await workbookRecords(fixture, "readiness");
+  const releases = await workbookRecords(fixture, "releases");
+  assert.ok(readiness.some((row) => row.readiness_id === "RDY-20260823-102"));
+  assert.ok(releases.some((row) => row.release_id === "REL-20260823-102"));
+});
+
+test("an explicit not-ready assessment remains the only readiness state and creates no release", async (t) => {
+  const eventId = "EVT-20260823-104";
+  const fixture = await closureFixture(t, "owned-not-ready", eventId);
+  const developmentExport = approval(fixture.config, {
+    requestId: "APR-DEVELOPMENT-104",
+    taskId: fixture.tasks[0].task_id,
+    gate: "development-export",
+    question: "Authorize this incident fix to cross into engineering?"
+  });
+  await writeApprovalStore(fixture.root, [developmentExport]);
+
+  const readinessRun = {
+    roleId: "RB-11",
+    taskId: "WCT-1041",
+    eventId,
+    status: "completed",
+    canonicalRecords: [{
+      sheet: "readiness",
+      key: { readiness_id: "RDY-20260823-901" },
+      fields: {
+        status: "not_ready",
+        target_environment: "local",
+        blocking_ids: "missing-release-evidence",
+        residual_risks: "Release evidence is incomplete.",
+        owner_role: "RB-11",
+        owner_actor_id: fixture.config.agents.find((agent) => agent.id === "RB-11").actorId,
+        producer_actor_id: fixture.config.agents.find((agent) => agent.id === "RB-11").actorId,
+        verifier_actor_id: fixture.config.agents.find((agent) => agent.id === "RB-12").actorId,
+        assessed_at: "2026-08-23T10:05:00.000Z"
+      }
+    }]
+  };
+  assert.deepEqual(await commitRoleRecords(fixture.root, fixture.config, readinessRun), {
+    written: 1,
+    sheets: ["readiness"]
+  });
+
+  const result = await materializeCycleWorkbook(fixture.root, fixture.config, {
+    cycleId: `CYCLE-${eventId}`,
+    intake: fixture.intake,
+    tasks: [...fixture.tasks, { task_id: readinessRun.taskId, event_id: eventId, owner_role: "RB-11", human_gate: "" }],
+    runs: [...fixture.runs, readinessRun],
+    now: new Date("2026-08-23T10:10:00.000Z")
+  });
+
+  assert.equal(result.receipts.length, 13);
+  assert.deepEqual((await workbookRecords(fixture, "readiness")).map((row) => row.readiness_id), ["RDY-20260823-901"]);
+  assert.deepEqual(await workbookRecords(fixture, "releases"), []);
 });
 
 test("cycle closure still fails closed without an attributed same-event approval", async (t) => {
@@ -149,4 +204,10 @@ async function writeApprovalStore(root, requests) {
   const file = path.join(root, APPROVAL_STORE_FILE);
   await fs.mkdir(path.dirname(file), { recursive: true });
   await fs.writeFile(file, `${JSON.stringify({ schemaVersion: "1.0.0", requests }, null, 2)}\n`, "utf8");
+}
+
+async function workbookRecords(fixture, sheetKey) {
+  const sheet = fixture.config.workbook.sheets.find((candidate) => candidate.key === sheetKey);
+  return rowsToObjects(parseCsv(await fs.readFile(path.join(fixture.root, sheet.file), "utf8"))).records
+    .filter((row) => !Object.values(row).some((value) => String(value).startsWith("<")));
 }
