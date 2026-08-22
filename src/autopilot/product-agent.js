@@ -2,14 +2,32 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { assertNoLinkTraversal, resolveInside, toPosixPath } from "../paths.js";
-import { readPackagedFile } from "../catalog.js";
+import { canonicalCatalog, readPackagedFile } from "../catalog.js";
 import { validatePublishedSchema } from "../schema-validation.js";
 import { assertNoCredentialMaterial } from "../runtime/security.js";
 import { canonicalRecordKeys } from "../workbook-contract.js";
-import { RECORD_ID_PATTERNS } from "../validation.js";
+import { RECORD_ID_PATTERNS, STATUS_FIELDS } from "../validation.js";
 
 const PRODUCT_RUN_ROOT = ".product-ops/runtime/autopilot/product-runs";
 const PRODUCT_AGENT_RESULT_CONTRACT = JSON.parse(readPackagedFile("schemas/product-agent-run.schema.json"));
+
+/**
+ * The status field a tab carries and every value it accepts.
+ *
+ * Only the canonical-record vocabularies belong here. The result contract itself is already handed
+ * over whole, so every enum it defines — impacts among them — is readable in the brief; adding a
+ * second copy would create two statements of one fact and a way for them to disagree.
+ *
+ * A tab whose status is not enumerated returns nothing rather than an empty list, so the brief
+ * distinguishes "this tab has no status" from "this tab has a status and I could not tell you it".
+ */
+function statusVocabulary(sheetKey) {
+  const rule = STATUS_FIELDS[sheetKey];
+  if (!rule) return {};
+  const [field, family] = rule;
+  const values = canonicalCatalog.statuses[family];
+  return Array.isArray(values) ? { statusField: field, statusValues: values } : {};
+}
 
 export async function runProductAgent(
   root,
@@ -147,6 +165,9 @@ export function buildProductAgentRequest(
       noProductionActions: true,
       noCredentialMaterial: true,
       evidenceBeforeClaims: true,
+      qualificationThreshold: "Ask the owner only when the answer changes a material product choice, risk acceptance, irreversible action, sensitive access, or final acceptance. Read canonical state first; mechanical choices are not human questions.",
+      discoveryStopRule: "Stop when remaining uncertainty cannot change the next decision or safe reversible action. Record the unknown and a trigger for reopening instead of forcing completeness.",
+      smallestCompleteOutcome: "Produce only the smallest complete result inside this role and task. Do not expand adjacent scope or create speculative artifacts.",
       // A retrieval that failed is a fact about the attempt, not about the world. Recording "no
       // performance budget is documented" because one fetch returned an error puts a false absence
       // into the record, and every document downstream then reasons from a gap that was never
@@ -154,6 +175,8 @@ export function buildProductAgentRequest(
       retryBeforeRecordingAbsence: true
     },
     reporting: {
+      proportionalDeliveryRule: "Match analysis and evidence depth to current impact. Low-risk reversible work should stay focused; cross-boundary work needs integration and rollback proof; sensitive, production, high-risk, or irreversible work receives specialist gates and human authority. Scope, truthfulness, credentials, evidence, and independence never weaken.",
+      complexityRule: "Recommend new process, abstraction, dependency, service, store, queue, extension point, gate, or artifact only when a present requirement or observed risk needs it. Check for no-build, repository reuse, standard or native capability, and installed capability before proposing a local build. Name the simpler alternative considered, why it is insufficient now, the ongoing cost, and the removal or expansion trigger. Hypothetical future reuse is not evidence.",
       absenceRule: "A source you could not reach is not a source that says nothing. Retry a failed retrieval at least once before recording anything as absent, and if it still fails, record the failure — what you tried and what it returned — rather than the absence.",
       // This role's charter has always said it defines write boundaries. Until now there was no
       // field to put one in, so the delivery inherited the whole application policy — thirteen
@@ -176,7 +199,12 @@ export function buildProductAgentRequest(
               sheet: sheet.key,
               keyFields: canonicalRecordKeys(sheet.key),
               identifierPattern: RECORD_ID_PATTERNS[sheet.key]?.source ?? null,
-              columns: sheet.columns
+              columns: sheet.columns,
+              // The identifier pattern was carried here first and the closed vocabularies were not,
+              // so a producer still learned a status value by having a finished record refused —
+              // the same round trip, one field over. A refusal that names nothing acceptable is a
+              // worse teacher than a brief that says the set up front.
+              ...statusVocabulary(sheet.key)
             }))
           }
         : {})

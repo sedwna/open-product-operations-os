@@ -69,6 +69,17 @@ It is not:
 - a dashboard whose status is more authoritative than the repositories beneath it;
 - a promise that activity equals a correct or releasable product.
 
+### Enough process, enough engineering
+
+The OS is explicitly protected against two agent failure modes: **overqualification** (asking for
+information that cannot change the next safe action) and **overengineering** (adding complexity not
+justified by a present requirement or risk). Agents inspect canonical state before asking, record
+unknowns instead of forcing completeness, implement the smallest reversible change, and scale
+assurance depth with impact. Security, evidence, independent verification, and human authority stay
+mandatory. Engineering follows an ordered ladder — no build, reuse, standard/native capability,
+installed dependency, then minimum local code — and records the ceiling and upgrade trigger of any
+deliberate shortcut. Read the [proportional-delivery policy](docs/architecture/proportional-delivery.md).
+
 ## One event, end to end
 
 Every idea, finding, incident, feedback item, or delivery request travels through a replayable

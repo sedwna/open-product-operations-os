@@ -223,6 +223,27 @@ test("specialist execution is disabled by default, shell-free, attributed, and v
   await fs.writeFile(tool, `import fs from "node:fs";\nconst input=JSON.parse(fs.readFileSync(process.argv[2],"utf8"));\nprocess.stdout.write(JSON.stringify({schemaVersion:"1.0.0",planId:input.planId,workstreamId:input.workstream.id,ownerRole:input.workstream.ownerRole,producerActorId:"actor-eng-01",status:"completed",verificationDisposition:"not_applicable",implementationRevision:"abcdef1234567890",changedComponents:["docs"],commands:["synthetic-check"],evidence:["evidence/synthetic.json"],knownRisks:[],completedAt:"2026-08-01T03:00:00.000Z"}));\n`);
   const preview = await runEngineeringWorkstream(root, plan.planId, "WS-01", { dryRun: true });
   assert.equal(preview.payload.policy.isolation, "external-required");
+  assert.equal(preview.payload.policy.proportionalEngineering.reproduceBeforeEdit, true);
+  assert.deepEqual(preview.payload.policy.proportionalEngineering.solutionLadder, [
+    "no build",
+    "repository reuse",
+    "standard library or native platform",
+    "installed capability",
+    "minimum local implementation"
+  ]);
+  assert.match(preview.payload.policy.proportionalEngineering.defectRule, /every caller/);
+  assert.equal(preview.payload.policy.proportionalEngineering.speculativeComplexityProhibited, true);
+  assert.deepEqual(preview.payload.policy.proportionalEngineering.complexityJustification, [
+    "present requirement or observed risk",
+    "simpler alternative and why it is insufficient now",
+    "ongoing maintenance or operational cost",
+    "removal or expansion trigger"
+  ]);
+  assert.deepEqual(preview.payload.policy.proportionalEngineering.deliberateShortcutRecord, [
+    "known ceiling",
+    "observable upgrade trigger"
+  ]);
+  assert.ok(preview.payload.policy.proportionalEngineering.qualityFloor.includes("security"));
   const executed = await runEngineeringWorkstream(root, plan.planId, "WS-01", { dryRun: false });
   assert.equal(executed.result.status, "completed");
   const validation = await validateDevelopmentOs(root);

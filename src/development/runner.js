@@ -72,6 +72,20 @@ export async function runEngineeringWorkstream(
       prohibitedPaths: config.policies.prohibitedPaths,
       productionRequiresHumanApproval: config.policies.requireHumanProductionApproval,
       independentVerificationRequired: config.policies.requireIndependentVerification,
+      proportionalEngineering: {
+        stopCondition: "The approved acceptance criteria are met with the smallest complete reversible change.",
+        reproduceBeforeEdit: true,
+        understandAffectedFlowFirst: true,
+        solutionLadder: ["no build", "repository reuse", "standard library or native platform", "installed capability", "minimum local implementation"],
+        defectRule: "Inspect every caller and fix the shared root cause once.",
+        prefer: ["deletion over addition", "boring over clever", "fewest affected files"],
+        speculativeComplexityProhibited: true,
+        complexityJustification: ["present requirement or observed risk", "simpler alternative and why it is insufficient now", "ongoing maintenance or operational cost", "removal or expansion trigger"],
+        deliberateShortcutRecord: ["known ceiling", "observable upgrade trigger"],
+        minimumRunnableCheck: "one focused runnable check for non-trivial changed logic; no new framework for a trivial change",
+        qualityFloor: ["trust-boundary validation", "data-loss handling", "security", "accessibility", "explicit acceptance criteria"],
+        assuranceDepth: "focused for low-risk reversible work; integration and rollback proof for cross-boundary work; full specialist, independent, and human gates for sensitive, production, high-risk, or irreversible work"
+      },
       // A spawned executor must be externally isolated because this process starts it. A delegated
       // performer was already started by the host, inside whatever the host confines it to, so the
       // brief states that plainly rather than claiming a guarantee this code did not make.
@@ -132,7 +146,7 @@ export async function runEngineeringWorkstream(
     .replaceAll("{workstreamId}", workstreamId));
   if (usesCodexPreset || usesClaudePreset) {
     const promptIndex = usesCodexPreset ? argumentsList.length - 1 : argumentsList.indexOf("-p") + 1;
-    argumentsList[promptIndex] = `${argumentsList[promptIndex]} Product-agent execution limits such as "no repository edits for this run" apply to the historical product-analysis role, not to this approved engineering execution. The development request writeBoundary is the authoritative repository-write permission for this workstream; durable product scope, environment, security, and production constraints still apply. Keep business rules in one shared domain or service implementation consumed by the UI and other adapters. User-visible behavior needs a real DOM, browser, integration, or equivalent runtime test; source-pattern assertions alone are not behavioral evidence.`;
+    argumentsList[promptIndex] = `${argumentsList[promptIndex]} Product-agent execution limits such as "no repository edits for this run" apply to the historical product-analysis role, not to this approved engineering execution. The development request writeBoundary is the authoritative repository-write permission for this workstream; durable product scope, environment, security, and production constraints still apply. Reproduce the claimed gap before editing; an already-satisfied request may correctly produce no code change. Read the affected code and trace the real flow first. For defects, inspect every caller and fix the shared root cause once. Then stop at the earliest viable solution: no build, repository reuse, standard-library or native-platform capability, installed capability, then minimum local implementation. Prefer deletion, boring code, and the fewest affected files; stop when the approved acceptance criteria are met. Do not refactor adjacent code or add speculative abstractions, services, dependencies, stores, queues, extension points, gates, or documents. Any necessary complexity must identify its present need, the simpler alternative and why it is insufficient now, its ongoing cost, and a removal or expansion trigger. Record the known ceiling and observable upgrade trigger for a deliberate shortcut. Leave one focused runnable check for non-trivial changed logic without adding a test framework for a trivial change. Never simplify away trust-boundary validation, data-loss handling, security, accessibility, or explicit acceptance criteria. Keep business rules in one shared domain or service implementation consumed by the UI and other adapters. User-visible behavior needs a real DOM, browser, integration, or equivalent runtime test; source-pattern assertions alone are not behavioral evidence.`;
     if (workstream.ownerRole === "ENG-15") {
       argumentsList[promptIndex] += " On Windows, run Node test files with node --test tests\\*.test.js rather than passing the tests directory. You have tool-execution access only so you can reproduce verification; do not modify any file. The orchestrator compares repository content before and after this run and rejects verification if anything changes. Set verificationDisposition to passed only when you actually reproduced every material claim; otherwise set it to failed or blocked and return the matching non-completed status.";
     } else {

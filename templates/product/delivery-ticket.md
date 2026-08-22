@@ -32,6 +32,17 @@
 - Rollback expectation:
 - Runtime access alias, if required: `<store://approved-store/alias OR none>`
 
+## Simplicity contract
+
+- Smallest complete reversible change:
+- Existing path or pattern to reuse:
+- Earliest viable solution rung: `<no_build|repository_reuse|standard_or_native|installed_capability|local_implementation>`
+- Capability checked at earlier rungs: `<repository; standard library; platform; installed dependencies>`
+- Defect root cause and affected callers, if applicable:
+- Explicitly prohibited speculative work:
+- Added complexity, if any: `<present need; simpler alternative rejected; ongoing cost; removal or expansion trigger>`
+- Deliberate shortcut, if any: `<known ceiling; observable replacement trigger>`
+
 ## Validation recipe
 
 - Validation plan ID:

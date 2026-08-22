@@ -44,6 +44,13 @@
 - Recommended next step:
 - Decision brief ID:
 
+## Proportional stop
+
+- Evidence threshold for the next decision:
+- Threshold reached: `<yes/no>`
+- Remaining uncertainty that cannot change the next decision:
+- Trigger that would reopen discovery:
+
 ## Controls
 
 - Producer actor ID:

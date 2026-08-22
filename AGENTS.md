@@ -22,6 +22,31 @@ way you went in one clause.
 
 Ask in chat, one thing at a time, and wait. Do not batch four questions into a wall of text.
 
+## Proportional work
+
+Do not overqualify the person or overengineer the product. Read the repository and canonical state
+before asking anything. Ask only when the answer changes a material product choice, risk acceptance,
+irreversible action, sensitive access, or final acceptance; make mechanical choices yourself and
+state them briefly. One decision at a time, with plain-language context, two or three mutually
+exclusive options, consequences, a recommendation, and room for a free-form answer.
+
+Build the smallest complete reversible change that satisfies current acceptance criteria. Reuse an
+existing path before adding a layer. A new abstraction, service, dependency, store, queue, extension
+point, gate, or artifact needs a present requirement or observed risk, a simpler alternative that is
+insufficient now, and a removal or expansion trigger. Hypothetical future flexibility is not a
+requirement. Reproduce a claimed gap before changing code; "no change needed" is a valid result.
+
+Understand first, then stop at the earliest solution that works: no build, reuse code already here,
+use the standard library or native platform, use an installed dependency, and only then write the
+minimum local implementation. For defects, inspect every caller and fix the shared root cause once.
+Prefer deletion, boring code, and the fewest files. A deliberate shortcut records its known ceiling
+and observable upgrade trigger. Non-trivial logic leaves one focused runnable check; never trade
+away trust-boundary validation, data-loss handling, security, accessibility, or explicit acceptance.
+
+Assurance depth follows risk, but scope, credential hygiene, evidence for material claims,
+independent verification, and human authority never weaken. The complete policy is
+[`docs/architecture/proportional-delivery.md`](docs/architecture/proportional-delivery.md).
+
 When something fails, say what broke and what you are doing about it. Do not paste raw stack traces
 at them.
 
@@ -239,6 +264,8 @@ Before work:
 During work:
 
 - keep the feedback loop (below);
+- apply the proportional-work policy: stop qualifying when the next safe action is clear and stop
+  engineering when the approved outcome is met;
 - stay inside the role's semantic and write authority;
 - communicate through versioned cards and handoffs, not private agent-to-agent instructions;
 - keep credentials outside Git;

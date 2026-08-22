@@ -19,6 +19,12 @@
 - Out of scope:
 - Write boundary:
 - Development-owned fields that must not be authored here:
+- Smallest complete result:
+- Earliest viable solution rung: `<no_build|repository_reuse|standard_or_native|installed_capability|local_implementation>`
+- Existing capability and affected-flow evidence:
+- Stop condition (the point after which more work is scope expansion):
+- Complexity justification required: `<none OR present need and simpler alternative>`
+- Deliberate shortcut: `<none OR known ceiling and observable replacement trigger>`
 
 ## Inputs and dependencies
 

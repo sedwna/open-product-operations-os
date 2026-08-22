@@ -17,6 +17,10 @@
 - Entry criteria:
 - Exit criteria:
 - Stop conditions:
+- Risk-proportional depth: `<focused|cross-boundary|high-assurance>`
+- Smallest runnable check for non-trivial changed logic:
+- Quality-floor checks: `<trust boundary; data loss; security; accessibility; explicit acceptance>`
+- Checks deliberately omitted because they cannot change the disposition:
 
 ## Coverage
 

@@ -26,6 +26,11 @@ four questions about your product and none about mechanics.
 
 The rest of this page is what it does on your behalf, for when you want to know or do it yourself.
 
+The agent also follows a [proportional-delivery policy](docs/architecture/proportional-delivery.md):
+it reads existing state before asking you, asks only for decisions that can materially change the
+outcome, and chooses the smallest complete reversible implementation. More process is added only
+when risk or current scope justifies it.
+
 ## What this is
 
 This repository is not an application you install. It is an operating model your coding agent

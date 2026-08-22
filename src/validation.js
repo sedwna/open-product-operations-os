@@ -61,7 +61,7 @@ export const RECORD_ID_PATTERNS = {
   writer_receipts: /^WRC-[A-Za-z0-9._-]+$/
 };
 
-const STATUS_FIELDS = {
+export const STATUS_FIELDS = {
   role_registry: ["lifecycle", "role_lifecycle"],
   events: ["status", "event"],
   taskboard: ["status", "task"],

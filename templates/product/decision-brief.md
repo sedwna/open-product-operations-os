@@ -14,6 +14,10 @@
 
 State one question that can receive an explicit disposition.
 
+- Why a human answer is required now:
+- Material outcome that changes with the answer:
+- Why canonical evidence cannot settle it:
+
 ## Context and evidence
 
 - User or business need:
@@ -28,6 +32,9 @@ State one question that can receive an explicit disposition.
 | --- | --- | --- | --- | --- |
 | A | | | | |
 | B | | | | |
+
+Use two or three mutually exclusive options. Do not ask the decision-maker for schema values,
+commands, paths, actor IDs, or other mechanical inputs.
 
 ## Recommendation
 

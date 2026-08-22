@@ -41,6 +41,27 @@ records are immutable; corrections point to the superseded record.
 - Private messages may alert an owner but never replace the durable task or handoff.
 - Completion means the done conditions and required receipts exist, not that effort occurred.
 
+## Proportional delivery
+
+- Read canonical state before asking the owner. Ask only when the answer changes product direction,
+  risk acceptance, irreversible action, sensitive access, or final acceptance.
+- Stop discovery when remaining uncertainty cannot change the next decision. Record unknowns and
+  reopening triggers instead of forcing completeness.
+- Implement the smallest complete reversible change that meets current acceptance criteria, using
+  existing paths and patterns first.
+- Understand the affected flow, then stop at the first viable solution: no build, repository reuse,
+  standard-library or native-platform capability, installed dependency, then minimum local code.
+- For a defect, inspect all callers and fix the shared root cause once. Prefer deletion, boring code,
+  and the fewest affected files.
+- A new abstraction, service, dependency, store, queue, extension point, gate, or artifact requires
+  a present need, a simpler rejected alternative, its ongoing cost, and a removal or expansion
+  trigger. Hypothetical reuse is not evidence.
+- A deliberate shortcut records its known ceiling and observable replacement trigger. Non-trivial
+  logic leaves one focused runnable check; trust-boundary validation, data-loss handling, security,
+  accessibility, and explicit acceptance criteria are never simplification targets.
+- Assurance depth follows impact. Scope control, credential hygiene, material-claim evidence,
+  independent verification, and human authority remain mandatory at every depth.
+
 ## Evidence and truthfulness
 
 - Evidence identifies source, capture time, environment, method, integrity value, and limitations.

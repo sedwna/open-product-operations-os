@@ -254,6 +254,10 @@ test("product agent retries use isolated artifacts and never re-run a sealed res
     const brief = JSON.parse(await fs.readFile(inputFile, "utf8"));
     assert.equal(brief.task.task_id, task.task_id);
     assert.equal(brief.policy.noDirectRepositoryWrites, true);
+    assert.match(brief.policy.qualificationThreshold, /material product choice/);
+    assert.match(brief.policy.discoveryStopRule, /remaining uncertainty/);
+    assert.match(brief.reporting.complexityRule, /standard or native capability/);
+    assert.match(brief.reporting.complexityRule, /Hypothetical future reuse is not evidence/);
     return productAgentResult(task, role, executions === 1 ? "failed" : "completed", now);
   };
 
