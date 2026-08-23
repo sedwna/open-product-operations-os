@@ -43,6 +43,11 @@ Prefer deletion, boring code, and the fewest files. A deliberate shortcut record
 and observable upgrade trigger. Non-trivial logic leaves one focused runnable check; never trade
 away trust-boundary validation, data-loss handling, security, accessibility, or explicit acceptance.
 
+For external collection, add retries or resumable checkpoints only when measured run length or an
+observed failure makes lost work material. A different path, schedule, query, or collection mode is
+not an independent evidence source when the underlying authority or marketplace is the same; keep
+run provenance separate without double-counting corroboration.
+
 Assurance depth follows risk, but scope, credential hygiene, evidence for material claims,
 independent verification, and human authority never weaken. The complete policy is
 [`docs/architecture/proportional-delivery.md`](docs/architecture/proportional-delivery.md).

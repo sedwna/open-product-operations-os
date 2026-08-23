@@ -58,6 +58,13 @@ code or "clean up" unrelated areas unless the approved outcome requires it.
 When a deliberately simple design has a known ceiling, record the ceiling and an observable trigger
 for replacement beside the decision or code. A deferral without a trigger is hidden debt.
 
+For bounded external collection, add retry, backoff, or a resumable checkpoint only when an observed
+failure or the measured run length makes repeated work material; a short request does not need a
+workflow engine. Keep evidence identity separate from execution identity: changing a URL path,
+schedule, query, or collection mode does not create an independent source when the evidence still
+comes from the same authority or marketplace. Separate run records are useful provenance, but must
+not inflate corroboration or confidence as if another source confirmed the claim.
+
 ## Quality floor
 
 Minimal is not careless. Never simplify away:
@@ -98,6 +105,8 @@ Before accepting a product or engineering result, ask:
 - Is this the smallest complete change and the narrowest useful evidence?
 - For a defect, was the shared root cause fixed after checking every caller?
 - Does each deliberate shortcut name its ceiling and a measurable replacement trigger?
+- Do collection retries/checkpoints match measured failure cost, and do multiple runs preserve one
+  real source identity instead of manufacturing corroboration?
 - Did the work stop when the approved outcome was met?
 - Would deleting any new artifact, abstraction, or gate leave the outcome and risk control intact?
 
