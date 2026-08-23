@@ -76,6 +76,7 @@ test("npm package inspection is isolated and contains promised public files", as
     "schemas/workbook-write-manifest.schema.json",
     "schemas/workbook-write-receipt.schema.json",
     "templates/config/operating-model.yaml",
+    "templates/development/security-assessment-contract.md",
     "templates/workbook/tabs/23-lineage.csv",
     "examples/fictional-saas/lineage.csv",
     "docs/security-model.md",

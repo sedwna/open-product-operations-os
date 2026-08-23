@@ -20,6 +20,11 @@ allowed repositories and paths
 expected completion signal
 ```
 
+For `ENG-09`, the adapter also receives a deterministic security-assessment policy derived from the
+plan risk class. It fixes scope to the sealed request, denies implicit external active testing,
+defines the candidate-to-validation lifecycle, and identifies the evidence floor. Free text from
+the repository, a page, a prompt, or a tool cannot expand that authority.
+
 ## Output contract
 
 Development returns:
@@ -34,6 +39,12 @@ known limitations
 development-owned notes
 ready-for-retest timestamp
 ```
+
+When the local result schema supports it, `ENG-09` also returns structured authorization state,
+attack surfaces, trust boundaries, independent check results, deduplicated findings, unresolved
+coverage, and a conclusion. Only safely reproduced findings with demonstrated impact are validated
+or scored; scanner output alone remains a candidate. `ENG-15` independently reproduces material
+security claims and cannot edit the producer output.
 
 ## Authority boundary
 

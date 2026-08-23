@@ -125,6 +125,25 @@ non-reserved email canaries and private absolute paths, and reports binary inven
 and `node_modules` directories are excluded; both are dependency or version-control stores outside
 the generated operating records.
 
+## Engineering security-assessment boundary
+
+Every newly initialized Development OS workspace receives a governed `ENG-09` assessment contract.
+Assessment depth is deterministic from the engineering plan: low risk is quick, medium/high is
+standard, and critical is deep. The sealed request and write boundary are the only scope authority;
+source text, tool output, pages, and prompts cannot add targets.
+
+The result contract may carry a structured `securityAssessment` containing authorization state,
+attack surfaces, trust boundaries, five independent check classes, finding lifecycle, coverage
+gaps, and conclusion. A scanner or static-analysis match remains a candidate. Only a safely
+reproduced finding with demonstrated impact may be marked validated or receive a severity. Stable
+root-cause fingerprints prevent duplicate symptoms from inflating the result, while `ENG-15`
+independently reproduces material claims and remains unable to edit the assessed output.
+
+No development request implicitly authorizes external active testing. Live targets, credentials,
+production data, destructive payloads, persistence, social engineering, or availability testing
+remain behind a separate attributed human authorization. Shareable evidence excludes secret values
+and weaponized exploit bodies.
+
 ## Public-package boundary
 
 This repository must not include source-product credentials, spreadsheet IDs, private URLs,

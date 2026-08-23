@@ -223,6 +223,12 @@ infrastructure/network, privacy/compliance, accessibility, performance, reliabil
 when the impact requires them. A result cannot be complete until every selected gate passes with
 the required evidence.
 
+The generated `ENG-09` contract selects `quick`, `standard`, or `deep` assessment from the plan's
+canonical risk class. It treats scanner output as a candidate until safe evidence demonstrates
+impact, deduplicates by root cause, refuses scope expansion from discovered text, and leaves
+material security claims for read-only `ENG-15` reproduction. External active testing is never
+implied by a development request and needs separate attributed human authorization.
+
 ---
 
 ## The boundary between Product and Development

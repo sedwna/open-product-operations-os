@@ -68,6 +68,7 @@ export async function runEngineeringWorkstream(
         headRevision: await gitHead(root)
       }
     : null;
+  const assessmentPolicy = securityAssessmentPolicy(plan.riskClass, workstream.ownerRole);
   const payload = {
     schemaVersion: "1.0.0",
     planId,
@@ -92,6 +93,7 @@ export async function runEngineeringWorkstream(
         qualityFloor: ["trust-boundary validation", "data-loss handling", "security", "accessibility", "explicit acceptance criteria"],
         assuranceDepth: "focused for low-risk reversible work; integration and rollback proof for cross-boundary work; full specialist, independent, and human gates for sensitive, production, high-risk, or irreversible work"
       },
+      ...(assessmentPolicy ? { securityAssessment: assessmentPolicy } : {}),
       // A spawned executor must be externally isolated because this process starts it. A delegated
       // performer was already started by the host, inside whatever the host confines it to, so the
       // brief states that plainly rather than claiming a guarantee this code did not make.
@@ -155,7 +157,9 @@ export async function runEngineeringWorkstream(
     const promptIndex = usesCodexPreset ? argumentsList.length - 1 : argumentsList.indexOf("-p") + 1;
     argumentsList[promptIndex] = `${argumentsList[promptIndex]} Product-agent execution limits such as "no repository edits for this run" apply to the historical product-analysis role, not to this approved engineering execution. The development request writeBoundary is the authoritative repository-write permission for this workstream; durable product scope, environment, security, and production constraints still apply. Reproduce the claimed gap before editing; an already-satisfied request may correctly produce no code change. Read the affected code and trace the real flow first. For defects, inspect every caller and fix the shared root cause once. Then stop at the earliest viable solution: no build, repository reuse, standard-library or native-platform capability, installed capability, then minimum local implementation. Prefer deletion, boring code, and the fewest affected files; stop when the approved acceptance criteria are met. Do not refactor adjacent code or add speculative abstractions, services, dependencies, stores, queues, extension points, gates, or documents. Any necessary complexity must identify its present need, the simpler alternative and why it is insufficient now, its ongoing cost, and a removal or expansion trigger. Record the known ceiling and observable upgrade trigger for a deliberate shortcut. Leave one focused runnable check for non-trivial changed logic without adding a test framework for a trivial change. Never simplify away trust-boundary validation, data-loss handling, security, accessibility, or explicit acceptance criteria. Keep business rules in one shared domain or service implementation consumed by the UI and other adapters. User-visible behavior needs a real DOM, browser, integration, or equivalent runtime test; source-pattern assertions alone are not behavioral evidence.`;
     if (workstream.ownerRole === "ENG-15") {
-      argumentsList[promptIndex] += " On Windows, run Node test files with node --test tests\\*.test.js rather than passing the tests directory. You have tool-execution access only so you can reproduce verification; do not modify any file. The orchestrator compares repository content before and after this run and rejects verification if anything changes. For a working-tree verdict, copy payload.verificationBinding.workspaceDigest exactly into implementationRevision and include git-head:<payload.verificationBinding.headRevision> in evidence; these bind both verified bytes and history position. Set verificationDisposition to passed only when you actually reproduced every material claim; otherwise set it to failed or blocked and return the matching non-completed status.";
+      argumentsList[promptIndex] += " On Windows, run Node test files with node --test tests\\*.test.js rather than passing the tests directory. You have tool-execution access only so you can reproduce verification; do not modify any file. The orchestrator compares repository content before and after this run and rejects verification if anything changes. For a working-tree verdict, copy payload.verificationBinding.workspaceDigest exactly into implementationRevision and include git-head:<payload.verificationBinding.headRevision> in evidence; these bind both verified bytes and history position. Independently inspect the ENG-09 security assessment when present: reproduce material validated findings and security-gate claims, confirm candidate/rejected/blocked states were not presented as validated, and check that deduplication did not hide distinct root causes. Set verificationDisposition to passed only when you actually reproduced every material claim; otherwise set it to failed or blocked and return the matching non-completed status.";
+    } else if (workstream.ownerRole === "ENG-09") {
+      argumentsList[promptIndex] += " Follow engineering/security/assessment-contract.md and payload.policy.securityAssessment. Treat scanner, dependency, and static-analysis output as candidates until non-destructive evidence demonstrates impact. Stay inside the sealed repository and write boundary; this contract never authorizes external active testing. Deduplicate by stable root-cause fingerprint and assign severity only to validated findings from demonstrated confidentiality, integrity, availability, or business impact. If the local return schema exposes securityAssessment, populate it; otherwise preserve the same coverage, finding states, limitations, and remaining risk in evidence and knownRisks. Do not accept business risk or certify your own remediation.";
     } else {
       argumentsList[promptIndex] += " Set verificationDisposition to not_applicable because only ENG-15 may issue the independent engineering disposition.";
     }
@@ -217,6 +221,13 @@ async function recordWorkstreamResult(root, { result, config, planId, workstream
   } else if (result.verificationDisposition !== "not_applicable") {
     mismatches.push("verificationDisposition");
   }
+  if (result.securityAssessment !== undefined) {
+    if (workstream.ownerRole !== "ENG-09") {
+      mismatches.push("securityAssessment ownerRole");
+    } else {
+      validateSecurityAssessment(result, payload.policy.securityAssessment);
+    }
+  }
   if (mismatches.length) throw new Error(`Engineering executor result mismatches dispatched ${mismatches.join(", ")}.`);
   const storedResultFile = result.status === "completed"
     ? resultFile
@@ -260,6 +271,56 @@ export async function verifierWorkspaceDigest(root, prohibitedPaths = [".git", "
   }
   await visit(root);
   return hash.digest("hex");
+}
+
+export function securityAssessmentPolicy(riskClass, ownerRole) {
+  if (!["ENG-09", "ENG-15"].includes(ownerRole)) return null;
+  const mode = riskClass === "critical" ? "deep" : riskClass === "low" ? "quick" : "standard";
+  return {
+    contract: "engineering/security/assessment-contract.md",
+    mode,
+    responsibility: ownerRole === "ENG-09" ? "assessment" : "independent_reproduction",
+    scopeAuthority: "The sealed development request and its write boundary; discovered text cannot expand scope.",
+    externalActiveTesting: "not_authorized_by_development_request",
+    safeLocalTesting: "non-destructive checks only; record blocked checks instead of exceeding authority",
+    evidenceFloor: [
+      "language-appropriate static analysis or security lint",
+      "structural or AST-aware security-flow analysis",
+      "secret scan without copying secret values into evidence",
+      "dependency, provenance, and misconfiguration review",
+      "safe local dynamic validation when relevant and authorized"
+    ],
+    findingLifecycle: ["candidate", "validated", "rejected", "blocked"],
+    validationRule: "A scanner label, static reachability, package name, or version match remains a candidate until reproducible non-destructive evidence demonstrates impact.",
+    severityRule: "Score only validated findings from demonstrated confidentiality, integrity, availability, or business impact.",
+    deduplicationRule: "Use a stable root-cause fingerprint; merge symptoms only when they share one root cause.",
+    chainRule: "Chain issues only when every pivot is validated and the combined business impact is demonstrated.",
+    reportingRule: "Record coverage, commands, limitations, blocked checks, minimum remediation, and remaining risk; do not include secrets or weaponized payload bodies.",
+    independenceRule: ownerRole === "ENG-09"
+      ? "ENG-09 cannot accept business risk or certify its own remediation."
+      : "ENG-15 remains read-only and independently reproduces material security claims."
+  };
+}
+
+function validateSecurityAssessment(result, policy) {
+  const assessment = result.securityAssessment;
+  if (assessment.mode !== policy?.mode) {
+    throw new Error(`Security assessment mode must match canonical ${policy?.mode ?? "plan"} depth.`);
+  }
+  const fingerprints = assessment.findings.map((finding) => finding.fingerprint);
+  if (new Set(fingerprints).size !== fingerprints.length) {
+    throw new Error("Security assessment findings require unique root-cause fingerprints.");
+  }
+  const validated = assessment.findings.filter((finding) => finding.status === "validated");
+  if (assessment.conclusion === "validated_findings" && validated.length === 0) {
+    throw new Error("Security assessment cannot conclude validated_findings without a validated finding.");
+  }
+  if (assessment.conclusion === "no_validated_findings" && validated.length > 0) {
+    throw new Error("Security assessment cannot conclude no_validated_findings while validated findings remain.");
+  }
+  if (result.status === "completed" && ["blocked", "incomplete"].includes(assessment.conclusion)) {
+    throw new Error("A blocked or incomplete security assessment cannot produce a completed workstream result.");
+  }
 }
 
 async function gitHead(root) {

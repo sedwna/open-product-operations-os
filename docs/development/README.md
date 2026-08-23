@@ -91,6 +91,22 @@ documentation, and independent verification. It adds specialist workstreams and 
 declared impact. A database impact, for example, adds migration, compatibility, query/index,
 backup, restore, capacity, and rollback evidence.
 
+Every initialized application also receives
+`engineering/security/assessment-contract.md`. `ENG-09` uses the plan risk class to select a quick,
+standard, or deep assessment without asking the owner for a mechanical choice. The contract fixes
+scope to the sealed request, requires static, structural, secret, dependency/misconfiguration, and
+relevant safe-local checks, and distinguishes candidates from validated, rejected, and blocked
+findings. Scanner output alone is not a vulnerability. Validated findings require reproducible
+non-secret proof, demonstrated impact, stable root-cause deduplication, minimum remediation, and
+remaining risk. `ENG-15` then reproduces the material claims without editing producer output.
+
+This development contract authorizes repository inspection and non-destructive local validation;
+it does not authorize scanning an external service. External active testing, credentials,
+production data, destructive payloads, persistence, or availability tests require a separate
+attributed human authorization with named targets and stop conditions. Existing workspaces can
+receive the replaceable contract and schema with a dry run followed by
+`development-os init <application> --force`.
+
 Each role also has a disabled-by-default specialist executor. After configuring an executor to
 launch an externally isolated worker, one dependency-ready workstream can be previewed and run:
 

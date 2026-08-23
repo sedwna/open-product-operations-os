@@ -4,6 +4,13 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+- Added a governed, Strix-informed security-assessment contract to every newly initialized
+  Development OS workspace. `ENG-09` now receives risk-calibrated quick/standard/deep policy,
+  sealed-request scope, a static/structural/secret/dependency/dynamic evidence floor, explicit
+  candidate validation, root-cause deduplication, impact-grounded severity, safe reporting, and
+  `ENG-15` reproduction. The additive workstream result schema can carry the structured assessment;
+  existing workspaces can refresh replaceable scaffold with `development-os init --force`.
+
 - Required an attributed product-direction decision before a finding, incident, or delivery-ready
   issue can reach RB-06 and become a canonical delivery ticket. Finding triage can now prepare the
   exact owner-facing options and recommendation; engineering-export approval is no longer reused as
