@@ -757,22 +757,22 @@ async function buildDevelopmentRequest(productRoot, developmentConfig, productCo
   }
   const recommendations = [...(contract?.recommendations ?? []), ...productRuns.flatMap((run) => run.recommendations ?? [])];
   const corrections = await decisionsAfterContract(productRoot, productConfig, contract, task.event_id);
+  const impacts = scopedImpacts(contract, productRuns);
   const constraints = unique([
     ...corrections,
     ...(approval.conditions ?? []).map((condition) => `Owner condition on development export: ${condition}`),
     ...productRuns.flatMap((run) => run.constraints ?? []).filter(isProductConstraint),
     "No production credentials or production-derived customer data",
-    "Production deployment requires a separate attributed human approval",
-    "Database and infrastructure changes must be reversible"
+    ...(impacts.some((impact) => ["devops", "infrastructure", "network"].includes(impact))
+      ? ["Production deployment requires a separate attributed human approval"]
+      : []),
+    ...(impacts.some((impact) => ["database", "storage", "infrastructure", "network"].includes(impact))
+      ? ["Database and infrastructure changes must be reversible"]
+      : [])
   ]);
   const nonFunctionalRequirements = uniqueObjects([
     ...productRuns.flatMap((run) => run.nonFunctionalRequirements ?? []),
-    { domain: "security", requirement: "Apply least privilege, secure defaults, and secret-free source control.", verification: "Run security and secret scans and record evidence." },
-    { domain: "database", requirement: "Any persistent-data change is reversible and has backup, restore, and rollback evidence.", verification: "Exercise migration and recovery outside production." },
-    { domain: "performance", requirement: "Define and verify practical latency and resource budgets for affected paths.", verification: "Run reproducible performance checks." },
-    { domain: "accessibility", requirement: "User-facing paths support keyboard and assistive technology.", verification: "Run automated and manual accessibility scenarios." },
-    { domain: "reliability", requirement: "Failures are observable, recoverable, and bounded.", verification: "Verify telemetry, retry, timeout, and recovery behavior." },
-    { domain: "seo", requirement: "Public web surfaces preserve crawlability, metadata, structured data, and web-vitals hygiene.", verification: "Run a technical SEO audit when applicable." }
+    ...applicableDefaultNfrs(impacts)
   ], (item) => `${item.domain}\0${item.requirement}`).slice(0, 30);
   const [revision, applicationBaseRevision] = await Promise.all([
     gitRevision(productRoot),
@@ -793,7 +793,7 @@ async function buildDevelopmentRequest(productRoot, developmentConfig, productCo
     // fifteen engineering teams including database, infrastructure and messaging. What a delivery
     // touches is a claim the product side makes; if it made none, a minimum is assumed and the
     // planner still widens it from the contract's own text.
-    impacts: scopedImpacts(contract, productRuns),
+    impacts,
     constraints,
     nonFunctionalRequirements,
     writeBoundary: {
@@ -813,6 +813,37 @@ async function buildDevelopmentRequest(productRoot, developmentConfig, productCo
     },
     source: { productOperationsRevision: revision, applicationBaseRevision, exportedAt: now.toISOString() }
   };
+}
+
+/**
+ * Baseline assurances are applicability rules, not a request to staff every specialist team.
+ *
+ * Previously every delivery received database, performance, accessibility, reliability and SEO
+ * requirements even when the product contract touched none of those surfaces. The planner quite
+ * correctly treats an NFR as impact evidence, so a CI-only repair was expanded to frontend and SEO
+ * workstreams before anyone had written code. Keep security universal because its gates are
+ * universal; add the other defaults only when the product's declared impact makes them real.
+ */
+function applicableDefaultNfrs(impacts) {
+  const touches = (...domains) => domains.some((domain) => impacts.includes(domain));
+  return [
+    { domain: "security", requirement: "Apply least privilege, secure defaults, and secret-free source control.", verification: "Run security and secret scans and record evidence." },
+    ...(touches("database", "storage", "cache", "search")
+      ? [{ domain: "database", requirement: "Any persistent-data change is reversible and has backup, restore, and rollback evidence.", verification: "Exercise migration and recovery outside production." }]
+      : []),
+    ...(touches("frontend", "backend", "api", "database", "performance")
+      ? [{ domain: "performance", requirement: "Define and verify practical latency and resource budgets for affected paths.", verification: "Run reproducible performance checks." }]
+      : []),
+    ...(touches("frontend", "accessibility", "mobile", "desktop")
+      ? [{ domain: "accessibility", requirement: "User-facing paths support keyboard and assistive technology.", verification: "Run automated and manual accessibility scenarios." }]
+      : []),
+    ...(touches("sre", "observability", "resilience", "infrastructure", "database", "messaging")
+      ? [{ domain: "reliability", requirement: "Failures are observable, recoverable, and bounded.", verification: "Verify telemetry, retry, timeout, and recovery behavior." }]
+      : []),
+    ...(touches("seo")
+      ? [{ domain: "seo", requirement: "Public web surfaces preserve crawlability, metadata, structured data, and web-vitals hygiene.", verification: "Run a technical SEO audit when applicable." }]
+      : [])
+  ];
 }
 
 export async function createGateEvidence(root, plan, runs, implementationRevision, now) {

@@ -265,6 +265,17 @@ test("a delivery crosses into engineering and comes back, entirely through the s
     `impacts must be what the product declared, not the whole enum: ${exported.impacts.length}`
   );
   assert.deepEqual(exported.impacts, ["frontend"], "and exactly what the delivery contract declared");
+  assert.deepEqual(
+    new Set(exported.nonFunctionalRequirements.map((item) => item.domain)),
+    new Set(["security", "accessibility", "performance"]),
+    "baseline NFRs must follow the declared impact instead of inventing database, reliability, or SEO scope"
+  );
+  const plannedRoles = new Set((JSON.parse(await fs.readFile(
+    path.join(application, ".development-os", "plans", `${crossed.planId}.json`), "utf8"))).workstreams
+    .map((workstream) => workstream.ownerRole));
+  for (const unrelated of ["ENG-06", "ENG-08", "ENG-12", "ENG-13"]) {
+    assert.equal(plannedRoles.has(unrelated), false, `${unrelated} must not be staffed by an inapplicable default NFR`);
+  }
   // The application's policy is the outer bound; the delivery narrows within it. Handing over the
   // whole policy meant a browser game could write to database and infrastructure, and the closing
   // check would have accepted it.
