@@ -397,8 +397,6 @@ export async function closeDelivery(context, args = {}) {
   const application = await linkedApplication(context.root);
   const config = await loadConfig(context.root);
   const { headers, records: tasks } = await loadTaskboard(context.root);
-  const task = boundaryTask(tasks, config);
-  if (!task) throw new ToolFailure("NOT_FOUND", "No delivery is open at the engineering boundary.");
 
   const { plan, planId } = await findActivePlan(application);
   if (!plan) throw new ToolFailure("NOT_FOUND", "No engineering plan exists. Open the delivery first with product_ops_open_delivery.");
@@ -413,6 +411,13 @@ export async function closeDelivery(context, args = {}) {
 
   const developmentConfig = await loadDevelopmentConfig(application);
   const request = await storedRequest(application, developmentConfig, plan.requestId);
+  const task = boundaryTask(tasks, config, { taskId: request.productTaskId });
+  if (!task) {
+    throw new ToolFailure(
+      "NOT_FOUND",
+      `The active engineering contract ${request.requestId} belongs to ${request.productTaskId}, but that card is not open at the engineering boundary.`
+    );
+  }
   const runs = await sealedRunResults(application, planId, plan);
   let implementationProof;
   try {
@@ -463,10 +468,11 @@ export async function closeDelivery(context, args = {}) {
   return recordDeliveryReturn(context, { config, headers, tasks, task, delivery, resumed: false });
 }
 
-function boundaryTask(tasks, config) {
+function boundaryTask(tasks, config, { taskId = null } = {}) {
   return tasks.find((candidate) =>
     candidate.owner_role === config.separation.developmentRole
-    && ["ready", "in_progress"].includes(candidate.status));
+    && ["ready", "in_progress"].includes(candidate.status)
+    && (taskId === null || candidate.task_id === taskId));
 }
 
 /** The engineering return, written into the product board as that role's completed run. */

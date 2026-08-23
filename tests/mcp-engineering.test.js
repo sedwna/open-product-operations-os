@@ -370,8 +370,25 @@ test("a delivery crosses into engineering and comes back, entirely through the s
   }
   assert.equal(performed, crossed.workstreams);
 
+  // More than one cycle can reach RB-13 before the newest engineering result returns. Closing used
+  // to pick the first ready RB-13 row, even when the active plan named a different productTaskId.
+  // Keep an older-looking decoy first and prove the sealed request remains the routing authority.
+  const beforeClose = await loadTaskboard(product);
+  const activeHandoff = beforeClose.records.find((task) => task.task_id === crossed.taskId);
+  const decoyHandoff = {
+    ...activeHandoff,
+    task_id: "PY-9999",
+    event_id: "EVT-OLDER-001",
+    title: "Older engineering boundary",
+    dependency_ids: "",
+    canonical_output_refs: "",
+    evidence_refs: "",
+  };
+  await replaceTaskboard(product, beforeClose.headers, [decoyHandoff, ...beforeClose.records], { dryRun: false });
+
   const preview = (await call(handlers, "product_ops_close_delivery")).structuredContent;
   assert.equal(preview.applied, false);
+  assert.equal(preview.taskId, crossed.taskId, "the request productTaskId selects the boundary card");
   assert.equal(preview.proofSource, "sealed_runs");
   assert.equal(preview.implementationRevision, verifiedRevision);
   assert.ok(preview.changedComponents.length > 0);
@@ -392,6 +409,8 @@ test("a delivery crosses into engineering and comes back, entirely through the s
   const { records } = await loadTaskboard(product);
   const handoff = records.find((task) => task.task_id === closed.taskId);
   assert.equal(handoff.status, "done", "the board moved because the work came back, not because it was asked to");
+  assert.equal(records.find((task) => task.task_id === decoyHandoff.task_id).status, "ready",
+    "an unrelated older boundary remains untouched");
 });
 
 test("committed-delivery preflight enforces the sealed request boundary, not the wider application policy", async (t) => {
