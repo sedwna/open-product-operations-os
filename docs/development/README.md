@@ -1,9 +1,9 @@
 # Open Development Operations OS
 
-Open Development Operations OS is the independent engineering half of the system. It can live in
-an application repository without copying the Product Operations workbook, product decisions, or
-human product authority. The two systems exchange immutable, schema-validated, content-addressed
-contracts.
+Open Development Operations OS is the independent engineering half of the system. In the canonical
+layout it lives under `development/` beside the suite's `product/` root, so one GitHub clone carries
+both organisations without mixing their boards or authority. Legacy split repositories remain
+supported. The two systems exchange immutable, schema-validated, content-addressed contracts.
 
 ## Responsibility split
 
@@ -32,9 +32,10 @@ flowchart LR
     PO --> RQ --> DO --> PL --> EV --> IV --> RS --> PO --> PV
 ```
 
-The application repository remains the development source of truth. The product-operations
-repository remains the product source of truth. Chat history, dashboards, and provider tickets are
-views or transport—not authority.
+The `development/` root remains the source of truth for implementation. The `product/` root remains
+the source of truth for product intent and acceptance. A shared Git history does not grant either
+side authority to edit the other's claims. Chat history, dashboards, and provider tickets are views
+or transport—not authority.
 
 ## Fifteen engineering boundaries
 
@@ -60,6 +61,9 @@ Actors are configurable, but role boundaries are canonical. A material producer 
 verifier must be distinct.
 
 ## Start the engineering package
+
+For a new product, prefer `product-ops init-suite <repository>`; it creates and links both roots.
+The low-level command below remains for an existing application or a legacy split repository.
 
 ```text
 development-os init ./my-application --dry-run

@@ -37,9 +37,10 @@ This repository is not an application you install. It is an operating model your
 adopts: role boundaries, a task board, human decision gates, and an evidence chain, exposed to the
 host over the Model Context Protocol.
 
-You stay the product owner. The agent becomes the coordinator of two organisations — a product side
-that owns meaning and priority, and an engineering side that owns implementation and technical
-evidence — and neither certifies the other's claims.
+You stay the product owner. The agent becomes the coordinator of two organisations — a `product/`
+side that owns meaning and priority, and a `development/` side that owns implementation and
+technical evidence. They live in one Git repository, keep independent task boards and authority,
+and neither certifies the other's claims.
 
 ```text
 you ──▶ your agent host ──MCP──▶ this operating model ──▶ your product repository
@@ -60,15 +61,15 @@ cd open-product-operations-os
 npm ci
 ```
 
-**Claude Code** — `.mcp.json` at the root of your product-operations workspace, with an absolute
-path to the clone:
+**Claude Code** — `.mcp.json` at the root of your product suite, with an absolute path to the clone
+and `./product` as the Product Operations target:
 
 ```json
 {
   "mcpServers": {
     "product-ops": {
       "command": "node",
-      "args": ["/absolute/path/to/open-product-operations-os/src/mcp/server.js", "--project", "."]
+      "args": ["/absolute/path/to/open-product-operations-os/src/mcp/server.js", "--project", "./product"]
     }
   }
 }
@@ -78,7 +79,7 @@ path to the clone:
 
 ```text
 codex mcp list
-codex mcp add product-ops -- node /absolute/path/to/open-product-operations-os/src/mcp/server.js --project /absolute/path/to/product-workspace
+codex mcp add product-ops -- node /absolute/path/to/open-product-operations-os/src/mcp/server.js --project /absolute/path/to/product-suite/product
 codex mcp list
 ```
 
@@ -165,15 +166,15 @@ The MCP surface is the primary way to work. The command line remains available f
 and anyone who prefers it — it operates the same canonical records.
 
 ```text
-# Preview first, then create and validate
-node ./src/cli.js init ./my-product --dry-run
-node ./src/cli.js init ./my-product
-node ./src/cli.js validate ./my-product
+# Preview first, then create and validate both roots
+node ./src/cli.js init-suite ./my-product --dry-run
+node ./src/cli.js init-suite ./my-product --provider codex
+node ./src/cli.js validate-suite ./my-product
 
 # Record an idea and inspect the next cycle before running it
-node ./src/cli.js intake ./my-product --file ./idea.json --apply
-node ./src/cli.js operate ./my-product
-node ./src/cli.js operate ./my-product --apply
+node ./src/cli.js intake ./my-product/product --file ./idea.json --apply
+node ./src/cli.js operate ./my-product/product
+node ./src/cli.js operate ./my-product/product --apply
 ```
 
 A minimal intake file:
@@ -194,11 +195,19 @@ A minimal intake file:
 
 ## Development integration
 
-The engineering side is a separate operating model with its own Git history. It is never a
-subfolder or a mutable database of the product repository.
+For new products, `init-suite` already creates the two clean roots and links them:
 
-Two steps: give the application its engineering boundaries, then tell the product workspace which
-repository it operates.
+```text
+my-product/
+├── product/       # Product agents, governance, decisions, task board and acceptance
+└── development/   # application code, Engineering agents, workstreams, gates and evidence
+```
+
+They share one GitHub history but not one mutable board or one authority model. Product sends sealed
+contracts to Development; Development returns independently verified technical results.
+
+For a legacy application that must remain in a separate repository, initialize and link it
+explicitly:
 
 ```text
 # 1. In the application repository
@@ -206,13 +215,14 @@ development-os init ./my-application --dry-run
 development-os init ./my-application
 development-os validate ./my-application
 
-# 2. Back in the product workspace
-product-ops link ./my-product --application ./my-application
-product-ops link ./my-product --application ./my-application --apply
+# 2. Back in the suite's Product root
+product-ops link ./my-product/product --application ./my-application
+product-ops link ./my-product/product --application ./my-application --apply
 ```
 
-Until the link exists, this workspace has no engineering side: adoption has nothing to read, the
-coordinator has nothing to coordinate, and the panel shows product teams only.
+In a new suite the internal link exists from initialization. If that link is missing or a legacy
+application is unavailable, adoption has nothing to read, the coordinator has nothing to
+coordinate, and the panel shows Product teams only.
 
 Linking says which repository the workspace is about — nothing more. Executors and the autonomous
 coordinator stay disabled, because naming a repository is not the same act as authorising agents to
@@ -223,8 +233,8 @@ accessibility, backend, APIs, clients, database and migrations, data and AI, clo
 security and privacy, QA, SRE and performance, delivery, SEO, documentation, and independent
 verification. Read the [Development OS guide](docs/development/README.md).
 
-Adding that namespace to a repository someone already relies on is the owner's call. The agent shows
-what it will create and waits.
+Relocating an existing codebase or adding the Development namespace to a repository someone already
+relies on is the owner's call. The agent shows what it will create and waits.
 
 The development boundary receives:
 

@@ -10,25 +10,26 @@ Everything below was verified against the hosts' own documentation and open issu
 ## The command, whichever host you use
 
 ```
-node <path-to-this-clone>/src/mcp/server.js --project . --allow-writes
+node <path-to-this-clone>/src/mcp/server.js --project <path-to-suite>/product --allow-writes
 ```
 
 - Use an absolute path to the clone, with forward slashes even on Windows.
-- `--project .` binds the server to the workspace the host opened.
+- `--project <suite>/product` binds the server to Product Operations while the host opens the suite
+  root and can see both `product/` and `development/`.
 - Without `--allow-writes` the server registers 8 read-only tools and there is no write path at all.
-  With it, 19 — intake, cycles, taking and returning work on both sides, crossing into engineering
+  With it, 20 — intake, cycles, taking and returning work on both sides, crossing into engineering
   and back, and recording the owner's decisions.
 
 ## Claude Code
 
-Write `.mcp.json` in the product workspace:
+Write `.mcp.json` at the suite root:
 
 ```json
 {
   "mcpServers": {
     "product-ops": {
       "command": "node",
-      "args": ["<path-to-this-clone>/src/mcp/server.js", "--project", ".", "--allow-writes"]
+      "args": ["<path-to-this-clone>/src/mcp/server.js", "--project", "./product", "--allow-writes"]
     }
   }
 }
@@ -36,8 +37,9 @@ Write `.mcp.json` in the product workspace:
 
 Three things decide whether it connects:
 
-1. **The workspace must be the session root.** `.mcp.json` is read from the root only. Opening the
-   workspace as a second source folder inside another project will not load it.
+1. **The suite must be the session root.** `.mcp.json` is read from the root only. Opening only
+   `product/`, only `development/`, or adding the suite as a second source folder will not load the
+   complete operating context.
 2. **Project-scoped servers need approval.** The first time, Claude Code asks whether to trust the
    project's MCP servers. Until you answer yes, the server is configured and not connected. If you
    answered no by accident, `claude mcp reset-project-choices` puts the question back.
@@ -50,7 +52,7 @@ Add it through one of the supported paths — CLI, desktop Settings → MCP serv
 restart), or the IDE gear menu. All three write the same configuration.
 
 ```bash
-codex mcp add product-ops -- node <path-to-this-clone>/src/mcp/server.js --project . --allow-writes
+codex mcp add product-ops -- node <path-to-this-clone>/src/mcp/server.js --project <absolute-suite-path>/product --allow-writes
 ```
 
 The Codex entry is global. Before adding or retargeting it, run `codex mcp list`. If the existing
@@ -58,14 +60,14 @@ The Codex entry is global. Before adding or retargeting it, run `codex mcp list`
 
 ```bash
 codex mcp remove product_ops
-codex mcp add product-ops -- node <path-to-this-clone>/src/mcp/server.js --project <absolute-workspace-path> --allow-writes
+codex mcp add product-ops -- node <path-to-this-clone>/src/mcp/server.js --project <absolute-suite-path>/product --allow-writes
 codex mcp list
 ```
 
 Read back both the server path and the `--project` argument. Then fully restart Codex. An already
 open task can retain the previous MCP process and tool inventory even after the configuration has
 changed. On the first turn after restart, call `product_ops_status` and compare its project id with
-the workspace before allowing any write. A mismatch is a stop condition, not a reason to continue
+the suite before allowing any write. A mismatch is a stop condition, not a reason to continue
 with filesystem fallbacks.
 
 **Do not hand-edit `~/.codex/config.toml` for the desktop app on Windows.** Startup rewrites the
@@ -97,13 +99,13 @@ Work through these in order; each one rules out a whole class of cause.
 1. **Run the command yourself in a terminal.** If it exits immediately, the path is wrong or Node is
    not on `PATH`. A healthy server prints nothing and waits — that is correct, not a hang.
 2. **Check Node's version.** `node --version` must be 20 or later.
-3. **Check the workspace is the session root**, not a folder added to another project.
+3. **Check the suite is the session root**, not just one authority folder or a folder added to another project.
 4. **Check the host's own MCP listing** — `/mcp` in Claude Code, Settings → MCP servers in Codex. A
    server that the host does not list is a configuration problem, not a server problem.
 5. **On Codex desktop for Windows, re-add through the UI.** If the entry vanished, it is the bug
    above.
 6. **Check the target, not only the connection state.** `codex mcp list` must show this clone and
-   this workspace in the command arguments, and `product_ops_status` must report the expected
+   this suite's `product/` root in the command arguments, and `product_ops_status` must report the expected
    project id. A connected server aimed at another product is still misconfigured.
 7. **Restart after retargeting.** Existing tasks can keep the former MCP process until Codex is
    fully restarted.

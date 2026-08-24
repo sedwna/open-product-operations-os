@@ -1066,17 +1066,18 @@ test("the coordinator brief names the authority and forbids deciding for the own
   assert.match(text, /diagnose it before reporting it/i);
 });
 
-test("the setup walkthrough refuses to adopt an application on the owner's behalf", async (t) => {
+test("the setup walkthrough creates both roots and refuses to move an application on the owner's behalf", async (t) => {
   const { handlers } = await handlersFor(t);
   const greenfield = handlers["prompts/get"]({ name: "start" }).messages[0].content.text;
   assert.match(greenfield, /product_ops_validate/);
-  assert.match(greenfield, /Ask whether they already have an application repository/i);
-  assert.match(greenfield, /perfectly good place to start/i, "no application must not read as a failure");
+  assert.match(greenfield, /one Git repository with product\/ and development\/ roots/i);
+  assert.match(greenfield, /Never create a development-only project/i);
+  assert.match(greenfield, /Ask about an existing application only when importing code would materially change/i);
 
   const existing = handlers["prompts/get"]({ name: "start", arguments: { application: "../my-app" } }).messages[0].content.text;
   assert.match(existing, /\.\.\/my-app/);
-  assert.match(existing, /their call, not yours/i, "adding to an existing repository needs explicit consent");
-  assert.match(existing, /keeps its own Git history/i);
+  assert.match(existing, /Do not move or rewrite its history implicitly/i);
+  assert.match(existing, /then wait for their decision/i, "moving existing code needs explicit consent");
   assert.match(existing, /autopilot authorisation off unless they ask/i);
 });
 

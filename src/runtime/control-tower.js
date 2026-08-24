@@ -183,10 +183,10 @@ async function controlTowerCycle(
         await requestApproval(root, {
           taskId: task.task_id,
           gate,
-          question: "The work has reached engineering and no application repository is connected. Create one and connect it?",
+          question: "The work has reached engineering and no Development root is connected. Create or connect the canonical development/ root?",
           context: [
-            `Approving creates an application repository beside this workspace and writes the engineering operating model into it:`,
-            "fifteen engineering boundaries, quality gates, and its own Git history, kept entirely separate from this one.",
+            `The standard layout keeps this Product root and a sibling development/ root in one GitHub repository.`,
+            "The Development root contains fifteen engineering boundaries, its own workstream board, quality gates, application code, and technical evidence.",
             "It does not let any agent write code there. Enabling the engineering executors is a separate decision, asked later.",
             `Rejecting leaves ${task.task_id} waiting; the product side can continue, but nothing crosses into implementation.`
           ].join(" "),
@@ -194,11 +194,11 @@ async function controlTowerCycle(
           recommendedOption: "approved",
           recommendationRationale: "This is the bounded route that creates the missing engineering boundary without authorising implementation or production writes.",
           optionImpacts: {
-            approved: "Create and connect the separate application repository; implementation remains separately gated.",
+            approved: "Create or connect the independent development/ root; implementation remains separately gated.",
             rejected: `Leave ${task.task_id} waiting before engineering.`
           },
           risks: [
-            "An application repository someone already relies on gains a new namespace; on a fresh repository this is inert.",
+            "Relocating an existing application or adding a namespace to it remains a separate, history-preserving action.",
             "No code is written and no agent is authorised by this decision alone."
           ]
         }, { dryRun: false, now });

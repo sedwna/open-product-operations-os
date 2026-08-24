@@ -4,7 +4,7 @@ import { loadConfig, validateConfig, validateConfigRelationships } from "../conf
 import { readAutomationLinkRecord, writeAutomationLink } from "../autopilot/state.js";
 
 /**
- * Point a product workspace at the application repository it operates.
+ * Point a Product Operations root at the Development root it operates.
  *
  * Nothing else can create this link, and a good deal depends on it: adoption reads the application
  * through it, the coordinator finds its engineering side through it, and the panel shows an
@@ -23,7 +23,7 @@ export async function linkCommand(target, options) {
   const productRoot = path.resolve(target);
   const applicationRoot = path.resolve(options.application);
   if (productRoot === applicationRoot) {
-    throw new Error("The application repository must be separate from the product operations repository.");
+    throw new Error("The Development root must be separate from the Product Operations root.");
   }
 
   const stat = await fs.lstat(applicationRoot).catch(() => null);

@@ -10,14 +10,21 @@ Open Product Operations OS and Open Development Operations OS therefore remain i
 initializable and independently validatable.
 
 ```text
-Product repository                         Application repository
-------------------                         ----------------------
-intent and priority                        code and architecture
-acceptance criteria                        database and infrastructure
-product evidence                           engineering evidence
-human dispositions                         technical revisions
-RB-01..RB-13 boundaries        <=>          ENG-01..ENG-15 boundaries
+One GitHub repository
+├── product/                               # Product authority root
+│   ├── intent, priority and acceptance
+│   ├── product evidence and human dispositions
+│   └── RB-01..RB-13 roles + Product task board
+└── development/                           # Engineering authority root
+    ├── code, architecture, database and infrastructure
+    ├── engineering evidence and technical revisions
+    └── ENG-01..ENG-15 roles + Engineering workstream board
+
+product/  <==== versioned contracts + receipts ====>  development/
 ```
+
+Independent means separate authority, write boundaries, task boards, validation and evidence—not
+missing from the same clone. Existing split repositories remain a supported migration mode.
 
 ## Synchronization protocol
 
@@ -32,8 +39,8 @@ RB-01..RB-13 boundaries        <=>          ENG-01..ENG-15 boundaries
 8. Product Operations validates and stores the result, copies verified evidence into its own
    content-addressed evidence boundary, and runs downstream QA, verification, readiness, and report
    roles without inventing product acceptance.
-9. Each repository keeps a separate cycle branch and commit. Neither repository becomes a subfolder
-   or mutable database of the other.
+9. Each side updates only its own root and contract namespace. The shared Git revision captures the
+   complete product state without turning either task board into a mutable projection of the other.
 
 Replay with identical contracts is idempotent. Content drift under an existing identity is
 rejected rather than silently overwriting history.

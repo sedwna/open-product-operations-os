@@ -5,6 +5,7 @@ import fs from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { generateWorkbookCommand } from "./commands/generate-workbook.js";
 import { initCommand } from "./commands/init.js";
+import { initSuiteCommand, validateSuiteCommand } from "./commands/init-suite.js";
 import { linkCommand } from "./commands/link.js";
 import { validateCommand } from "./commands/validate.js";
 import {
@@ -26,6 +27,8 @@ import {
 const HELP = `Product Operations OS CLI
 
 Usage:
+  product-ops init-suite <target> [--dry-run] [--force] [--no-git] [--provider <codex|claude>]
+  product-ops validate-suite <target>
   product-ops init <target> [--dry-run] [--force] [--no-git]
   product-ops validate <target>
   product-ops link <target> --application <path> [--provider <codex|claude>] [--apply]
@@ -45,9 +48,11 @@ Usage:
   product-ops migrate <target> [--apply]
 
 Commands:
-  init               Create a project config and generated operating artifacts.
+  init-suite         Create the standard GitHub repository with product/ and development/ roots.
+  validate-suite     Validate both operating systems and their internal contract link.
+  init               Create only a Product Operations workspace (legacy/advanced use).
   validate           Check config, ownership, routing, tasks, files, and secrets.
-  link               Point this workspace at the application repository it operates.
+  link               Point a Product root at the Development root it operates.
   generate-workbook  Generate CSV workbook templates from the project config.
   operate            Plan or execute one control-plane scheduling cycle.
   coordinator        Run the autonomous coordinator until stopped.
@@ -84,7 +89,11 @@ export async function run(argv, io = console) {
     }
 
     let lines;
-    if (command === "init") {
+    if (command === "init-suite") {
+      lines = await initSuiteCommand(target, options);
+    } else if (command === "validate-suite") {
+      lines = await validateSuiteCommand(target);
+    } else if (command === "init") {
       lines = await initCommand(target, options);
     } else if (command === "validate") {
       if (options.dryRun || options.force) {
@@ -189,6 +198,8 @@ function toOptionName(argument) {
 function validateCommandOptions(command, provided) {
   const runtime = ["dryRun", "apply"];
   const allowed = {
+    "init-suite": ["dryRun", "force", "noGit", "provider"],
+    "validate-suite": [],
     init: ["dryRun", "force", "noGit"],
     validate: [],
     link: ["apply", "application", "provider"],

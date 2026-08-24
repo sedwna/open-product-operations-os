@@ -1,7 +1,7 @@
 # Agent contract
 
 Two different jobs live here. The setup runbook is for getting a person started. The continuation
-contract below it is for working inside a product workspace that already exists.
+contract below it is for working inside a product suite that already exists.
 
 ---
 
@@ -105,20 +105,34 @@ identifier prefix permanently, and `configure` does not change it later:
 
 Two hyphenated words give clean identifiers. Pick one and say what you picked.
 
-Create the workspace **beside this repository**, never inside it.
+Create the product suite **beside this repository**, never inside it. The suite is one GitHub-facing
+repository with two mandatory authority roots:
+
+```text
+<folder>/
+├── product/       # Product Operations roles, governance, decisions, task board, evidence
+└── development/   # application code, Engineering roles, workstreams, gates, technical evidence
+```
+
+Never create a development-only product repository. Product and Development stay semantically and
+operationally independent, but both folders must be present in the same Git history so a clone is a
+complete, understandable product workspace.
 
 ## Step 4 — Create and verify the workspace
 
 ```bash
-node ./src/cli.js init <workspace> --dry-run
-node ./src/cli.js init <workspace>
-node ./src/cli.js validate <workspace>
+node ./src/cli.js init-suite <workspace> --dry-run
+node ./src/cli.js init-suite <workspace> --provider <codex|claude>
+node ./src/cli.js validate-suite <workspace>
 ```
 
-Run the dry run yourself and read it; do not make them read 73 lines. Say how many files were
-created once it is done. `validate` must print `Validation passed` before you go on.
+Run the dry run yourself and read it; do not make them read the full file list. Say how many files
+were created in each root once it is done. `validate-suite` must print `Suite validation passed`
+before you go on.
 
-`init` also starts a Git history for the workspace and commits it. That is not housekeeping:
+`init-suite` creates `product/` and `development/`, installs their separate role registries and
+task boards, links them through versioned contracts with executors disabled, and starts one Git
+history at the suite root. That is not housekeeping:
 exporting an approved delivery contract to the engineering side stamps it with the workspace
 revision, and without one the export refuses at the moment the owner has just authorised crossing
 into engineering. If it reports that it could not — no `git` on the machine, or a refused commit —
@@ -145,7 +159,7 @@ Then write the answer file and apply it. Write JSON with a tool, not with a shel
 ```
 
 ```bash
-node ./src/cli.js configure <workspace> --answers <answers.json> --apply
+node ./src/cli.js configure <workspace>/product --answers <answers.json> --apply
 ```
 
 `humanAuthorityActorId` is them. Every product decision is attributed to it and the system refuses
@@ -174,8 +188,8 @@ and fine.
 `P0`–`P3`.
 
 ```bash
-node ./src/cli.js intake <workspace> --file <idea.json> --apply
-node ./src/cli.js operate <workspace> --apply
+node ./src/cli.js intake <workspace>/product --file <idea.json> --apply
+node ./src/cli.js operate <workspace>/product --apply
 ```
 
 Then read the board yourself and tell them what happened in their terms: how many cards, which team
@@ -187,15 +201,15 @@ Which host they are in decides how. Getting this wrong is the single most common
 looks finished and then nothing works. [`docs/setup/connecting-a-host.md`](docs/setup/connecting-a-host.md)
 has the full detail; this is what you do.
 
-**Claude Code.** Write `.mcp.json` **in the workspace**, with the absolute path to this repository's
-server:
+**Claude Code.** Write `.mcp.json` **at the suite root**, with the absolute path to this repository's
+server and the Product Operations root as its project:
 
 ```json
 {
   "mcpServers": {
     "product-ops": {
       "command": "node",
-      "args": ["<absolute path to this repo>/src/mcp/server.js", "--project", ".", "--allow-writes"]
+      "args": ["<absolute path to this repo>/src/mcp/server.js", "--project", "./product", "--allow-writes"]
     }
   }
 }
@@ -207,11 +221,11 @@ placeholder.
 **Codex.** Do not write a config file. Run `codex mcp add`:
 
 ```bash
-codex mcp add product-ops -- node <absolute path to this repo>/src/mcp/server.js --project . --allow-writes
+codex mcp add product-ops -- node <absolute path to this repo>/src/mcp/server.js --project <absolute path to suite>/product --allow-writes
 ```
 
 Before adding it, run `codex mcp list`. Codex stores this entry globally, so an existing
-`product_ops` / `product-ops` entry may still point at a different product workspace. If it does,
+`product_ops` / `product-ops` entry may still point at a different suite's `product/` root. If it does,
 remove the exact listed entry with `codex mcp remove <name>`, add the correct one, and run
 `codex mcp list` again. Read back the server command and `--project` path; a successful add is not
 proof that the host is targeting this workspace.
@@ -233,10 +247,10 @@ sides, crossing into engineering and back, and recording their decisions.
 
 ## Step 8 — Hand over
 
-Tell them to reopen their agent **with the workspace folder as the session root**, not as a second
-folder inside another project — `.mcp.json` is read from the root only, and this is the usual reason
-a correct configuration still does not connect. Claude Code will also ask them once whether to trust
-the project's MCP servers; until they answer, it is configured and not connected.
+Tell them to reopen their agent **with the suite folder as the session root**, not with only
+`product/` or only `development/` open. This makes both organisations visible while `.mcp.json`
+still targets `./product` as the control-plane authority. Claude Code will also ask them once whether
+to trust the project's MCP servers; until they answer, it is configured and not connected.
 
 Then tell them their first move: type `/` and pick `take-command` from the list. Do not hand them a
 literal slash string — the CLI and the desktop app spell it differently. If nothing appears under
@@ -247,16 +261,17 @@ Then stop. Do not start doing product work in the setup conversation.
 
 ## Where this stops
 
-Setup ends with a validated workspace, a routed board, and a decision waiting. It does not build
-their application. If they already have a repository they want brought in, that is a separate
-sequence — `development-os init` in that repository, then `product-ops link` — and it belongs after
-they have seen one cycle, not during setup.
+Setup ends with a validated two-root suite, a routed Product board, an initialized Engineering
+workstream board, and a decision waiting. It does not build their application. If they already have
+an application repository, importing or relocating its code into `development/` is a separate,
+explicit sequence after setup; never erase or rewrite its existing history implicitly.
 
 ---
 
 # Continuation contract
 
-For an agent picking up work inside a product workspace that already exists.
+For an agent picking up work inside a product suite that already exists. Product-side continuation
+uses `product/` as its canonical root; implementation uses `development/` as its canonical root.
 
 Before work:
 

@@ -67,7 +67,7 @@ export async function readAutomationLinkRecord(root) {
 export async function readAutomationLink(root) {
   const value = await readAutomationLinkRecord(root);
   const applicationRoot = path.resolve(root, value.applicationRelativePath);
-  if (samePath(root, applicationRoot)) throw new Error("Automation application repository must be separate from Product Operations.");
+  if (samePath(root, applicationRoot)) throw new Error("Automation Development root must be separate from Product Operations.");
   const stat = await fs.lstat(applicationRoot).catch(() => null);
   if (!stat?.isDirectory() || stat.isSymbolicLink()) throw new Error("Linked application repository is unavailable or unsafe.");
   const config = await fs.lstat(path.join(applicationRoot, "development-os.config.json")).catch(() => null);

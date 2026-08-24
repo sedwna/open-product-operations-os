@@ -137,17 +137,21 @@ export async function applyWrites(
     );
     const label = `Generated file "${operation.relativePath}"`;
     await assertNoHardLinkedFile(operation.destination, label);
+    // A destination such as `.gitignore` must produce one hidden staging filename, not a `..` path
+    // segment that the traversal guard correctly rejects. Strip only the destination's leading
+    // dots; the generated transaction file remains hidden because we add one below.
+    const transactionBase = path.basename(operation.destination).replace(/^\.+/, "") || "generated";
     const stagePath = path.join(
       path.dirname(operation.destination),
-      `.${path.basename(operation.destination)}.${crypto.randomUUID()}.tmp`
+      `.${transactionBase}.${crypto.randomUUID()}.tmp`
     );
     const quarantinePath = path.join(
       path.dirname(operation.destination),
-      `.${path.basename(operation.destination)}.${crypto.randomUUID()}.before.tmp`
+      `.${transactionBase}.${crypto.randomUUID()}.before.tmp`
     );
     const displacedPath = path.join(
       path.dirname(operation.destination),
-      `.${path.basename(operation.destination)}.${crypto.randomUUID()}.displaced.tmp`
+      `.${transactionBase}.${crypto.randomUUID()}.displaced.tmp`
     );
     try {
       await assertNoLinkTraversal(root, stagePath, `${label} stage`);

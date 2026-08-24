@@ -374,8 +374,8 @@ test("reaching the engineering hand-off is reported as a boundary, not as an emp
 
 test("reaching engineering with nowhere to send it opens a decision, not a dead end", async (t) => {
   // The board used to stop and report a boundary, leaving the owner to already know that an
-  // application repository must exist, that development-os init writes the engineering model into
-  // it, and that link connects the two — and then to ask for all three themselves.
+  // independent Development root must exist, that development-os init writes the engineering model
+  // into it, and that link connects the two — and then to ask for all three themselves.
   const { root, handlers } = await workspace(t);
   const config = await loadConfig(root);
   const { headers, records } = await loadTaskboard(root);
@@ -392,8 +392,9 @@ test("reaching engineering with nowhere to send it opens a decision, not a dead 
   const gates = (await call(handlers, "product_ops_pending_decisions")).structuredContent;
   const crossing = gates.items.find((item) => item.gate === "development_boundary_crossing");
   assert.ok(crossing, "the owner must be asked, not left to work it out");
-  assert.match(String(crossing.question), /application repository/i);
-  // Creating a repository is not authorising agents to write code in it.
+  assert.match(String(crossing.question), /canonical development\/ root/i);
+  assert.match(String(crossing.context), /one GitHub repository/i);
+  // Creating the Development root is not authorising agents to write code in it.
   assert.match(String(crossing.context), /separate decision/i);
 });
 

@@ -58,8 +58,9 @@ The loop is deliberately split:
 ## What this is — and is not
 
 This repository is an **operating system for product delivery**: templates, schemas, role
-boundaries, a dry-run-first runtime, an MCP control surface, and a separate engineering operating
-model that can be installed into an application repository.
+boundaries, a dry-run-first runtime, an MCP control surface, and an independent engineering
+operating model. New products are created as one GitHub repository with `product/` and
+`development/` roots; existing split repositories remain supported.
 
 It is not:
 
@@ -161,10 +162,11 @@ Role IDs are durable contract identifiers. The human-facing panel uses team name
 
 ## Development Operations OS
 
-The development side is an independent operating system installed **inside the application
-repository**. The application keeps its own Git history and remains the source of truth for code.
-Development OS adds a namespaced engineering model; it does not copy the product workbook into the
-application or take over product authority.
+The development side is an independent operating system installed in the suite's
+**`development/` root**, alongside the application code. The suite has one Git history, while
+`development/` remains the source of truth for code and technical evidence. Development OS does
+not copy the Product workbook across the boundary or take over Product authority. Existing
+applications may still use a separately linked repository during migration.
 
 <div align="center">
   <img src=".github/assets/diagrams/development-operations.svg" alt="Development Operations OS engineering workstreams and verification" width="100%">
@@ -336,8 +338,8 @@ prevents a stale control surface from writing against newer contracts.
 
 ## What exists on disk
 
-The operating-system source, the product workspace, and the application repository have distinct
-jobs:
+The operating-system source and every generated product suite have distinct jobs. A new suite is
+always published as one repository containing both authority roots:
 
 ```text
 open-product-operations-os/       # this repository: runtime + reusable contracts
@@ -347,23 +349,25 @@ open-product-operations-os/       # this repository: runtime + reusable contract
 ├── docs/                         # architecture, setup, security, runtime guidance
 └── examples/                     # worked operating examples
 
-my-product/                       # generated Product Operations workspace
-├── governance/                   # authority, ownership, routing
-├── operations/                   # cards, hand-offs, event impact
-├── product/                      # discovery, decisions, issues, delivery contracts
-├── validation/                   # plans, runs, evidence, verification
-├── release/                      # readiness and release records
-└── .product-ops/                 # durable runtime state and receipts
-
-my-application/                   # your application and its own Git history
-├── <your source code>
-├── engineering/                  # plans, workstreams, gates, results
-├── .development-os/              # durable engineering runtime state
-├── DEVELOPMENT.md
-└── development-os.config.json
+my-product/                       # one GitHub repository and one Git history
+├── README.md                     # map of both organisations
+├── AGENTS.md                     # root routing and write-boundary contract
+├── product/                      # Product Operations authority root
+│   ├── agents/roles/             # RB-01 through RB-13
+│   ├── taskboard/                # Product cards
+│   ├── governance/               # authority, ownership, routing
+│   ├── workbook/                 # discovery, decisions, acceptance, readiness
+│   └── .product-ops/             # Product runtime state and contract receipts
+└── development/                  # application + Engineering authority root
+    ├── <your source code>
+    ├── engineering/governance/   # ENG-01 through ENG-15
+    ├── engineering/taskboard/    # Engineering workstreams
+    ├── engineering/              # architecture, standards, gates and evidence
+    ├── .development-os/          # Engineering runtime state and receipts
+    └── development-os.config.json
 ```
 
-The generated product workspace also carries a canonical **23-tab workbook model** covering
+The generated `product/` root also carries a canonical **23-tab workbook model** covering
 configuration, roles, ownership, events, tasks, ideas, discovery, decisions, issues, delivery,
 validation, evidence, observations, quality control, readiness, releases, writer manifests,
 receipts, and lineage.
@@ -384,9 +388,10 @@ Open Claude Code, Codex, or another capable agent in this repository and say:
 
 > Set me up with a new product.
 
-The agent follows [`AGENTS.md`](AGENTS.md): it checks Node, creates a product workspace beside this
-repository, validates it, asks only product questions, records the first real signal, routes the
-first cycle, connects the host, and hands control back with the first decision visible.
+The agent follows [`AGENTS.md`](AGENTS.md): it checks Node, creates a two-root suite beside this
+repository, validates both operating systems and their link, asks only product questions, records
+the first real signal, routes the first cycle, connects the host to `product/`, and hands control
+back with the first decision visible.
 
 **Requirement:** Node.js 20 or newer.
 
@@ -396,9 +401,9 @@ first cycle, connects the host, and hands control back with the first decision v
 <br>
 
 ```bash
-node ./src/cli.js init ../my-product --dry-run
-node ./src/cli.js init ../my-product
-node ./src/cli.js validate ../my-product
+node ./src/cli.js init-suite ../my-product --dry-run
+node ./src/cli.js init-suite ../my-product --provider codex
+node ./src/cli.js validate-suite ../my-product
 ```
 
 Then configure the product, record intake, and operate one bounded cycle. Runtime commands plan by
@@ -409,16 +414,17 @@ command contract.
 
 ### Bring an existing application into the model
 
-This is a deliberate second sequence. The application is not moved into the product workspace and
-its history is not rewritten.
+New suites already contain `development/`; place or migrate application code there through an
+explicit, history-preserving change. For a legacy application that must remain in its own
+repository, the split-repository integration remains available:
 
 ```bash
 node ./src/development-cli.js init ../my-application --dry-run
 node ./src/development-cli.js init ../my-application
 node ./src/development-cli.js validate ../my-application
 
-node ./src/cli.js link ../my-product --application ../my-application
-node ./src/cli.js link ../my-product --application ../my-application --apply
+node ./src/cli.js link ../my-product/product --application ../my-application
+node ./src/cli.js link ../my-product/product --application ../my-application --apply
 ```
 
 After linking, adoption surveys every application path. Each path is either assigned to a
@@ -428,9 +434,9 @@ never reported as fully adopted.
 
 ### Connect the conversation host
 
-Claude Code reads an `.mcp.json` from the **product workspace root**. Codex uses `codex mcp add`
-and stores the entry globally. In both cases the command must point to this repository's absolute
-`src/mcp/server.js` path and the generated product workspace. Fully restart the host after an add,
+Claude Code reads `.mcp.json` from the **suite root** and targets `./product`. Codex uses
+`codex mcp add` and stores the entry globally with the absolute `<suite>/product` path. In both
+cases, open the suite root so the agent can see both folders, fully restart the host after an add,
 remove, or target change, then call `product_ops_status` and verify the reported project identity
 before any write.
 

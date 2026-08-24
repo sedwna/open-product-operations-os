@@ -4,6 +4,12 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+- Added the canonical two-root product suite. `product-ops init-suite` now creates one GitHub-facing
+  repository with independent `product/` and `development/` roots, both role registries, both task
+  boards, a disabled-by-default versioned contract link, root routing guidance, and one Git history.
+  `validate-suite` proves both operating systems and rejects nested Git histories. Existing
+  split-repository commands remain available for migration and advanced use.
+
 - Added a governed, Strix-informed security-assessment contract to every newly initialized
   Development OS workspace. `ENG-09` now receives risk-calibrated quick/standard/deep policy,
   sealed-request scope, a static/structural/secret/dependency/dynamic evidence floor, explicit

@@ -26,7 +26,9 @@ export async function initCommand(target, options) {
     if (!error.message.startsWith("Missing project configuration:")) {
       throw error;
     }
-    config = createDefaultConfig(root);
+    // A suite keeps Product records in product/ while deriving the durable project identity from
+    // the repository root. Standalone callers omit identityRoot and retain the legacy behaviour.
+    config = createDefaultConfig(options.identityRoot ?? root);
   }
   const files = buildProjectFiles(config, { includeConfig });
   const operations = await planWrites(root, files, options);

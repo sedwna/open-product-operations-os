@@ -15,7 +15,8 @@ export async function initializeDevelopmentOs(target, options = {}) {
     if (errors.length) throw new Error(`Existing ${DEVELOPMENT_CONFIG_FILE} is invalid:\n- ${errors.join("\n- ")}`);
   } catch (error) {
     if (!error.message.startsWith("Missing development configuration:")) throw error;
-    config = createDevelopmentConfig(root);
+    // In the canonical suite, development/ is a boundary name rather than the product name.
+    config = createDevelopmentConfig(options.identityRoot ?? root);
   }
   const operations = await planWrites(root, buildDevelopmentFiles(config, { includeConfig }), options);
   if (!options.dryRun) await applyWrites(root, operations);

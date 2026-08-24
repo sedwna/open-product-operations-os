@@ -178,15 +178,15 @@ raises a `development_boundary_crossing` gate rather than stepping over it.
 
 ### The engineering half
 
-Once the owner has approved the crossing and an application is linked, engineering work is delegated
+Once the owner has approved the crossing and a Development root is linked, engineering work is delegated
 the same way product work is. `product_ops_next_engineering_work` reads the plan in the *linked
-application repository*, finds a workstream whose dependencies are satisfied, and returns its brief:
+development/ root* (or a legacy linked application repository), finds a workstream whose dependencies are satisfied, and returns its brief:
 the team, the contract's `writeBoundary`, and the prohibited paths. `product_ops_submit_engineering_work`
 returns the result through `runEngineeringWorkstream` — the same schema validation, the same
 dispatch-identity check, the same read-only proof for ENG-15, the same sealing that a spawned CLI
 would have faced.
 
-This is not a second boundary. It is the same one: what crosses between the repositories is the
+This is not a second boundary. It is the same one: what crosses between the authority roots is the
 hashed contract with its `sourceDigest`, and that is unchanged by who performs the work. Only the
 performer moved — from a CLI this process starts to a subagent the host already has. Independent
 verification is handed out last, because ENG-15 reproduces claims the others have not yet made.

@@ -47,8 +47,8 @@ export const PROMPTS = Object.freeze([
       "- Do not ask setup or qualification questions whose answers are already in the workspace or application. Ask only product questions that change the resulting product; choose mechanical defaults yourself and state them briefly.",
       "",
       application
-        ? `They have an existing application at "${application}". It keeps its own Git history and stays the source of truth for code. What joins the operating model is the Development Operations OS namespace inside it, added by \`development-os init\`, and a link so this workspace can reach it. Adding that namespace to a repository someone already relies on is their call, not yours: show what it will create, and wait.`
-        : "Ask whether they already have an application repository. If they do, it keeps its own Git history and only gains the Development Operations OS namespace — their explicit call. If they do not, this workspace runs product operations alone until one exists, which is a perfectly good place to start.",
+        ? `They have an existing application at "${application}". Do not move or rewrite its history implicitly. Show the explicit migration or legacy-link change needed to place its code under the suite's development/ authority root, then wait for their decision.`
+        : "For a new product, use the canonical suite initializer: one Git repository with product/ and development/ roots, separate role registries and task boards, and a disabled-by-default contract link. Never create a development-only project. Ask about an existing application only when importing code would materially change its history or location.",
       "",
       "There are two ways in from here. Find out which one they are, and do that one properly.",
       "",

@@ -101,7 +101,7 @@ test("a workspace cannot be linked to itself", async (t) => {
   const { product } = await workspaces(t);
   await assert.rejects(
     linkCommand(product, { application: product, apply: true }),
-    /separate from the product operations repository/
+    /Development root must be separate from the Product Operations root/
   );
 });
 
