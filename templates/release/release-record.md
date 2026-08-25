@@ -43,5 +43,7 @@
 - Known residual risks:
 - Follow-up task IDs:
 - Human communication reference:
+- Outcome-resolution assessment reference or scheduled observation:
 
-This record does not contain credential values and does not infer deployment from a code commit.
+This record does not contain credential values, infer deployment from a code commit, or infer
+problem resolution from a completed release.

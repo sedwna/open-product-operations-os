@@ -144,3 +144,17 @@ corrective task or acceptance
 
 Rollups are recomputed only from verified upstream state. Release closes when product, development,
 validation, live propagation, evidence, and human gates are all satisfied.
+
+## 12. Post-release outcome resolution
+
+After the delivery contract's observation window, the issue owner compares the original problem and
+outcome hypothesis with real evidence. A completed release is required but is not itself outcome
+evidence. The independent verifier reproduces the material resolution claim.
+
+Output:
+
+```text
+resolved, unresolved, or inconclusive disposition
+linked release, validation result, observation, evidence, and QC records
+corrective event or explicit reopening trigger when the outcome is not resolved
+```

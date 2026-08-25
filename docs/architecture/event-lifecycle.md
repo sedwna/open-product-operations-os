@@ -14,7 +14,9 @@ Event
 → derived updates and rollups
 → independent verification
 → human observation when required
-→ close or corrective loop
+→ release decision
+→ post-release outcome observation
+→ resolved, unresolved, inconclusive, or corrective loop
 ```
 
 ## Event types
@@ -78,4 +80,12 @@ HUMAN DECISION REQUIRED
 
 A failed control creates an owner-scoped corrective task. Historical claims remain immutable; the
 effective disposition is appended.
+
+## Delivery state versus problem state
+
+`implemented`, `release-ready`, and `released` are delivery claims. `resolved` is a later outcome
+claim. The observation window and expected next behavior are declared before release; evidence is
+captured after release. A user does not have to return when success naturally ends their need, and a
+necessary external final step is allowed when it was declared in the contract. What matters is that
+the intended user or operational outcome occurred and can be independently checked.
 

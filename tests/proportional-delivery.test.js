@@ -51,3 +51,27 @@ test("product, delivery, task, and validation templates carry the proportional s
     assert.match(await fs.readFile(path.join(root, relative), "utf8"), pattern, relative);
   }
 });
+
+test("ready-to-resolved policy separates delivery claims without fixed universal gates", async () => {
+  const [policy, issue, delivery, validation, resolution, governance] = await Promise.all([
+    fs.readFile(path.join(root, "docs/architecture/outcome-resolution.md"), "utf8"),
+    fs.readFile(path.join(root, "templates/product/issue-contract.md"), "utf8"),
+    fs.readFile(path.join(root, "templates/product/delivery-ticket.md"), "utf8"),
+    fs.readFile(path.join(root, "templates/validation/validation-plan.md"), "utf8"),
+    fs.readFile(path.join(root, "templates/release/outcome-resolution.md"), "utf8"),
+    fs.readFile(path.join(root, "templates/governance/governance.md"), "utf8")
+  ]);
+
+  assert.match(policy, /implemented[\s\S]*release_ready[\s\S]*released[\s\S]*resolved/);
+  assert.match(policy, /100% of critical in-scope logic/);
+  assert.match(policy, /5,000 users[\s\S]*never a universal proxy/);
+  assert.match(issue, /`resolved` additionally requires/);
+  assert.match(delivery, /Outcome hypothesis/);
+  assert.match(delivery, /Critical in-scope logic/);
+  assert.match(validation, /Workload and abuse envelope/);
+  assert.match(validation, /fixed number such as 5,000 users is not a universal gate/i);
+  assert.match(resolution, /resolved\|unresolved\|inconclusive/);
+  assert.match(governance, /Human-only[\s\S]*AI recommends; human decides[\s\S]*AI acts within approved bounds[\s\S]*Mechanical autonomy/);
+  assert.match(governance, /20 product-specific decision statements/);
+  assert.match(governance, /never run a 20-question gate for every\s+feature/);
+});

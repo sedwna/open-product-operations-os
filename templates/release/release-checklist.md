@@ -11,4 +11,5 @@
 - [ ] Rollback owner, trigger, procedure, and required access aliases are ready.
 - [ ] Logs, evidence, commits, and handoffs contain no secret values or private data.
 - [ ] Release communication and follow-up ownership are prepared.
+- [ ] The outcome hypothesis, observation window, evidence source, and resolution owner are scheduled from the actual release event.
 - [ ] Final status and timestamp are appended; historical states are not rewritten.

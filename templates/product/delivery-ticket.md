@@ -12,6 +12,10 @@
 ## Approved outcome
 
 - User-visible or operational outcome:
+- Outcome hypothesis: `<if we deliver X for Y, then observable outcome Z changes>`
+- Expected next behavior: `<return, completion, reduced effort, successful hand-off, or another observable behavior>`
+- Observation window and start event:
+- Necessary external final step, if any: `<declared step or none>`
 - Scope:
 - Non-goals:
 - Dependencies:
@@ -31,6 +35,8 @@
 - Compatibility expectations:
 - Rollback expectation:
 - Runtime access alias, if required: `<store://approved-store/alias OR none>`
+- Workload envelope: `<concurrency; requests/minute; records/run; scheduled jobs; storage growth; latency/error targets>`
+- Abuse or gaming scenarios in scope:
 
 ## Simplicity contract
 
@@ -42,6 +48,8 @@
 - Explicitly prohibited speculative work:
 - Added complexity, if any: `<present need; simpler alternative rejected; ongoing cost; removal or expansion trigger>`
 - Deliberate shortcut, if any: `<known ceiling; observable replacement trigger>`
+- Critical in-scope logic: `<complete list; all must be implemented>`
+- Explicitly deferred non-critical logic: `<item; reason; owner; known ceiling; reopen trigger>`
 
 ## Validation recipe
 
@@ -71,4 +79,5 @@ Product Operations must not invent or overwrite those fields.
 - [ ] Independent QC is linked and not performed by the producer.
 - [ ] Human observation is accepted when required.
 - [ ] Readiness is recalculated.
+- [ ] Outcome observation is scheduled from the actual release event when resolution is claimed.
 - [ ] No secret value or proprietary payload is committed.

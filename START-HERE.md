@@ -267,6 +267,11 @@ operational state was updated through an authorized writer, live state was read 
 reproducible, an independent role verified the claims, required human acceptance is recorded, and
 downstream readiness is recalculated.
 
+That closes a delivery cycle, not automatically the user problem. The system distinguishes
+`implemented`, `release-ready`, `released`, and `resolved`. A problem is resolved only after the
+declared post-release observation window produces linked outcome evidence and an independent check;
+otherwise it remains unresolved or inconclusive. See [Ready to resolved](docs/architecture/outcome-resolution.md).
+
 > [!NOTE]
 > A control-plane receipt is an execution signal. It is not a release verdict and cannot replace
 > independent verification.
@@ -279,6 +284,7 @@ downstream readiness is recalculated.
 | Operate approvals, intake, metrics, and reports | [Runtime guide](docs/runtime/README.md) |
 | Understand the system boundaries | [Architecture overview](docs/architecture/overview.md) |
 | Study the complete event lifecycle | [Event lifecycle](docs/architecture/event-lifecycle.md) |
+| Separate release readiness from real outcome resolution | [Ready to resolved](docs/architecture/outcome-resolution.md) |
 | Connect an engineering agent | [Development runner](docs/runtime/development-runner.md) |
 | Enable a provider safely | [Provider adapters](docs/runtime/provider-adapters.md) |
 | Walk through a finished fictional chain | [PineDesk example](examples/fictional-saas/README.md) |

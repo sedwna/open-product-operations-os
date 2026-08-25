@@ -34,7 +34,8 @@
 Open Product Operations OS gives a coding agent the operating contracts of a product organisation,
 not merely a prompt to write code. A signal becomes researched intent, an approved delivery
 contract, independently verified engineering work, product evidence, and finally a human-controlled
-release decision.
+release decision. Release is not the end of the truth chain: after an appropriate observation
+window, outcome evidence determines whether the original problem is actually resolved.
 
 <div align="center">
   <img src=".github/assets/diagrams/system-overview.svg" alt="The complete Product Operations and Development Operations lifecycle" width="100%">
@@ -101,6 +102,7 @@ lifecycle. Steps only open when their dependencies and required gates are satisf
 | 11 | A sealed result returns to Product Operations | Result, exact revision, evidence, digest, receipt | Development adapter |
 | 12 | Product QA, controlled write, independent verification, and readiness run | Product evidence and readiness record | Product owners and verifier |
 | 13 | Release, production, or corrective-loop decisions are recorded | Human acceptance or a new corrective event | Human product owner |
+| 14 | Post-release outcome is observed against the original problem | Resolved, unresolved, or inconclusive issue disposition | Issue owner and independent verifier |
 
 <div align="center">
   <img src=".github/assets/diagrams/event-lifecycle.svg" alt="State transitions for one governed product event" width="88%">
@@ -130,7 +132,7 @@ the user-visible outcome without rewriting engineering's factual claims.
 - product topology, user journeys, prioritized issue contracts, and dependencies;
 - testable acceptance criteria and a bounded delivery contract;
 - validation plans, scenarios, expected outcomes, and evidence requirements;
-- factual QA results, controlled-write receipts, independent verdicts, and readiness records;
+- factual QA results, controlled-write receipts, independent verdicts, readiness records, and post-release outcome dispositions;
 - a 23-tab canonical workbook projection for operational visibility and lineage.
 
 <details>
@@ -297,6 +299,23 @@ Six invariants hold the chain together:
 | **A write is not trusted until read back** | Controlled writers compare the complete result and emit a receipt |
 | **External effects do not happen by accident** | Runtime actions plan first; provider adapters and executors are disabled by default |
 | **History is corrected, not erased** | Amendments and dispositions append or supersede with lineage |
+
+## Ready is not resolved
+
+The OS keeps four claims separate:
+
+| Claim | What it proves | What it does not prove |
+| --- | --- | --- |
+| **Implemented** | Engineering returned the bounded change and technical evidence | That Product accepts it or users benefit |
+| **Release-ready** | Required Product, risk, rollback, evidence, and human gates pass | That a release occurred |
+| **Released** | The authorized release and health checks completed | That the original problem changed in real use |
+| **Resolved** | Post-release evidence, inside a declared observation window, supports the original outcome | Every future edge case or product idea |
+
+A delivered issue stays `validated` after QA and may have a `released` ticket. It moves to `closed`
+with closure disposition `resolved` only when its release, passing results, accepted observation,
+evidence, and independent QC are linked. Administrative closure remains possible with an explicit
+non-resolution disposition; it must not be reported as a solved user problem. The full contract is
+[Ready to resolved](docs/architecture/outcome-resolution.md).
 
 ## The Control Tower you work with
 

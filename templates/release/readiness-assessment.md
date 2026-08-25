@@ -40,3 +40,7 @@
 
 Ready is not allowed while a required gate is absent, failed, self-certified, or supported only by
 an unverified live-write claim.
+
+`ready` and `released` are not synonyms for `resolved`. After release, use the outcome-resolution
+record and the existing Issue, Human Observation, Evidence, Validation Result, and QC links to test
+whether the original problem changed in real use.

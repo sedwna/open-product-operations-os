@@ -42,8 +42,12 @@
 - Delivery ticket IDs:
 - Validation result IDs:
 - Human observation IDs:
-- Closure disposition:
+- Closure disposition: `<resolved|duplicate|superseded|not_pursued|other explicit non-resolution>`
+- Post-release outcome evidence:
+- Observation window completed at:
 - Supersedes:
 
 Issue closure requires linked evidence or an explicit human disposition. It is not inferred from an
-implementation commit.
+implementation commit, release-readiness decision, or deployment. `resolved` additionally requires
+a completed linked release, passing result, accepted post-release observation, evidence, and passing
+independent QC. Any other closure disposition must not be reported as a solved user problem.

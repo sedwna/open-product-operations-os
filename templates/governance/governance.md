@@ -33,6 +33,25 @@ independent verification.
 Templates use catalog paths rather than inventing values. Existing identifiers and historical
 records are immutable; corrections point to the superseded record.
 
+## Decision authority between the human and AI
+
+Keep one project-level decision-authority matrix. Calibrate it at onboarding and revisit it only
+after a material change in product risk or governance; never run a 20-question gate for every
+feature.
+
+| Level | Rule |
+| --- | --- |
+| Human-only | AI may prepare evidence but may not decide or act. |
+| AI recommends; human decides | AI provides mutually exclusive options, consequences, and a recommendation. |
+| AI acts within approved bounds | AI executes a reversible decision already bounded by an approved contract. |
+| Mechanical autonomy | AI performs deterministic routing, formatting, validation, and read-back. |
+
+Product direction, priority, material scope trade-offs, risk acceptance, production or destructive
+action, sensitive access, and final user-visible acceptance never move out of human authority by
+silence. At calibration, the AI proposes 20 product-specific decision statements and the owner
+scores each from 1–20 for alignment. Low-alignment or boundary-changing statements remain human
+decisions; the recorded matrix, not chat memory, governs later action.
+
 ## Work and communication
 
 - The taskboard and committed handoffs are the coordination bus.
@@ -87,3 +106,9 @@ write.
 An event closes only when required canonical artifacts, controlled-write receipts, reproducible
 evidence, independent verification, human disposition where required, and downstream readiness
 recalculation are complete.
+
+Event or delivery closure does not prove the original problem is resolved. `implemented` proves a
+technical return, `release_ready` proves release gates, `released` proves the authorized release,
+and `resolved` proves the intended post-release outcome. An issue may use closure disposition
+`resolved` only with linked completed release, passing result, accepted outcome observation,
+evidence, and independent QC. Other closure dispositions remain explicitly non-resolution outcomes.

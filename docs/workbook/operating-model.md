@@ -65,6 +65,21 @@ acceptance, a rollback reference, satisfied gates, and independent verification.
 cycles use `conditionally_ready` or `not_ready`; completion of implementation alone is not release
 readiness.
 
+Readiness is not outcome resolution. The workbook reuses the Issue lifecycle for this distinction:
+
+- `validated` means the bounded acceptance claims passed before or around release;
+- a linked Delivery Ticket may become `released` when the authorized release completes;
+- an Issue may close with `closure_disposition=resolved` only after a completed linked release,
+  passing linked validation results, accepted post-release observation, evidence references, and
+  passing independent QC exist;
+- any administrative closure uses an explicit non-resolution disposition and must not be described
+  as a solved user problem.
+
+The outcome hypothesis, expected next behavior, observation window, necessary external last step,
+workload envelope, and abuse cases are fixed in the delivery and validation contracts before the
+release claim. Fixed universal numbers such as 5,000 users or a 90% logic estimate do not replace a
+declared workload envelope or complete critical in-scope logic.
+
 ## QA atomic record
 
 A completed retest normally requires:

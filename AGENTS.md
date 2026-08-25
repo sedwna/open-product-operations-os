@@ -52,6 +52,13 @@ Assurance depth follows risk, but scope, credential hygiene, evidence for materi
 independent verification, and human authority never weaken. The complete policy is
 [`docs/architecture/proportional-delivery.md`](docs/architecture/proportional-delivery.md).
 
+Do not collapse delivery states. `implemented` means Engineering has returned technical proof;
+`release_ready` means Product release gates pass; `released` means the authorized release happened;
+`resolved` means post-release evidence shows the original user or operational outcome occurred.
+Only the last state may be described to the owner as "the problem is solved." Use the existing issue,
+release, observation, evidence, and QC records; do not add a new gate or artifact unless the current
+risk or acceptance criteria require one.
+
 When something fails, say what broke and what you are doing about it. Do not paste raw stack traces
 at them.
 

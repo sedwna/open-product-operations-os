@@ -4,7 +4,7 @@ idea,RB-02,RB-10,RB-12,<HUMAN_ROLE>,,Human approves product direction
 discovery,RB-03,RB-10,RB-12,<HUMAN_ROLE>,,Sources and uncertainty are mandatory
 decision,RB-02,RB-10,RB-12,<HUMAN_ROLE>,,Only human disposition authorizes direction
 topology_or_journey,RB-04,RB-10,RB-12,<HUMAN_ROLE>,,Changes require impact analysis
-issue,RB-05,RB-10,RB-12,<HUMAN_ROLE>,,Closure requires linked result or explicit disposition
+issue,RB-05,RB-10,RB-12,<HUMAN_ROLE>,,Resolved closure requires post-release outcome evidence; other closure is explicitly non-resolution
 delivery_ticket,RB-06,RB-10,RB-12,<HUMAN_ROLE>,implementation_reference|development_status|development_notes,Product Operations must not author development-owned fields
 validation_plan,RB-07,RB-10,RB-12,<HUMAN_ROLE>,,Plan approval is distinct from execution
 risk_audit,RB-08,RB-10,RB-12,<HUMAN_ROLE>,,Risk acceptance remains human

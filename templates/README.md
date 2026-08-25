@@ -18,7 +18,7 @@
 | **04** | [`product/`](product/) | Capture ideas, discovery, decisions, issues, and delivery contracts |
 | **05** | [`validation/`](validation/) | Fix expected behavior before execution and retain reproducible evidence |
 | **06** | [`writers/`](writers/) | Apply bounded operational updates with complete read-back |
-| **07** | [`release/`](release/) | Calculate readiness and coordinate human authorization and release |
+| **07** | [`release/`](release/) | Calculate readiness, coordinate release, and assess post-release outcome resolution |
 
 Import the portable CSV files under [`workbook/tabs/`](workbook/tabs/) by following the
 [workbook guide](workbook/README.md).
@@ -46,7 +46,7 @@ operations/   events, task board, task cards, and handoffs
 product/      ideas, discovery, decisions, issues, and delivery
 validation/   plans, scenarios, runs, results, evidence, and QC
 writers/      controlled-write authorization and receipts
-release/      readiness assessment and release records
+release/      readiness, release, and post-release outcome-resolution records
 workbook/     portable tab templates and setup maps
 adapters/     disabled provider and execution boundaries
 ```

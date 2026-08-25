@@ -568,6 +568,72 @@ test("ready status requires attributed risk acceptance, rollback, and a real rel
   assert.match(output.stderr.at(-1), /may not be ready without human_risk_acceptance_id, rollback_reference, release_id/);
 });
 
+test("resolved issue closure requires post-release outcome evidence and independent QC", async (t) => {
+  const { target, output } = await initializedProject(t, "resolved-outcome-gate");
+  const config = await readJson(path.join(target, CONFIG_FILE));
+  const actor = (role) => config.agents.find((agent) => agent.id === role).actorId;
+  const eventId = "EVT-20260825-901";
+  const decisionId = "DEC-20260825-901";
+  const ticketId = "TKT-20260825-901";
+  const resultId = "VRS-20260825-901";
+  const qcId = "QCV-20260825-901";
+
+  await appendApprovedDecision(target, config, decisionId, eventId);
+
+  const appendRecord = async (fileName, values) => {
+    const file = path.join(target, "workbook", fileName);
+    const rows = parseCsv(await fs.readFile(file, "utf8"));
+    const record = rows[0].map((header) => values[header] ?? "");
+    rows.push(record);
+    await fs.writeFile(file, stringifyCsv(rows), "utf8");
+  };
+
+  await appendRecord("10-issues.csv", {
+    issue_id: "ISS-20260825-901", event_id: eventId, title: "Synthetic resolved outcome",
+    status: "closed", priority: "P2", risk: "medium", decision_id: decisionId,
+    ticket_ids: ticketId, result_ids: resultId, evidence_refs: "EVD-20260825-901",
+    closure_disposition: "resolved", owner_role: "RB-05", owner_actor_id: actor("RB-05"),
+    updated_at: "2026-08-25T12:00:00.000Z"
+  });
+
+  assert.equal(await run(["validate", target], output.io), 1);
+  assert.match(output.stderr.at(-1), /may not claim resolved closure without released tickets/);
+
+  await appendRecord("11-delivery-tickets.csv", {
+    ticket_id: ticketId, event_id: eventId, issue_id: "ISS-20260825-901", decision_id: decisionId,
+    title: "Synthetic released ticket", status: "released", priority: "P2", risk: "medium",
+    owner_role: "RB-06", owner_actor_id: actor("RB-06"), development_adapter_role: "RB-13",
+    updated_at: "2026-08-25T10:00:00.000Z"
+  });
+  await appendRecord("15-validation-results.csv", {
+    result_id: resultId, run_id: "VRN-20260825-901", plan_id: "VPL-20260825-901",
+    scenario_id: "VSC-20260825-901", event_id: eventId, ticket_id: ticketId,
+    disposition: "pass", producer_role: "RB-09", producer_actor_id: actor("RB-09"),
+    verifier_role: "RB-12", verifier_actor_id: actor("RB-12"), qc_record_id: qcId,
+    recorded_at: "2026-08-25T09:30:00.000Z"
+  });
+  await appendRecord("18-qc-log.csv", {
+    qc_record_id: qcId, event_id: eventId, producer_role: "RB-09", producer_actor_id: actor("RB-09"),
+    verifier_role: "RB-12", verifier_actor_id: actor("RB-12"), disposition: "pass",
+    verified_at: "2026-08-25T11:30:00.000Z"
+  });
+  await appendRecord("20-releases.csv", {
+    release_id: "REL-20260825-901", readiness_id: "RDY-20260825-901", event_id: eventId,
+    status: "completed", target_environment: "local", ticket_ids: ticketId,
+    ended_at: "2026-08-25T10:30:00.000Z", owner_role: "RB-11", owner_actor_id: actor("RB-11")
+  });
+  await appendRecord("17-human-observations.csv", {
+    observation_id: "HOB-20260825-901", event_id: eventId, ticket_id: ticketId,
+    status: "accepted", observer_actor_id: config.project.humanAuthorityActorId,
+    observed_at: "2026-08-25T11:00:00.000Z", environment_alias: "local",
+    expected_behavior: "The intended outcome occurs", observed_behavior: "The intended outcome occurred",
+    evidence_ids: "EVD-20260825-901", producer_actor_id: actor("RB-09"),
+    verifier_actor_id: actor("RB-12"), qc_record_id: qcId
+  });
+
+  assert.equal(await run(["validate", target], output.io), 0, output.stderr.join("\n"));
+});
+
 test("validate scans both alignments of UTF-16LE and UTF-16BE secret canaries", async (t) => {
   const { target, output } = await initializedProject(t, "utf16-canaries");
   const extra = path.join(target, "extra");

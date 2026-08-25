@@ -295,6 +295,8 @@ function validateCrossWorkbookRelationships(contents, config, errors) {
       : [];
   };
   const decisions = new Map(sheetRecords("decision_log").map((row) => [row.decision_id, row]));
+  const issues = sheetRecords("issues");
+  const tickets = new Map(sheetRecords("delivery_tickets").map((row) => [row.ticket_id, row]));
   for (const event of sheetRecords("events")) {
     if (event.status !== "closed") continue;
     const unfinished = canonicalTasks.filter((task) =>
@@ -304,7 +306,7 @@ function validateCrossWorkbookRelationships(contents, config, errors) {
       errors.push(`Workbook event "${event.event_id}" is closed while ${unfinished.length} canonical task(s) remain unfinished.`);
     }
   }
-  for (const [kind, rows] of [["issue", sheetRecords("issues")], ["delivery ticket", sheetRecords("delivery_tickets")]]) {
+  for (const [kind, rows] of [["issue", issues], ["delivery ticket", [...tickets.values()]]]) {
     for (const row of rows) {
       // `needs_decision` explicitly means product direction is unresolved. It is the waiting state,
       // not an advanced claim, so requiring a decision_id here makes the only honest pre-decision
@@ -325,6 +327,68 @@ function validateCrossWorkbookRelationships(contents, config, errors) {
     if (!readiness.rollback_reference) missing.push("rollback_reference");
     if (!readiness.release_id || !releases.has(readiness.release_id)) missing.push("release_id");
     if (missing.length) errors.push(`Readiness "${readiness.readiness_id}" may not be ready without ${missing.join(", ")}.`);
+  }
+
+  const results = new Map(sheetRecords("validation_results").map((row) => [row.result_id, row]));
+  const observations = sheetRecords("human_observations");
+  const qcRecords = new Map(sheetRecords("qc_log").map((row) => [row.qc_record_id, row]));
+  for (const issue of issues) {
+    if (issue.status !== "closed" || issue.closure_disposition?.trim().toLowerCase() !== "resolved") continue;
+
+    const missing = [];
+    const ticketIds = splitList(issue.ticket_ids ?? "");
+    const resultIds = splitList(issue.result_ids ?? "");
+    if (!issue.evidence_refs?.trim()) missing.push("evidence_refs");
+    if (ticketIds.length === 0) missing.push("ticket_ids");
+    if (resultIds.length === 0) missing.push("result_ids");
+
+    const invalidTickets = ticketIds.filter((id) => tickets.get(id)?.status !== "released");
+    if (invalidTickets.length > 0) missing.push(`released tickets (${invalidTickets.join("|")})`);
+    const invalidResults = resultIds.filter((id) => results.get(id)?.disposition !== "pass");
+    if (invalidResults.length > 0) missing.push(`passing results (${invalidResults.join("|")})`);
+
+    const matchingReleases = [...releases.values()].filter((release) => {
+      const releasedTickets = new Set(splitList(release.ticket_ids ?? ""));
+      return release.status === "completed" && ticketIds.length > 0 && ticketIds.every((id) => releasedTickets.has(id));
+    });
+    if (matchingReleases.length === 0) {
+      missing.push("a completed release covering every linked ticket");
+    }
+
+    const acceptedObservations = observations.filter((observation) =>
+      observation.status === "accepted" &&
+      ticketIds.includes(observation.ticket_id) &&
+      observation.expected_behavior?.trim() &&
+      observation.observed_behavior?.trim() &&
+      observation.evidence_ids?.trim()
+    );
+    if (acceptedObservations.length === 0) {
+      missing.push("an accepted post-release human observation");
+    } else {
+      const independentlyPassed = acceptedObservations.some((observation) => {
+        const qc = qcRecords.get(observation.qc_record_id);
+        const observedAt = Date.parse(observation.observed_at);
+        const verifiedAt = Date.parse(qc?.verified_at);
+        return qc?.disposition === "pass" && Number.isFinite(observedAt) &&
+          Number.isFinite(verifiedAt) && verifiedAt >= observedAt;
+      });
+      if (!independentlyPassed) missing.push("passing independent QC for the outcome observation");
+
+      const completedAt = matchingReleases
+        .map((release) => Date.parse(release.ended_at))
+        .filter(Number.isFinite);
+      const observedAt = acceptedObservations
+        .map((observation) => Date.parse(observation.observed_at))
+        .filter(Number.isFinite);
+      if (matchingReleases.length > 0 && (completedAt.length === 0 || observedAt.length === 0 ||
+          !observedAt.some((observationTime) => completedAt.some((releaseTime) => observationTime >= releaseTime)))) {
+        missing.push("a dated observation at or after the completed release");
+      }
+    }
+
+    if (missing.length > 0) {
+      errors.push(`Issue "${issue.issue_id}" may not claim resolved closure without ${missing.join(", ")}.`);
+    }
   }
 }
 

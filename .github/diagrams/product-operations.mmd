@@ -9,15 +9,17 @@ flowchart TB
     H["8 · Engineering hand-off<br/>Sealed request and receipt"]
     I["9 · Return path<br/>QA · controlled write · independent verification"]
     J["10 · Readiness and release<br/>Human acceptance where required"]
+    K["11 · Outcome resolution<br/>Post-release evidence · independent QC"]
 
     A --> B --> C --> D --> E --> F --> G --> H
     H -.->|verified engineering result| I
-    I --> J
+    I --> J --> K
     I -.->|evidence gap| E
+    K -.->|unresolved| D
 
     classDef product fill:#E8F1FF,stroke:#3973B7,color:#102A43;
     classDef gate fill:#FFF1C7,stroke:#B7791F,color:#34230A,stroke-width:2px;
     classDef return fill:#E7F7EF,stroke:#27845A,color:#123E2C;
     class A,B,C,D,E,F product;
     class G gate;
-    class H,I,J return;
+    class H,I,J,K return;

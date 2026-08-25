@@ -11,6 +11,12 @@ of it — no less, and no more. Two failure modes violate that rule:
 This policy applies to setup, discovery, decisions, delivery contracts, engineering, validation,
 verification, and reporting.
 
+It also applies after release. Do not declare a problem resolved merely because implementation,
+QA, readiness, or deployment completed. Define the intended outcome and a proportionate observation
+window before release, then use the existing issue and evidence chain to record `resolved`,
+`unresolved`, or `inconclusive`. Do not add a permanent analytics system, a fixed traffic target, or
+a new governance ceremony when a bounded observation using current evidence can answer the claim.
+
 ## Qualification budget
 
 1. Read canonical state and inspect the product before asking the owner. Do not ask a person for a
@@ -108,6 +114,7 @@ Before accepting a product or engineering result, ask:
 - Do collection retries/checkpoints match measured failure cost, and do multiple runs preserve one
   real source identity instead of manufacturing corroboration?
 - Did the work stop when the approved outcome was met?
+- Was "resolved" reserved for observed post-release outcome evidence rather than delivery activity?
 - Would deleting any new artifact, abstraction, or gate leave the outcome and risk control intact?
 
 If the last answer is yes, remove it.

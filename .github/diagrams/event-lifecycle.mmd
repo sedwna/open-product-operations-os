@@ -14,5 +14,9 @@ stateDiagram-v2
     ProductVerification --> Readiness: pass
     ProductVerification --> Contract: corrective task
     Readiness --> ReleaseDecision
-    ReleaseDecision --> [*]: accepted / released
+    ReleaseDecision --> OutcomeObservation: released
     ReleaseDecision --> Contract: hold / revise
+    OutcomeObservation --> Resolved: outcome evidenced
+    OutcomeObservation --> Contract: unresolved / corrective work
+    OutcomeObservation --> OutcomeObservation: inconclusive / wait for trigger
+    Resolved --> [*]

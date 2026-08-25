@@ -2,7 +2,7 @@
 
 # Product workbook
 
-### A portable, auditable workbook from idea to release—expressed as UTF-8 CSV.
+### A portable, auditable workbook from idea through release to observed resolution—expressed as UTF-8 CSV.
 
 </div>
 
@@ -42,10 +42,13 @@ hard-coded formulas.
 5. A validation result requires an executed run.
 6. Producer and verifier actors differ for the same material claim.
 7. A live-write claim requires a receipt with complete read-back.
+8. A resolved Issue closure requires a completed linked release, passing results, accepted
+   post-release observation, evidence, and passing independent QC.
 
 ## Integrity gates
 
 Every identifier matches the central pattern; every status exists in the catalog; every role key
 resolves; every result links to its run, scenario, plan, ticket, and evidence; material producer
 claims resolve to independent QC; releases resolve to readiness, authorization, validation, and
-rollback; and no cell contains credential or production-secret material.
+rollback; resolved Issue closures resolve to post-release observation and independent QC; and no
+cell contains credential or production-secret material.

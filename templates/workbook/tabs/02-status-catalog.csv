@@ -40,7 +40,7 @@ issue,ready_for_delivery,3,false,Delivery contract may be authored
 issue,in_delivery,4,false,Development work is active
 issue,needs_validation,5,false,Implementation awaits factual validation
 issue,validated,6,false,Required result is linked
-issue,closed,7,true,Closure evidence or disposition is linked
+issue,closed,7,true,Resolved outcome evidence or an explicit non-resolution disposition is linked
 issue,wont_fix,8,true,Explicit human disposition declines delivery
 ticket,draft,1,false,Delivery contract is incomplete
 ticket,ready,2,false,Approved contract and inputs are available

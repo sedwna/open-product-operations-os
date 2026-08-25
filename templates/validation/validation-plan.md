@@ -28,6 +28,27 @@
 | --- | --- | --- | --- | --- | --- |
 | `<identifier_patterns.validation_scenario>` | `<ID_LIST>` | `<unit|integration|system|journey|control>` | `<NON_SECRET_ALIAS>` | `<SYNTHETIC_DATASET>` | `<required/not_required>` |
 
+## Workload and abuse envelope
+
+- Declared workload: `<concurrency; requests/minute; records/run; scheduled jobs; storage growth>`
+- Service targets: `<latency; error rate; recovery objective; cost ceiling where material>`
+- Why this envelope represents the intended use:
+- Known ceiling and observable expansion trigger:
+- Abuse, gaming, duplicate, privilege, and rate-limit scenarios:
+- Smart-user misuse checks and expected controls:
+
+A fixed number such as 5,000 users is not a universal gate. Test the dimensions that can actually
+break this feature and record why the chosen envelope is sufficient for current scope.
+
+## Post-release outcome observation
+
+- Outcome hypothesis and expected next behavior:
+- Observation window and start event:
+- Evidence source and baseline:
+- Necessary external final step, if any:
+- Resolution rule: `<what evidence means resolved, unresolved, or inconclusive>`
+- Reopen or corrective-event trigger:
+
 ## Data and environment readiness
 
 - Synthetic fixture definition:
@@ -60,3 +81,4 @@
 - [ ] Runtime secret values are absent from committed records.
 - [ ] Evidence capture and cleanup are reproducible.
 - [ ] Independent verifier is not the producer.
+- [ ] All critical in-scope logic maps to a claim or acceptance criterion; deferrals are explicit.

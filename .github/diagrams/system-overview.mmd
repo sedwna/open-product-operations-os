@@ -17,8 +17,9 @@ flowchart TB
     end
 
     B2["Sealed result<br/>revision · evidence · SHA-256"]
-    Q["Product QA and readiness<br/>validate outcome · preserve evidence"]
+    Q["Product QA and readiness<br/>validate delivery · preserve evidence"]
     G2{"Human gate<br/>accept / release / deploy?"}
+    R["Post-release resolution<br/>observe user outcome · independent QC"]
 
     H --> CT
     CT --> H
@@ -29,8 +30,10 @@ flowchart TB
     V --> B2
     B2 --> Q
     Q --> G2
-    G2 -->|decision recorded| CT
+    G2 -->|released| R
+    R -->|resolved / inconclusive| CT
     G2 -.->|corrective loop| I
+    R -.->|unresolved| I
 
     classDef human fill:#FFF1C7,stroke:#B7791F,color:#34230A,stroke-width:2px;
     classDef tower fill:#F1E8FF,stroke:#7C3AED,color:#2E1065,stroke-width:2px;
@@ -41,7 +44,7 @@ flowchart TB
 
     class H human;
     class CT tower;
-    class S,D,I,C,Q product;
+    class S,D,I,C,Q,R product;
     class P,W,V engineering;
     class B1,B2 contract;
     class G1,G2 gate;
