@@ -68,6 +68,10 @@ export function buildProjectFiles(config, { includeConfig = false } = {}) {
   for (const [destination, source] of GOVERNANCE_TEMPLATES) {
     files.set(destination, readPackagedTemplate(source));
   }
+  files.set(
+    "governance/workspace-resource-lifecycle.md",
+    readPackagedFile("docs/architecture/workspace-resource-lifecycle.md")
+  );
   for (const schema of SCHEMA_FILES) {
     files.set(`schemas/${schema}`, readPackagedFile(`schemas/${schema}`));
   }

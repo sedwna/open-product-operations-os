@@ -52,6 +52,30 @@ Assurance depth follows risk, but scope, credential hygiene, evidence for materi
 independent verification, and human authority never weaken. The complete policy is
 [`docs/architecture/proportional-delivery.md`](docs/architecture/proportional-delivery.md).
 
+## Workspace and resource lifecycle
+
+Treat Git worktrees, Docker resources, temporary folders, mounts, and leases as owned lifecycle
+resources. Follow
+[`docs/architecture/workspace-resource-lifecycle.md`](docs/architecture/workspace-resource-lifecycle.md):
+
+- record project, owner, task/purpose, source, base SHA, creation time, retention/TTL, cleanup
+  trigger, native identity, inventory disposition, and terminal disposition from creation;
+- keep project worktrees under `.workspace/worktrees/<repo>/<card-or-purpose>`;
+- take a read-only inventory and classify every cleanup candidate as `KEEP_ACTIVE`,
+  `REMOVE_PROVEN`, `QUARANTINE`, or `HOLD_REVIEW`;
+- never delete dirty, detached, unpushed, data-bearing, mounted, shared, locked, or
+  authority-ambiguous resources;
+- remove registered worktrees only with `git worktree remove`, then read back registration and
+  preserved refs;
+- never remove a Docker volume merely because it is dangling, and never run broad
+  `docker system prune` on a shared host;
+- clean in bounded batches and read back actual free space, Git state, Docker health, and protected
+  paths after each batch.
+
+Full access avoids repeated technical-access questions. It is not authority to destroy ambiguous
+or out-of-scope data. No task may close while a resource it created lacks an owner and terminal
+disposition.
+
 Do not collapse delivery states. `implemented` means Engineering has returned technical proof;
 `release_ready` means Product release gates pass; `released` means the authorized release happened;
 `resolved` means post-release evidence shows the original user or operational outcome occurred.
@@ -139,7 +163,9 @@ before you go on.
 
 `init-suite` creates `product/` and `development/`, installs their separate role registries and
 task boards, links them through versioned contracts with executors disabled, and starts one Git
-history at the suite root. That is not housekeeping:
+history at the suite root. It also creates the tracked `.workspace/resources.csv` lifecycle
+inventory while keeping local worktree contents under the ignored `.workspace/worktrees/`
+hierarchy. That is not housekeeping:
 exporting an approved delivery contract to the engineering side stamps it with the workspace
 revision, and without one the export refuses at the moment the owner has just authorised crossing
 into engineering. If it reports that it could not — no `git` on the machine, or a refused commit —
@@ -291,6 +317,8 @@ Before work:
 During work:
 
 - keep the feedback loop (below);
+- register every created worktree, Docker resource, temporary folder, mount, and lease in the
+  suite-root `.workspace/resources.csv`, and follow the workspace-resource lifecycle policy;
 - apply the proportional-work policy: stop qualifying when the next safe action is clear and stop
   engineering when the approved outcome is met;
 - stay inside the role's semantic and write authority;
@@ -302,12 +330,14 @@ During work:
 
 Before completion:
 
-1. Commit canonical output and evidence.
-2. Update only the card and fields your role owns.
-3. Produce the required manifest for any live mutation.
-4. Require complete read-back after a controlled write.
-5. Route the claim to an independent verifier.
-6. Return control to the Control Tower.
+1. Run the terminal cleanup review and ensure every created resource has an owner and terminal
+   disposition.
+2. Commit canonical output and evidence.
+3. Update only the card and fields your role owns.
+4. Produce the required manifest for any live mutation.
+5. Require complete read-back after a controlled write.
+6. Route the claim to an independent verifier.
+7. Return control to the Control Tower.
 
 Chat memory is helpful context, never the source of truth.
 

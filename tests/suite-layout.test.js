@@ -31,6 +31,10 @@ test("init-suite creates one Git repository with independent Product and Develop
   await fs.access(path.join(root, "development", "engineering", "taskboard", "workstreams.csv"));
   await fs.access(path.join(root, "README.md"));
   await fs.access(path.join(root, "AGENTS.md"));
+  await fs.access(path.join(root, ".workspace", "README.md"));
+  await fs.access(path.join(root, ".workspace", "resources.csv"));
+  await fs.access(path.join(root, "product", "governance", "workspace-resource-lifecycle.md"));
+  await fs.access(path.join(root, "development", "engineering", "standards", "workspace-resource-lifecycle.md"));
   await fs.access(path.join(root, ".git"));
   await assert.rejects(fs.access(path.join(root, "product", ".git")), { code: "ENOENT" });
   await assert.rejects(fs.access(path.join(root, "development", ".git")), { code: "ENOENT" });
@@ -38,6 +42,32 @@ test("init-suite creates one Git repository with independent Product and Develop
   assert.match(output.stdout.join("\n"), /Suite validation passed/);
   assert.match(output.stdout.join("\n"), /13 Product roles/);
   assert.match(output.stdout.join("\n"), /15 Engineering roles/);
+
+  const inventory = await fs.readFile(path.join(root, ".workspace", "resources.csv"), "utf8");
+  assert.match(inventory, /owner_actor_id,owner_task_id,purpose/);
+  assert.match(inventory, /base_sha,created_at,retention_class,expires_at,cleanup_trigger/);
+  assert.match(inventory, /inventory_disposition,terminal_disposition/);
+
+  const agentContract = await fs.readFile(path.join(root, "AGENTS.md"), "utf8");
+  assert.match(agentContract, /\.workspace\/worktrees\/<repo>\/<card-or-purpose>/);
+  assert.match(agentContract, /KEEP_ACTIVE.*REMOVE_PROVEN.*QUARANTINE.*HOLD_REVIEW/s);
+  assert.match(agentContract, /git worktree remove/);
+  assert.match(agentContract, /docker system prune/);
+
+  const productPolicy = await fs.readFile(
+    path.join(root, "product", "governance", "workspace-resource-lifecycle.md"),
+    "utf8"
+  );
+  const engineeringPolicy = await fs.readFile(
+    path.join(root, "development", "engineering", "standards", "workspace-resource-lifecycle.md"),
+    "utf8"
+  );
+  assert.equal(engineeringPolicy, productPolicy, "both authority roots receive the same lifecycle contract");
+
+  const gitignore = await fs.readFile(path.join(root, ".gitignore"), "utf8");
+  assert.match(gitignore, /^node_modules\/$/m);
+  assert.match(gitignore, /^\.workspace\/worktrees\/$/m);
+  assert.doesNotMatch(gitignore, /^\+node_modules\/$/m);
 });
 
 test("init-suite dry-run describes both roots without creating the repository", async (t) => {

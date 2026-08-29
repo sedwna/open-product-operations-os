@@ -371,6 +371,7 @@ open-product-operations-os/       # this repository: runtime + reusable contract
 my-product/                       # one GitHub repository and one Git history
 ├── README.md                     # map of both organisations
 ├── AGENTS.md                     # root routing and write-boundary contract
+├── .workspace/                   # tracked resource inventory; local managed worktrees
 ├── product/                      # Product Operations authority root
 │   ├── agents/roles/             # RB-01 through RB-13
 │   ├── taskboard/                # Product cards
@@ -509,6 +510,7 @@ environments. Passing automation is producer evidence, not an independent releas
 | Understand contract synchronization | [Dual operating-system architecture](docs/architecture/dual-operating-system.md) |
 | Work with the canonical workbook | [Workbook operating model](docs/workbook/operating-model.md) |
 | Review the security model | [Security model](docs/security-model.md) |
+| Govern worktrees, Docker resources and cleanup | [Workspace and resource lifecycle](docs/architecture/workspace-resource-lifecycle.md) |
 | Connect external systems safely | [Provider adapters](docs/runtime/provider-adapters.md) |
 
 ## Contributing

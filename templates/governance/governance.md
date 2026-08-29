@@ -94,6 +94,24 @@ The writer accepts only an authorized manifest, validates field authority and ol
 preconditions, writes the smallest range, reads back the full affected records, tests zero-write
 replay, and emits a rollback-capable receipt. The writer does not author semantic changes.
 
+## Workspace and resource lifecycle
+
+The generated `governance/workspace-resource-lifecycle.md` is the lifecycle contract for Git
+worktrees, Docker resources, temporary folders, mounts, and leases. Every resource is attributable
+from creation through terminal disposition in the suite-root `.workspace/resources.csv`.
+
+- Managed worktrees stay under `.workspace/worktrees/<repo>/<card-or-purpose>`.
+- Cleanup starts with a read-only inventory and exactly one of `KEEP_ACTIVE`, `REMOVE_PROVEN`,
+  `QUARANTINE`, or `HOLD_REVIEW` for every candidate.
+- Dirty, detached, unpushed, data-bearing, mounted, shared, locked, or authority-ambiguous resources
+  are not removed.
+- Registered worktrees use native Git removal with registration and ref read-back. Docker volumes
+  are not removed for dangling status alone, and broad `docker system prune` is forbidden on shared
+  hosts.
+- Full access is technical capability, not deletion authority. Cleanup is bounded and each batch
+  reads back disk, Git, Docker health, and protected paths.
+- A task cannot close while a resource it created lacks an owner and terminal disposition.
+
 ## Security
 
 Do not commit credentials, tokens, cookies, keys, recovery codes, personal data, private URLs,
