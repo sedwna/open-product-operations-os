@@ -190,6 +190,14 @@ export async function validateProject(target, config) {
       errors
     );
   }
+  if (contents.has("adapters/controlled-writer.json")) {
+    validateJsonSchemaFile(
+      "adapters/controlled-writer.json",
+      contents.get("adapters/controlled-writer.json"),
+      "controlled-writer-adapter.schema.json",
+      errors
+    );
+  }
 
   const inventory = await inventoryTree(root, config.validation.excludedDirectories, errors);
   validateEventRecords(contents, config, inventory.files.map((file) => file.relativePath), errors);

@@ -24,6 +24,7 @@ const SCHEMA_FILES = [
   "approval-store.schema.json",
   "agent-registry.schema.json",
   "board-task.schema.json",
+  "controlled-writer-adapter.schema.json",
   "development-run.schema.json",
   "development-os-config.schema.json",
   "development-request.schema.json",
@@ -56,6 +57,10 @@ export function buildProjectFiles(config, { includeConfig = false } = {}) {
   files.set(
     "adapters/providers.json",
     readPackagedTemplate("adapters/providers.json")
+  );
+  files.set(
+    "adapters/controlled-writer.json",
+    readPackagedTemplate("writers/controlled-writer-adapter.json")
   );
 
   files.set(REGISTRY_FILE, formatJson(buildRegistry(config)));

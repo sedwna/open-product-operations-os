@@ -1,5 +1,8 @@
 # Safe local CSV writer
 
+This adapter implements the control mechanics described by the
+[provider-neutral controlled-writer interface](controlled-writer-interface.md).
+
 `src/local-writer.js` is an executable, provider-free reference adapter for a generated project's
 configured CSV workbook. It never connects to a live spreadsheet or production provider.
 

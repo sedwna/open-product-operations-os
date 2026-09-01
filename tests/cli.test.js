@@ -55,7 +55,7 @@ test("init dry-run reports the complete project without creating the target", as
 
   assert.equal(await run(["init", target, "--dry-run"], output.io), 0);
   await assert.rejects(fs.access(target), { code: "ENOENT" });
-  assert.match(output.stdout.join("\n"), /Dry run: would write 75 file\(s\)/);
+  assert.match(output.stdout.join("\n"), /Dry run: would write 77 file\(s\)/);
 });
 
 test("init derives valid task prefixes for short and numeric folder names", async (t) => {

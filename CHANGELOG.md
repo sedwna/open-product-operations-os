@@ -4,6 +4,11 @@ All notable changes to this project will be documented here.
 
 ## Unreleased
 
+- Added a vendor-neutral controlled-writer adapter contract. Generated projects now receive a
+  disabled descriptor and public schema that require plan, apply, complete read-back, replay-zero
+  and rollback methods while keeping dry-run, exact-plan, precondition, bounded-scope and
+  secret-free controls fail-closed.
+
 - Added the canonical two-root product suite. `product-ops init-suite` now creates one GitHub-facing
   repository with independent `product/` and `development/` roots, both role registries, both task
   boards, a disabled-by-default versioned contract link, root routing guidance, and one Git history.

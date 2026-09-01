@@ -53,3 +53,7 @@ adapters/     disabled provider and execution boundaries
 
 Generated projects also receive public schemas and runtime stores under `.product-ops/runtime/`.
 Runtime state improves visibility; it never replaces the canonical workbook or Git history.
+
+The writers directory includes a disabled, vendor-neutral adapter descriptor. Configure an
+implementation only after it satisfies the five-method plan/apply/read-back/replay/rollback
+interface and preserve every fail-closed control in the descriptor.

@@ -1,0 +1,28 @@
+{
+  "schemaVersion": "1.0.0",
+  "adapterId": "local-controlled-writer",
+  "displayName": "Controlled writer adapter",
+  "implementation": "not-configured",
+  "enabled": false,
+  "environments": ["local", "test"],
+  "manifestSchema": "schemas/workbook-write-manifest.schema.json",
+  "receiptSchema": "schemas/workbook-write-receipt.schema.json",
+  "methods": {
+    "plan": "plan",
+    "apply": "apply",
+    "readBack": "readBack",
+    "replay": "replay",
+    "rollback": "rollback"
+  },
+  "controls": {
+    "dryRunDefault": true,
+    "exactPlanHashRequired": true,
+    "preconditionsRequired": true,
+    "boundedScopeRequired": true,
+    "completeReadBackRequired": true,
+    "secondReadPathRequired": true,
+    "replayMustWriteZero": true,
+    "rollbackRequired": true,
+    "secretValuesForbidden": true
+  }
+}
